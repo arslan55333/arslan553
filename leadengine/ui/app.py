@@ -78,6 +78,29 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
 
     templates.env.globals["media_url"] = media_url
 
+    def job_info(job: Job) -> dict[str, Any]:
+        """Title, detail and progress for any job kind (scan, check, preview, drafts, send ...)."""
+        p = job.params or {}
+        n_ids = len(p.get("ids") or [])
+        info = {
+            "discover": (f"Scan: {p.get('keyword', '')}", ", ".join(p.get("zips") or []), len(p.get("zips") or []), "ZIPs"),
+            "enrich": ("Deep check", f"{n_ids} lead(s): " + ", ".join(p.get("kinds") or ["emails", "website", "ads"]),
+                       len(p.get("kinds") or [1, 2, 3]), "steps"),
+            "preview": ("Preview sites", f"{n_ids} lead(s)", 0, ""),
+            "outreach": ("Email drafts", f"{n_ids} lead(s)", 0, ""),
+            "send": ("Send approved emails", "", 0, ""),
+            "sweep": (f"Ads sweep: {p.get('keyword', '')}", ", ".join(p.get("locations") or p.get("zips") or []),
+                      len(p.get("locations") or p.get("zips") or []), "places"),
+            "rankgrid": (f"Rank heatmap: {p.get('keyword', '')}", f"{p.get('size', 7)}x{p.get('size', 7)} grid around "
+                         f"{p.get('zip', '')}", 0, ""),
+            "monitor": ("Weekly watch", f"{len(p.get('watch_ids') or [])} watch(es)", 0, ""),
+            "audit": ("Audit reports", f"{n_ids} lead(s)", 0, ""),
+        }.get(job.kind, (job.kind, "", 0, ""))
+        return {"title": info[0], "detail": info[1], "total": info[2], "unit": info[3],
+                "done": len(job.done_steps or [])}
+
+    templates.env.globals["job_info"] = job_info
+
     def outreach_cfg():
         from leadengine.outreach.mail import outreach_cfg as load
         return load(settings)
@@ -95,7 +118,8 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             min_reviews=int(q["min_reviews"]) if q.get("min_reviews") else None,
             labels=[q["label"]] if q.get("label") else None, ads_statuses=[q["ads"]] if q.get("ads") else None,
             max_site_score=int(q["max_site"]) if q.get("max_site") else None, email=q.get("email") or None,
-            text=q.get("q") or None, order=q.get("sort") or "opportunity", limit=limit)
+            text=q.get("q") or None, status=q.get("status") or None,
+            order=q.get("sort") or "opportunity", limit=limit)
         return rows
 
     # ── pages ────────────────────────────────────────────────────────
@@ -106,6 +130,7 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             by_label = dict(s.execute(select(Business.lead_label, func.count()).group_by(Business.lead_label)).all())
             with_email = s.scalar(select(func.count()).select_from(Business).where(Business.best_email.is_not(None))) or 0
             ads_active = s.scalar(select(func.count()).select_from(Business).where(Business.ads_status == "Active")) or 0
+            ads_likely = s.scalar(select(func.count()).select_from(Business).where(Business.ads_status == "Likely")) or 0
             hot = Repository(s).list_businesses(labels=["Hot"], order="opportunity", limit=10)
             recent = list(s.scalars(select(Job).order_by(Job.created_at.desc()).limit(6)))
             pipeline = {st: 0 for st in crm.STATUSES}
@@ -115,7 +140,7 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             pipeline["New"] = max(0, total - sum(v for k, v in pipeline.items() if k != "New"))
         credits = CreditTracker(sf, settings).summary()
         return render(request, "dashboard.html", total=total, by_label=by_label, with_email=with_email,
-                      ads_active=ads_active, hot=hot, jobs=recent, credits=credits, pipeline=pipeline)
+                      ads_active=ads_active, ads_likely=ads_likely, hot=hot, jobs=recent, credits=credits, pipeline=pipeline)
 
     @app.get("/run", response_class=HTMLResponse)
     def run_form(request: Request):
@@ -125,14 +150,15 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
     def run_submit(keyword: str = Form(...), zips: str = Form(...), provider: str = Form("playwright"),
                    towns: bool = Form(False), emails: bool = Form(False), website: bool = Form(False),
                    ads: bool = Form(False), activity: bool = Form(False), fill: bool = Form(False),
-                   refresh: bool = Form(False)):
+                   refresh: bool = Form(False), area_only: bool = Form(False)):
         zip_list = _split_zips(zips)
         if not keyword.strip() or not zip_list:
             raise HTTPException(400, "Enter a keyword and at least one valid 5-digit ZIP")
         job_id = jobs.enqueue(sf, "discover", {
             "keyword": keyword.strip(), "zips": zip_list,
             "options": {"provider_name": provider, "towns": towns, "emails": emails, "website": website,
-                        "ads": ads, "activity": activity, "fill": fill, "refresh": refresh}})
+                        "ads": ads, "activity": activity, "fill": fill, "refresh": refresh,
+                        "scope": "area" if area_only else "all"}})
         return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
     @app.get("/jobs", response_class=HTMLResponse)
@@ -167,10 +193,29 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
         q = dict(request.query_params)
         with sf() as s:
             rows = filtered(s, q)
-            known = Repository(s).lead_statuses([b.id for b in rows])
+            repo = Repository(s)
+            ids = [b.id for b in rows]
+            known = repo.lead_statuses(ids)
             statuses = {b.id: known.get(b.id, "New") for b in rows}
-        return render(request, "leads.html", rows=rows, q=q, statuses=statuses,
-                      query=str(request.url.query))
+            checked = {k: set(repo.latest_enrichments(ids, k)) for k in ("emails", "website", "ads")}
+        disc = settings.section("discovery")
+        return render(request, "leads.html", rows=rows, q=q, statuses=statuses, checked=checked,
+                      min_reviews=int(disc.get("shortlist_min_reviews", 20)),
+                      min_rating=float(disc.get("shortlist_min_rating", 4.0)), query=str(request.url.query))
+
+    @app.post("/leads/check")
+    async def leads_check(request: Request):
+        form = await request.form()
+        ids = [int(i) for i in form.getlist("ids") if str(i).isdigit()]
+        if not ids:
+            return RedirectResponse("/leads?error=" + "select at least one lead", status_code=303)
+        job_id = jobs.enqueue(sf, "enrich", {"ids": ids[:300]})
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+    @app.post("/leads/{business_id}/check")
+    def lead_check(business_id: int, refresh: bool = Form(False)):
+        job_id = jobs.enqueue(sf, "enrich", {"ids": [business_id], "refresh": refresh})
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
     @app.get("/leads/{business_id}", response_class=HTMLResponse)
     def lead_page(request: Request, business_id: int, error: str | None = None):

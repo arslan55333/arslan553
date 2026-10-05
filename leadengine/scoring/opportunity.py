@@ -19,6 +19,7 @@ DEFAULT_RULES = {
     "min_rating": 3.5,           # below this -> Skip (reputation problem, not a website problem)
     "modern_site": 80,           # website score at/above this -> Skip (nothing to sell)
     "reviews_full": 300,         # review count that earns full reputation points
+    "require_ads_for_hot": True, # Hot only with proof of ad spend (Active / Likely / LSA)
 }
 CONTACTED = {"Emailed", "Replied", "Won", "Lost"}
 
@@ -86,7 +87,7 @@ def _website(b: Business) -> tuple[float | None, str | None, str | None]:
     return (100 - b.website_score) / 100, f"website score {b.website_score}", None
 
 
-def _reachability(b: Business) -> tuple[float, str | None]:
+def _reachability(b: Business, emails_checked: bool = True) -> tuple[float, str | None]:
     frac = 0.0
     if b.best_email and b.email_status == "valid":
         frac, note = 1.0, "verified email"
@@ -95,14 +96,16 @@ def _reachability(b: Business) -> tuple[float, str | None]:
     elif b.best_email:
         frac, note = 0.5, None
     else:
-        note = "no email found"
+        note = "no email found" if emails_checked else "email not checked yet"
     if b.phone:
         frac = min(1.0, frac + 0.2)
     return frac, note
 
 
 def score_business(b: Business, *, today: date, website_reasons: list[str] | None = None,
-                   lead_status: str | None = None, weights: dict | None = None, rules: dict | None = None) -> Opportunity:
+                   lead_status: str | None = None, weights: dict | None = None, rules: dict | None = None,
+                   checked: set[str] | None = None) -> Opportunity:
+    """``checked``: which deep checks ran for this lead ({"emails", "website", "ads"}); None = assume all."""
     weights = {**DEFAULT_WEIGHTS, **(weights or {})}
     rules = {**DEFAULT_RULES, **(rules or {})}
     parts: dict[str, dict[str, Any]] = {}
@@ -112,7 +115,7 @@ def score_business(b: Business, *, today: date, website_reasons: list[str] | Non
     act, act_note = _activity(b, today)
     ads, ads_note = _ads(b)
     web, web_note, _ = _website(b)
-    reach, reach_note = _reachability(b)
+    reach, reach_note = _reachability(b, checked is None or "emails" in checked)
     for name, frac in (("reputation", rep), ("activity", act), ("ads", ads), ("website", web), ("reachability", reach)):
         if frac is not None:
             parts[name] = {"points": round(frac * weights[name], 1), "max": weights[name]}
@@ -127,8 +130,11 @@ def score_business(b: Business, *, today: date, website_reasons: list[str] | Non
             notes.append(n)
     if website_reasons and web is not None and web < 1.0:
         notes[-1] += " — " + ", ".join(r.split(" (")[0] for r in website_reasons[:2])
-    if reach_note == "no email found":
+    if reach_note in ("no email found", "email not checked yet"):
         notes.append(reach_note)
+    unchecked = [] if checked is None else [k for k in ("ads", "website") if k not in checked]
+    if unchecked and ((ads is None and "ads" in unchecked) or (web is None and "website" in unchecked)):
+        notes.append(" & ".join(unchecked) + " not checked yet")
 
     skip = None
     if b.business_status and "CLOSED" in str(b.business_status).upper():
@@ -143,9 +149,10 @@ def score_business(b: Business, *, today: date, website_reasons: list[str] | Non
     elif not b.phone and not b.best_email:
         skip = "no way to contact"
 
+    has_ads = b.ads_status in ("Active", "Likely") or bool(b.lsa)
     if skip:
         label = "Skip"
-    elif score >= rules["hot"]:
+    elif score >= rules["hot"] and (has_ads or not rules.get("require_ads_for_hot")):
         label = "Hot"
     elif score >= rules["warm"]:
         label = "Warm"

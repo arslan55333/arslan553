@@ -34,6 +34,8 @@ area_margin = 0.15        # search a bit beyond the ZIP edge (ads/businesses nea
 towns = false             # also search "keyword in <town>" for towns in/around the ZIP
 shortlist_min_reviews = 20
 shortlist_min_rating = 4.0
+check_scope = "all"       # all = deep-check every business found (dense cities!) | area = only inside the ZIP
+max_checks = 60           # cap on deep checks per ZIP (best-reviewed first)
 activity = true           # open shortlisted place pages: review dates, owner replies, claimed, photos
 fill_missing = true       # use the paid provider only for shortlisted leads missing phone/website
 fill_provider = "serpapi"
@@ -81,6 +83,7 @@ warm = 50                 # score >= warm -> Warm, else Cold
 min_rating = 3.5          # below -> Skip
 modern_site = 80          # website score >= this -> Skip (nothing to sell)
 reviews_full = 300        # review count that earns full reputation points
+require_ads_for_hot = true  # Hot only when there is proof of ad spend (Active / Likely / LSA)
 
 [opportunity.weights]
 reputation = 25           # rating + review count

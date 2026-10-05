@@ -1,6 +1,7 @@
 {% extends "base.html" %}{% block title %}Job {{ job.id }}{% endblock %}{% block body %}
-<div class="row" style="justify-content:space-between"><div><h1>Scan #{{ job.id }}: {{ job.params.keyword }}</h1>
-<p class="sub">ZIPs {{ job.params.zips|join(', ') }}</p></div>
+{% set ji = job_info(job) %}
+<div class="row" style="justify-content:space-between"><div><h1>#{{ job.id }} {{ ji.title }}</h1>
+<p class="sub">{{ ji.detail }}</p></div>
 {% if job.status in ['queued','running'] %}<form method="post" action="/jobs/{{ job.id }}/cancel"><button class="btn danger">Cancel</button></form>{% endif %}</div>
 <div id="log" hx-get="/jobs/{{ job.id }}/log" hx-trigger="load" hx-swap="innerHTML">{% include "_job_log.html" %}</div>
 {% endblock %}

@@ -131,6 +131,7 @@ class LeadService:
             try:
                 with session.begin_nested():  # one bad record must not break the run
                     biz = repo.upsert_business(rec)
+                    fill_location(biz)
                     if rec.sponsored:
                         repo.set_enrichment(biz.id, "maps_sponsored",
                                             {"keyword": keyword, "zip": zip_code, "provider": rec.provider},
@@ -195,6 +196,7 @@ class LeadService:
         cell_km: float | None = None,
         max_depth: int | None = None,
         max_cells: int | None = None,
+        scope: str | None = None,
         on_progress: Callable[[str], None] | None = None,
     ) -> DiscoverOutcome:
         cfg = self.settings.section("discovery")
@@ -279,11 +281,18 @@ class LeadService:
 
             min_reviews = int(cfg.get("shortlist_min_reviews", 20))
             min_rating = float(cfg.get("shortlist_min_rating", 4.0))
-            shortlist = [b for b, _ in outcome.results if in_area(b)
+            area_only = str(scope or cfg.get("check_scope", "all")).lower() == "area"
+            shortlist = [b for b, _ in outcome.results if (in_area(b) or not area_only)
                          and (b.review_count or 0) >= min_reviews and (b.rating or 0) >= min_rating]
+            shortlist.sort(key=lambda b: -(b.review_count or 0))
+            cap = int(cfg.get("max_checks", 60))
+            if len(shortlist) > cap:
+                say(f"  {len(shortlist)} qualify; deep-checking the {cap} best-reviewed (max_checks in config.toml)")
+                shortlist = shortlist[:cap]
             outcome.shortlisted = len(shortlist)
             if shortlist:
-                say(f"Shortlist: {len(shortlist)} businesses with >= {min_reviews} reviews and >= {min_rating} stars")
+                say(f"Shortlist: {len(shortlist)} businesses with >= {min_reviews} reviews and >= {min_rating} stars"
+                    + (" inside the ZIP" if area_only else " (whole search area)"))
 
             if activity and shortlist and isinstance(provider, PlaywrightMapsProvider):
                 checked, cached = await self.enrich_activity(repo, provider, shortlist)
@@ -549,6 +558,7 @@ class LeadService:
                 snapshots: dict[tuple[str, str], SerpSnapshot | None] = {}
                 plans: dict[int, tuple[str, str] | None] = {}
                 for biz in businesses:
+                    fill_location(biz)
                     kw = keyword or next(iter(repo.keywords_for(biz.id)), None) or (biz.categories or [None])[0]
                     plans[biz.id] = (kw, f"{biz.city}|{biz.state}") if kw and biz.city and biz.state else None
                 if serp_source != "none":
@@ -646,11 +656,15 @@ class LeadService:
                 businesses = [b for b in (repo.get_business(i) for i in business_ids) if b]
             ids = [b.id for b in businesses]
             webs = repo.latest_enrichments(ids, "website")
+            done = {k: set(repo.latest_enrichments(ids, k)) for k in ("emails", "ads")}
             statuses = repo.lead_statuses(ids if len(ids) <= 900 else None)
             for biz in businesses:
+                fill_location(biz)
                 web = webs.get(biz.id)
+                checked = {k for k, have in (("website", webs), ("emails", done["emails"]), ("ads", done["ads"]))
+                           if biz.id in have}
                 opp = score_business(biz, today=today, website_reasons=(web.payload or {}).get("reasons") if web else None,
-                                     lead_status=statuses.get(biz.id), weights=weights, rules=rules)
+                                     lead_status=statuses.get(biz.id), weights=weights, rules=rules, checked=checked)
                 biz.opportunity_score, biz.lead_label, biz.lead_reason = opp.score, opp.label, opp.reason
                 biz.scored_at = utcnow()
                 out.append({"id": biz.id, "name": biz.name, "score": opp.score, "label": opp.label,
@@ -752,6 +766,19 @@ class LeadService:
                              "warnings": drafts["warnings"],
                              "subjects": [v["subject"] for v in drafts["variants"]]})
         return rows
+
+
+def fill_location(biz: Business) -> bool:
+    """Maps cards often lack city/ZIP ("91-01 120th St"); take them from the nearest ZIP centre."""
+    if (biz.city and biz.zip_code) or biz.lat is None or biz.lng is None:
+        return False
+    z = zip_directory().nearest(biz.lat, biz.lng)
+    if z is None:
+        return False
+    biz.zip_code = biz.zip_code or z.zip
+    biz.city = biz.city or z.city
+    biz.state = biz.state or z.state
+    return True
 
 
 def apply_activity(biz: Business, payload: dict) -> None:

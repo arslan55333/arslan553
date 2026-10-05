@@ -12,18 +12,27 @@
  <div><label>Email</label><select name="email"><option value="">Any</option><option value="any" {{ 'selected' if q.get('email')=='any' }}>Has email</option><option value="verified" {{ 'selected' if q.get('email')=='verified' }}>Verified</option></select></div>
  <div><label>ZIP</label><input name="zip" style="width:80px" value="{{ q.get('zip','') }}"></div>
  <div><label>Keyword</label><input name="keyword" style="width:140px" value="{{ q.get('keyword','') }}"></div>
+ <div><label>Status</label><select name="status"><option value="">Any</option>{% for st in STATUSES %}<option {{ 'selected' if q.get('status')==st }}>{{ st }}</option>{% endfor %}</select></div>
  <div><button class="btn">Filter</button></div></form>
-<table class="card"><tr><th>Label</th><th class="num">Opp.</th><th>Business</th><th class="num">Rating</th><th>Ads</th><th>Site</th><th>Email</th><th>Status</th><th>Why</th></tr>
-{% for b in rows %}<tr>
+{% if q.get('error') %}<p class="error">{{ q.get('error') }}</p>{% endif %}
+<form method="post" action="/leads/check" id="checkform">
+<div class="row" style="margin:6px 0 10px"><button class="btn">Deep-check selected</button>
+<span class="small muted">emails + website score + Google Ads for the ticked leads (runs in the background). "not checked" = not looked at yet, not "no".</span></div>
+<div class="scroll"><table class="card"><tr><th><input type="checkbox" title="select all" onclick="document.querySelectorAll('#checkform input[name=ids]').forEach(c => c.checked = this.checked)"></th>
+<th>Label</th><th class="num">Opp.</th><th>Business</th><th class="num">Rating</th><th>Ads</th><th>Site</th><th>Email</th><th>Status</th><th>Why</th></tr>
+{% for b in rows %}{% set small_biz = (b.review_count or 0) < min_reviews or (b.rating or 0) < min_rating %}
+{% set nc_title = ('below ' ~ min_reviews ~ ' reviews / ' ~ min_rating ~ ' stars, so scans skip it - tick it and Deep-check') if small_biz else 'not checked yet - tick it and Deep-check' %}<tr>
+ <td><input type="checkbox" name="ids" value="{{ b.id }}"></td>
  <td><span class="badge {{ b.lead_label or 'Skip' }}">{{ b.lead_label or '–' }}</span></td>
  <td class="num score">{{ b.opportunity_score if b.opportunity_score is not none else '–' }}</td>
  <td><a href="/leads/{{ b.id }}"><b>{{ b.name }}</b></a><div class="small muted">{{ b.city or '' }} {{ b.zip_code or '' }}</div></td>
  <td class="num">{{ '%.1f'|format(b.rating) if b.rating is not none else '–' }}<div class="small muted">{{ b.review_count or 0 }} rev.</div></td>
- <td>{% if b.ads_status %}<span class="badge {{ b.ads_status }}">{{ b.ads_status }}{{ ' +LSA' if b.lsa }}</span>{% else %}–{% endif %}</td>
+ <td>{% if b.ads_status %}<span class="badge {{ b.ads_status }}">{{ b.ads_status }}{{ ' +LSA' if b.lsa }}</span>{% elif b.id in checked.ads %}<span class="small muted">None</span>{% else %}<span class="nc" title="{{ nc_title }}">not checked</span>{% endif %}</td>
  <td>{% if b.website_flags and ('no_website' in b.website_flags or 'facebook_only' in b.website_flags) %}<span class="badge Hot">{{ b.website_flags[0]|replace('_',' ') }}</span>
-     {% elif b.website_score is not none %}<b>{{ b.website_score }}</b> <span class="small muted">{{ b.website_grade }}</span>{% else %}–{% endif %}</td>
- <td class="small">{{ b.best_email or '–' }}{% if b.email_status == 'valid' %} ✓{% endif %}</td>
+     {% elif b.website_score is not none %}<b>{{ b.website_score }}</b> <span class="small muted">{{ b.website_grade }}</span>
+     {% elif not b.website %}<span class="badge Hot">no website</span>{% elif b.id in checked.website %}<span class="small muted">n/a</span>{% else %}<span class="nc" title="{{ nc_title }}">not checked</span>{% endif %}</td>
+ <td class="small">{% if b.best_email %}{{ b.best_email }}{% if b.email_status == 'valid' %} ✓{% endif %}{% elif b.id in checked.emails %}<span class="muted">none found</span>{% else %}<span class="nc" title="{{ nc_title }}">not checked</span>{% endif %}</td>
  <td class="small">{{ statuses[b.id] }}</td>
  <td class="why small">{{ b.lead_reason or '' }}</td></tr>
-{% else %}<tr><td colspan="9" class="muted">No leads match. <a href="/run">Run a scan</a>.</td></tr>{% endfor %}</table>
+{% else %}<tr><td colspan="10" class="muted">No leads match. <a href="/run">Run a scan</a>.</td></tr>{% endfor %}</table></div></form>
 {% endblock %}

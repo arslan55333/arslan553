@@ -1,7 +1,9 @@
 {% extends "base.html" %}{% block title %}{{ b.name }}{% endblock %}{% block body %}
 {% set web = enr.website or {} %}{% set ads = enr.ads or {} %}
 <div class="row" style="justify-content:space-between"><div><h1>{{ b.name }} {% if b.lead_label %}<span class="badge {{ b.lead_label }}">{{ b.lead_label }} · {{ b.opportunity_score }}</span>{% endif %}</h1>
-<p class="sub">{{ b.lead_reason or '' }}</p></div><a class="btn ghost" href="/leads">← All leads</a></div>
+<p class="sub">{{ b.lead_reason or '' }}</p></div><div class="row">
+<form method="post" action="/leads/{{ b.id }}/check"><button class="btn" title="emails + website score + Google Ads">Check this lead</button></form>
+<a class="btn ghost" href="/leads">← All leads</a></div></div>
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 <div class="grid g3">
  <div class="card"><h2>Business</h2><div class="kv small">

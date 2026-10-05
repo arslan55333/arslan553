@@ -166,6 +166,7 @@ def discover(
     max_cells: Optional[int] = typer.Option(None, "--max-cells", help="Cap on searches this run"),
     show: int = typer.Option(30, "--show", help="Rows to print"),
     refresh: bool = typer.Option(False, "--refresh", help="Ignore cached discovery"),
+    only_in_zip: bool = typer.Option(False, "--only-in-zip", help="Deep-check only businesses inside the ZIP"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Don't ask before spending paid credits"),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ) -> None:
@@ -196,6 +197,7 @@ def discover(
                 return await service.discover(
                     keyword, zip_code, provider_name=provider, refresh=refresh, towns=towns, activity=activity,
                     fill=fill, emails=emails, website=website, ads=ads, cell_km=cell_km, max_depth=max_depth, max_cells=max_cells,
+                    scope="area" if only_in_zip else None,
                     on_progress=lambda m: console.print(f"[dim]{m}[/]"),
                 )
             finally:
@@ -815,6 +817,7 @@ def scan(
     fill: Optional[bool] = typer.Option(None, "--fill/--no-fill"),
     towns: Optional[bool] = typer.Option(None, "--towns/--no-towns"),
     refresh: bool = typer.Option(False, "--refresh", help="Re-scan even if cached"),
+    only_in_zip: bool = typer.Option(False, "--only-in-zip", help="Deep-check only businesses inside the ZIPs"),
     resume: Optional[int] = typer.Option(None, "--resume", help="Continue an interrupted scan job (id from `jobs`)"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Don't ask before spending paid credits"),
 ) -> None:
@@ -843,7 +846,8 @@ def scan(
             if not typer.confirm(f"{chosen} is a paid API and this scans {len(zip_list)} ZIPs. Continue?", default=False):
                 raise typer.Exit()
         options = {"provider_name": provider, "emails": emails, "website": website, "ads": ads,
-                   "activity": activity, "fill": fill, "towns": towns, "refresh": refresh or None}
+                   "activity": activity, "fill": fill, "towns": towns, "refresh": refresh or None,
+                   "scope": "area" if only_in_zip else None}
         job_id = jobq.enqueue(sf, "discover", {"keyword": keyword, "zips": zip_list,
                                                "options": {k: v for k, v in options.items() if v is not None}})
         console.print(f"Job #{job_id}: '{keyword}' in {len(zip_list)} ZIP(s): {', '.join(zip_list[:12])}"

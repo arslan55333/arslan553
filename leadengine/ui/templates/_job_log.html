@@ -1,11 +1,16 @@
 <div {% if job.status in ['queued','running'] %}hx-get="/jobs/{{ job.id }}/log" hx-trigger="every 2s" hx-target="#log" hx-swap="innerHTML"{% endif %}>
-{% set total = job.params.zips|length %}{% set done = (job.done_steps or [])|length %}
+{% set ji = job_info(job) %}{% set total = ji.total %}{% set done = ji.done %}
 <div class="card"><div class="row" style="justify-content:space-between"><b class="status-pill">{{ job.status|capitalize }}</b>
-<span class="small muted">{{ done }}/{{ total }} ZIPs done</span></div>
-<div class="bar" style="margin:10px 0"><i style="width:{{ (100 * done / total) if total else 0 }}%"></i></div>
+<span class="small muted">{% if total %}{{ done }}/{{ total }} {{ ji.unit }} done{% endif %}{% if job.status in ['queued','running'] %} · refreshing every 2s{% endif %}</span></div>
+<div class="bar" style="margin:10px 0"><i style="width:{{ (100 * done / total) if total else (100 if job.status == 'done' else 0) }}%"></i></div>
 {% if job.error %}<p class="error">{{ job.error }}</p>{% endif %}
-{% if job.result %}<table><tr><th>ZIP</th><th class="num">Businesses</th><th class="num">Hot</th><th class="num">Warm</th><th class="num">Sponsored</th></tr>
+{% if job.result and job.kind == 'discover' %}<table><tr><th>ZIP</th><th class="num">Businesses</th><th class="num">Hot</th><th class="num">Warm</th><th class="num">Sponsored</th></tr>
 {% for r in job.result %}<tr><td><a href="/leads?zip={{ r.zip }}">{{ r.zip }}</a></td><td class="num">{{ r.businesses }}</td><td class="num">{{ r.hot }}</td><td class="num">{{ r.warm }}</td><td class="num">{{ r.sponsored }}</td></tr>{% endfor %}</table>
-<p><a class="btn" href="/leads?keyword={{ job.params.keyword|urlencode }}">View leads</a></p>{% endif %}
+<p><a class="btn" href="/leads?keyword={{ job.params.keyword|urlencode }}">View leads</a></p>
+{% elif job.result and job.result is mapping %}<div class="kv small">{% for k, v in job.result.items() if v is not none and v is not mapping and (v is string or v is number) %}<div>{{ k|replace('_',' ') }}</div><div>{{ v }}</div>{% endfor %}</div>
+{% if job.result.link %}<p><a class="btn" href="{{ job.result.link }}">Open results</a></p>{% endif %}
+{% elif job.result %}<ul class="clean small">{% for r in job.result[:50] %}<li>{% if r.id %}<a href="/leads/{{ r.id }}">{{ r.name or r.id }}</a>{% else %}{{ r.name or r }}{% endif %} {{ r.url or r.error or r.skipped or '' }}</li>{% endfor %}</ul>{% endif %}
+{% if job.kind == 'enrich' and job.status == 'done' and (job.params.ids|length) == 1 %}<p><a class="btn" href="/leads/{{ job.params.ids[0] }}">Back to the lead</a></p>
+{% elif job.kind == 'enrich' and job.status == 'done' %}<p><a class="btn" href="/leads">Back to leads</a></p>{% endif %}
 <div class="log">{% for line in (job.progress or [])[-120:] %}{{ line }}
 {% endfor %}</div></div></div>

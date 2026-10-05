@@ -100,6 +100,11 @@ class ZipDirectory:
                 out.append((z, d))
         return sorted(out, key=lambda t: t[1])
 
+    def nearest(self, lat: float, lng: float, max_km: float = 8.0) -> ZipInfo | None:
+        """ZIP whose centre is closest to a point (fills missing city/ZIP for scraped businesses)."""
+        best = self.nearby(lat, lng, max_km)
+        return best[0][0] if best else None
+
     def by_city(self, city: str, state: str | None = None) -> list[ZipInfo]:
         """ZIPs whose primary city matches (case-insensitive), most populated first."""
         c = city.strip().lower()

@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% block title %}Jobs{% endblock %}{% block body %}
-<h1>Jobs</h1><p class="sub">Scans run one at a time in the background and resume after a crash.</p>
-<table class="card"><tr><th>#</th><th>Keyword</th><th>ZIPs</th><th>Status</th><th>Progress</th><th>Created</th></tr>
-{% for j in jobs %}<tr><td><a href="/jobs/{{ j.id }}">{{ j.id }}</a></td><td>{{ j.params.keyword }}</td><td class="small">{{ j.params.zips|join(', ') }}</td>
-<td class="status-pill">{{ j.status }}</td><td class="small">{{ (j.done_steps or [])|length }}/{{ j.params.zips|length }} ZIPs</td><td class="small muted">{{ j.created_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>
-{% else %}<tr><td colspan="6" class="muted">No jobs yet.</td></tr>{% endfor %}</table>{% endblock %}
+<h1>Jobs</h1><p class="sub">Background work runs one job at a time and resumes after a crash.</p>
+<div class="scroll"><table class="card"><tr><th>#</th><th>Job</th><th>Details</th><th>Status</th><th>Progress</th><th>Created</th></tr>
+{% for j in jobs %}{% set ji = job_info(j) %}<tr><td><a href="/jobs/{{ j.id }}">{{ j.id }}</a></td><td><a href="/jobs/{{ j.id }}">{{ ji.title }}</a></td><td class="small">{{ ji.detail }}</td>
+<td class="status-pill">{{ j.status }}</td><td class="small">{% if ji.total %}{{ ji.done }}/{{ ji.total }} {{ ji.unit }}{% else %}–{% endif %}</td><td class="small muted">{{ j.created_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>
+{% else %}<tr><td colspan="6" class="muted">No jobs yet.</td></tr>{% endfor %}</table></div>{% endblock %}

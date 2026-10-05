@@ -152,6 +152,7 @@ class Repository:
         email: str | None = None,              # "verified" | "any"
         min_opportunity: int | None = None,
         text: str | None = None,               # free text: name / email / website / phone / city
+        status: str | None = None,             # CRM status, e.g. "New" / "Emailed"
         order: str = "reviews",                # reviews | opportunity
         limit: int | None = None,
     ) -> list[Business]:
@@ -186,6 +187,13 @@ class Repository:
             stmt = stmt.where(Business.best_email.is_not(None))
         if min_opportunity is not None:
             stmt = stmt.where(Business.opportunity_score >= min_opportunity)
+        if status:
+            from leadengine.db.models import LeadStatus
+            known = select(LeadStatus.business_id)
+            if status == "New":
+                stmt = stmt.where(Business.id.not_in(known.where(LeadStatus.status != "New")))
+            else:
+                stmt = stmt.where(Business.id.in_(known.where(LeadStatus.status == status)))
         if text and text.strip():
             needle = f"%{text.strip().lower()}%"
             conds = [func.lower(col).like(needle) for col in

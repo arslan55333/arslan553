@@ -12,7 +12,8 @@ from leadengine.http import HttpClient
 from leadengine.jobs import Handler, JobContext
 from leadengine.normalize import normalize_zip
 
-DISCOVER_OPTIONS = ("provider_name", "towns", "activity", "fill", "emails", "website", "ads", "refresh", "max_cells")
+DISCOVER_OPTIONS = ("provider_name", "towns", "activity", "fill", "emails", "website", "ads", "refresh", "max_cells",
+                    "scope")
 
 
 def make_handlers(settings: Settings, sf: sessionmaker[Session]) -> dict[str, Handler]:
@@ -71,4 +72,38 @@ def make_handlers(settings: Settings, sf: sessionmaker[Session]) -> dict[str, Ha
             ctx.log(f"stopped: {report.stopped}")
         return {"sent": report.sent, "skipped": report.skipped, "failed": report.failed, "stopped": report.stopped}
 
-    return {"discover": discover, "preview": preview, "outreach": outreach, "send": send}
+    async def enrich(ctx: JobContext) -> dict[str, Any]:
+        """Deep-check chosen leads: emails, website score, Google Ads (each step resumable)."""
+        ids = [int(i) for i in ctx.params["ids"]]
+        kinds = ctx.params.get("kinds") or ["emails", "website", "ads"]
+        out: dict[str, Any] = {"leads": len(ids)}
+        async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
+            service = LeadService(settings, sf, http, CreditTracker(sf, settings))
+            try:
+                for kind in kinds:
+                    if ctx.cancelled():
+                        ctx.log("cancelled by user")
+                        break
+                    if ctx.is_done(kind):
+                        continue
+                    ctx.log(f"{kind}: checking {len(ids)} lead(s)...")
+                    if kind == "emails":
+                        summary = await service.find_emails(ids, refresh=bool(ctx.params.get("refresh")))
+                        out["emails_found"] = getattr(summary, "with_email", None)
+                    elif kind == "website":
+                        rows = await service.score_websites(ids, refresh=bool(ctx.params.get("refresh")), on_progress=ctx.log)
+                        out["websites_scored"] = len(rows)
+                    elif kind == "ads":
+                        rows = await service.detect_ads(ids, refresh=bool(ctx.params.get("refresh")), on_progress=ctx.log)
+                        out["ads_active"] = sum(1 for r in rows if r.get("status") in ("Active", "Likely"))
+                        for r in rows:
+                            ctx.log(f"  {r['name']}: ads {r['status']}" + (f" ({r['evidence'][0]})" if r.get("evidence") else ""))
+                    ctx.step_done(kind)
+            finally:
+                await service.aclose()
+        labels = [r["label"] for r in service.rescore(ids)]
+        out.update(hot=labels.count("Hot"), warm=labels.count("Warm"))
+        ctx.log(f"done: {out}")
+        return out
+
+    return {"discover": discover, "preview": preview, "outreach": outreach, "send": send, "enrich": enrich}

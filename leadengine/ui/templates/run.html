@@ -9,6 +9,7 @@
  <div class="grid g3" style="margin-top:12px">
   {% for key, text in [('emails','Find emails'),('website','Score websites'),('ads','Detect Google Ads'),('activity','Review activity'),('fill','Fill gaps with paid API'),('towns','Also search towns'),('refresh','Ignore cache')] %}
   <label style="font-weight:500;color:var(--ink)"><input type="checkbox" name="{{ key }}" value="true" {{ 'checked' if disc.get(key, key in ['emails','website','ads','activity']) and key not in ['towns','refresh'] }}>{{ text }}</label>{% endfor %}
+  <label style="font-weight:500;color:var(--ink)" title="Leave off for big cities: Google shows businesses from the whole area"><input type="checkbox" name="area_only" value="true">Only deep-check businesses inside my ZIPs</label>
  </div>
  <div class="row" style="margin-top:16px"><button class="btn">Start scan</button><span class="muted small">Runs in the background — you can leave this page.</span></div>
 </form>{% endblock %}
