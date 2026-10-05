@@ -82,6 +82,9 @@ def _website(b: Business) -> tuple[float | None, str | None, str | None]:
         return 1.0, "only a Facebook page", None
     if flags & {"broken", "parked", "server_default_page"}:
         return 1.0, "website is down/parked", None
+    landing = getattr(b, "landing_score", None)
+    if landing is not None and (b.website_score is None or landing < b.website_score):
+        return (100 - landing) / 100, f"ad landing page score {landing}", None
     if b.website_score is None:
         return None, None, None
     return (100 - b.website_score) / 100, f"website score {b.website_score}", None

@@ -106,4 +106,18 @@ def make_handlers(settings: Settings, sf: sessionmaker[Session]) -> dict[str, Ha
         ctx.log(f"done: {out}")
         return out
 
-    return {"discover": discover, "preview": preview, "outreach": outreach, "send": send, "enrich": enrich}
+    async def sweep(ctx: JobContext) -> dict[str, Any]:
+        """Ads finder: everyone paying Google for these searches in these places."""
+        p = ctx.params
+        async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
+            service = LeadService(settings, sf, http, CreditTracker(sf, settings))
+            try:
+                return await service.ads_sweep(p["keyword"], p["locations"], variations=p.get("variations"),
+                                               landing=p.get("landing"), deep=p.get("deep"),
+                                               refresh=bool(p.get("refresh")), watch_id=p.get("watch_id"),
+                                               on_progress=ctx.log)
+            finally:
+                await service.aclose()
+
+    return {"discover": discover, "preview": preview, "outreach": outreach, "send": send, "enrich": enrich,
+            "sweep": sweep}

@@ -75,6 +75,14 @@ serp_provider = "playwright"   # playwright (free) | serpapi (1 credit per keywo
 gtm = true                     # read the site's Google Tag Manager container for hidden AW- tags
 transparency = false           # Ads Transparency Center via SerpAPI (1 credit per business)
 timeout_seconds = 15
+# Ads finder (sweep): many searches -> everyone paying Google in your area
+sweep_variations = 6           # search phrases per place (keyword, "near me", "emergency ...", Google ideas)
+sweep_delay_min = 4            # seconds between live Google searches (random in min..max, avoids captchas)
+sweep_delay_max = 9
+sweep_suggest = true           # use Google autocomplete for real phrases people search
+sweep_landing = true           # audit each advertiser's ad landing page
+sweep_deep = true              # also website score + emails for every advertiser found
+transparency_browser = false   # read Google Ads Transparency Center in the free browser (experimental)
 
 # Opportunity Score (Phase 6): weights are points out of 100 (they are re-normalised if a signal is unknown)
 [opportunity]

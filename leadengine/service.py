@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import re
+
 import asyncio
 from dataclasses import dataclass, field, replace
 from typing import Callable
@@ -615,6 +617,14 @@ class LeadService:
                         except LeadEngineError as exc:
                             say(f"  transparency check skipped: {exc}")
 
+                    if transparency is None and cfg.get("transparency_browser", False) and biz.domain:
+                        from leadengine.enrich.ads.transparency import transparency_browser
+
+                        async def tcb_compute(b=biz):
+                            return await transparency_browser(self._ready("playwright"), b.domain, today=today)
+                        transparency, _ = await cached_enrichment(repo, biz.id, "ads_transparency", ttl, tcb_compute,
+                                                                  refresh=refresh, source="browser")
+
                     plan = plans.get(biz.id)
                     snap = snapshots.get(plan) if plan else None
                     hits = match_ads(snap.ads, name=biz.name, domain=biz.domain, phone=biz.phone) if snap else []
@@ -767,6 +777,212 @@ class LeadService:
                              "subjects": [v["subject"] for v in drafts["variants"]]})
         return rows
 
+
+    # ── ads-first discovery ("sweep") ────────────────────────────────
+    async def ads_sweep(self, keyword: str, locations: list[str], *, variations: int | None = None,
+                        landing: bool | None = None, deep: bool | None = None, refresh: bool = False,
+                        watch_id: int | None = None, on_progress: Callable[[str], None] | None = None,
+                        sleep: Callable[[float], Any] | None = None) -> dict:
+        """Search many phrases in many places, collect every advertiser, audit their ad landing pages."""
+        import asyncio
+        import random
+
+        from sqlalchemy import select
+
+        from leadengine.db.models import AdSweep
+        from leadengine.enrich.ads import sweep as sw
+        from leadengine.enrich.ads.serp import SerpSnapshot, serp_browser, serp_serpapi
+        from leadengine.suggest import keyword_suggestions
+
+        say = on_progress or (lambda _m: None)
+        pause = sleep or asyncio.sleep
+        cfg = self.settings.section("ads")
+        source = str(cfg.get("serp_provider", "playwright")).lower()
+        if source == "none":
+            raise LeadEngineError("[ads] serp_provider is 'none' - set it to playwright (free) or serpapi")
+        places = [p for p in (resolve_place(x) for x in locations) if p]
+        if not places:
+            raise LeadEngineError("no valid places (use ZIPs or 'City, ST')")
+        n = int(variations or cfg.get("sweep_variations", 6))
+        ideas: list[str] = []
+        if cfg.get("sweep_suggest", True) and self.http is not None:
+            ideas = [x["text"] for x in await keyword_suggestions(keyword, http=self.http) if x["source"] == "google"]
+        queries = sw.variations(keyword, n, extra=ideas)
+        ttl = self.settings.ttl("ads")
+        say(f"Ads finder: {len(queries)} search phrase(s) x {len(places)} place(s) = "
+            f"{len(queries) * (len(places)) + len(places)} Google searches ({source})")
+
+        snaps: list[SerpSnapshot] = []
+        searches = failed = live = 0
+        blocked = False
+        for city, state, label in places:
+            for q, add_city in [(q, False) for q in queries] + [(keyword, True)]:
+                if blocked:
+                    break
+                tag = f"{q} {city}" if add_city else q
+                loc_key = f"{city}|{state}"
+                with self._sf() as session:
+                    cached = None if refresh else Repository(session).get_serp("sweep:" + tag, loc_key, source, ttl)
+                    snap = SerpSnapshot.from_dict(cached.payload) if cached is not None else None
+                if snap is None:
+                    if live:
+                        await pause(random.uniform(float(cfg.get("sweep_delay_min", 4)), float(cfg.get("sweep_delay_max", 9))))
+                    live += 1
+                    try:
+                        if source == "serpapi":
+                            snap = await serp_serpapi(self._ready("serpapi"), q, city, state, add_city=add_city)
+                        else:
+                            prov = self._ready("playwright")
+                            snap = await serp_browser(prov, q, city, state, prov.base_url, add_city=add_city)
+                    except LeadEngineError as exc:
+                        snap = SerpSnapshot(q, label, source, error=str(exc))
+                    snap.keyword = tag
+                    if not snap.error:
+                        with self._sf() as session:
+                            Repository(session).save_serp("sweep:" + tag, loc_key, source, snap.as_dict())
+                            session.commit()
+                searches += 1
+                snap.location = label
+                if snap.error:
+                    failed += 1
+                    say(f"  {tag} @ {label}: {snap.error}")
+                    if "captcha" in snap.error.lower():
+                        blocked = True
+                        say("  Google is asking for a captcha - stopping here (results so far are kept). "
+                            "Try later or add proxies.")
+                    continue
+                say(f"  {tag} @ {label}: {len(snap.ads)} ad(s)")
+                snaps.append(snap)
+
+        advertisers = sw.aggregate(snaps)
+        say(f"Found {len(advertisers)} advertiser(s) in {searches - failed} successful searches")
+        rows: list[dict] = []
+        ids: list[int] = []
+        with self._sf() as session:
+            repo = Repository(session)
+            prev = session.scalar(select(AdSweep).where(AdSweep.keyword == keyword.strip().lower())
+                                  .order_by(AdSweep.id.desc()).limit(1))
+            seen_before = {a.get("business_id") for a in (prev.advertisers or [])} if prev else set()
+            for adv in advertisers:
+                biz = match_advertiser(session, adv)
+                if biz is None:
+                    first_city, _, first_state = (sorted(adv.locations)[0] if adv.locations else ", ").partition(", ")
+                    site = f"https://{adv.domain}" if adv.domain else None
+                    biz = repo.upsert_business(BusinessRecord(
+                        name=adv.name, provider="google_ads", provider_id=adv.key, website=site, phone=adv.phone,
+                        city=first_city or None, state=first_state or None))
+                    session.flush()
+                evidence = sw.evidence_lines(adv, max(1, searches - failed))
+                old = repo.latest_enrichment(biz.id, "ads", fresh_only=False)
+                old_ev = [e for e in ((old.payload or {}).get("evidence") or [])] if old else []
+                payload = {"status": "Active", "lsa": "lsa" in adv.kinds or bool(biz.lsa), "confidence": 95,
+                           "evidence": evidence + [e for e in old_ev if e not in evidence][:4],
+                           "meta_ads": bool(biz.meta_ads), "google_ads_ids": [], "keyword": keyword,
+                           "sweep": adv.as_dict()}
+                repo.set_enrichment(biz.id, "ads", payload, ttl_days=ttl, source="sweep")
+                biz.ads_status, biz.ads_confidence = "Active", 95
+                biz.lsa = payload["lsa"]
+                ids.append(biz.id)
+                rows.append({"business_id": biz.id, "name": biz.name, "domain": adv.domain, "kinds": sorted(adv.kinds),
+                             "hits": adv.hits, "best_position": adv.best_position, "queries": sorted(adv.queries)[:8],
+                             "landing_url": (adv.landing_urls or [None])[0], "ad_title": (adv.titles or [None])[0],
+                             "new": bool(prev) and biz.id not in seen_before})
+            record = AdSweep(keyword=keyword.strip().lower(), locations=[p[2] for p in places], queries=queries,
+                             searches=searches, failed=failed, advertisers=rows, watch_id=watch_id)
+            session.add(record)
+            session.commit()
+            sweep_id = record.id
+
+        if (cfg.get("sweep_landing", True) if landing is None else landing) and rows:
+            await self.audit_landings([r for r in rows if r.get("landing_url") or r.get("domain")], on_progress=say)
+        if (cfg.get("sweep_deep", True) if deep is None else deep) and ids:
+            say(f"Scoring {len(ids)} advertiser websites and finding emails...")
+            await self.score_websites(ids, on_progress=say)
+            await self.find_emails(ids)
+        labels = {r["id"]: r["label"] for r in self.rescore(ids)} if ids else {}
+        new = sum(1 for r in rows if r["new"])
+        say(f"Done: {len(rows)} advertisers, {sum(1 for v in labels.values() if v == 'Hot')} Hot"
+            + (f", {new} new since the last sweep" if new else ""))
+        return {"sweep_id": sweep_id, "searches": searches, "failed": failed, "advertisers": len(rows), "new": new,
+                "hot": sum(1 for v in labels.values() if v == "Hot"), "blocked": blocked, "link": f"/ads/{sweep_id}"}
+
+    async def audit_landings(self, rows: list[dict], *, on_progress: Callable[[str], None] | None = None) -> int:
+        """Audit the page each advertiser's ads point to; stores enrichment 'landing' + business.landing_score."""
+        from leadengine.enrich.ads.landing import audit_landing
+        from leadengine.enrich.website.render import WebsiteRenderer
+
+        say = on_progress or (lambda _m: None)
+        renderer = WebsiteRenderer()
+        shots = self.settings.root / "data" / "screenshots"
+        done = 0
+        try:
+            for r in rows:
+                url = r.get("landing_url") or (f"https://{r['domain']}" if r.get("domain") else None)
+                if not url:
+                    continue
+                say(f"  landing page: {url}")
+                out = await audit_landing(self.http, url, ad_title=r.get("ad_title"), renderer=renderer,
+                                          pagespeed_key=self.settings.pagespeed_api_key,
+                                          shot_path=shots / f"landing-{r['business_id']}.jpg")
+                with self._sf() as session:
+                    repo = Repository(session)
+                    biz = repo.get_business(r["business_id"])
+                    if biz is None:
+                        continue
+                    repo.set_enrichment(biz.id, "landing", out, ttl_days=self.settings.ttl("website"), source="landing")
+                    biz.landing_score = out.get("score")
+                    title = ((out.get("facts") or {}).get("title") or "").strip()
+                    if biz.name == r.get("domain") and title:          # search-ad-only advertiser: use the site name
+                        biz.name = re.split(r"\s[|\-–—:]\s", title)[0][:120] or biz.name
+                    session.commit()
+                done += 1
+        finally:
+            await renderer.aclose()
+        return done
+
+def resolve_place(text: str) -> tuple[str, str, str] | None:
+    """'10001' / 'New York, NY' / 'Astoria' -> (city, state, label) using the bundled ZIP data."""
+    from leadengine.normalize import normalize_zip
+
+    t = (text or "").strip()
+    if not t:
+        return None
+    try:
+        z = zip_directory().get(normalize_zip(t))
+        return (z.city, z.state, z.label) if z else None
+    except ValueError:
+        pass
+    city, _, state = t.partition(",")
+    city, state = city.strip(), state.strip().upper()[:2]
+    if state:
+        return city, state, f"{city}, {state}"
+    best = zip_directory().by_city(city)
+    return (best[0].city, best[0].state, best[0].label) if best else None
+
+
+def match_advertiser(session: Session, adv) -> Business | None:
+    """Same business already in the database? Domain first, then phone, then a very similar name."""
+    from sqlalchemy import select
+
+    from leadengine.enrich.ads.serp import name_similarity
+    from leadengine.normalize import normalize_phone
+
+    if adv.domain:
+        b = session.scalar(select(Business).where(Business.domain == adv.domain)
+                           .order_by(Business.review_count.desc().nulls_last()).limit(1))
+        if b is not None:
+            return b
+    phone = normalize_phone(adv.phone)
+    if phone:
+        b = session.scalar(select(Business).where(Business.phone_norm == phone).limit(1))
+        if b is not None:
+            return b
+    if adv.name and not (adv.domain and adv.name == adv.domain):
+        states = {loc.rsplit(", ", 1)[-1] for loc in adv.locations}
+        for b in session.scalars(select(Business).where(Business.state.in_(states)) if states else select(Business)):
+            if name_similarity(b.name, adv.name) >= 0.8 and len(adv.name.split()) >= 2:
+                return b
+    return None
 
 def fill_location(biz: Business) -> bool:
     """Maps cards often lack city/ZIP ("91-01 120th St"); take them from the nearest ZIP centre."""

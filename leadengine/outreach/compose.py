@@ -86,6 +86,9 @@ def _issue_lines(f: OutreachFacts, n: int) -> list[str]:
 
 
 def _ads_line(f: OutreachFacts) -> str | None:
+    if f.landing_issues and f.ads_status in ("Active", "Likely"):
+        return (f"You're paying for Google Ads, but the page those ads send people to has a problem: "
+                f"{f.landing_issues[0]}. Every paid click that lands there and leaves is money spent twice.")
     if f.ads_status in ("Active", "Likely") and f.no_website:
         return ("It also looks like you're paying for Google Ads - without a site of your own, that paid traffic "
                 "lands somewhere you can't control or measure.")

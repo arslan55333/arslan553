@@ -900,6 +900,51 @@ def _print_new_log(sf, job_id: int, printed: dict) -> None:
     printed["n"] = len(lines)
 
 
+@app.command()
+def sweep(
+    keyword: str = typer.Argument(..., help='e.g. "dumpster rental"'),
+    zips: list[str] = typer.Option(None, "--zip", "-z", help="ZIP code(s)"),
+    city: list[str] = typer.Option(None, "--city", help='"City, ST" (repeatable)'),
+    variations: Optional[int] = typer.Option(None, "--variations", "-n", help="Search phrases per place"),
+    landing: Optional[bool] = typer.Option(None, "--landing/--no-landing", help="Audit ad landing pages"),
+    deep: Optional[bool] = typer.Option(None, "--deep/--no-deep", help="Website score + emails for advertisers"),
+    refresh: bool = typer.Option(False, "--refresh"),
+) -> None:
+    """Ads finder: everyone paying Google for KEYWORD in these places (+ landing page audit)."""
+    settings, sf = _bootstrap()
+    places = [p for z in (zips or []) for p in z.replace(",", " ").split()] + list(city or [])
+    if not places:
+        _fail('give --zip 10001 and/or --city "New York, NY"')
+
+    async def _run():
+        async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
+            service = LeadService(settings, sf, http, CreditTracker(sf, settings))
+            try:
+                return await service.ads_sweep(keyword, places, variations=variations, landing=landing, deep=deep,
+                                               refresh=refresh, on_progress=lambda m: console.print(f"[dim]{escape(m)}[/]"))
+            finally:
+                await service.aclose()
+    try:
+        out = asyncio.run(_run())
+    except LeadEngineError as exc:
+        _fail(str(exc))
+    from leadengine.db.models import AdSweep
+
+    with sf() as s:
+        sw = s.get(AdSweep, out["sweep_id"])
+        t = Table(title=f"Advertisers for '{keyword}' ({out['searches']} searches)")
+        for c in ("Advertiser", "Domain", "Types", "Seen", "Landing", "Label", "New"):
+            t.add_column(c)
+        repo = Repository(s)
+        for a in sw.advertisers or []:
+            b = repo.get_business(a["business_id"])
+            t.add_row(b.name if b else a["name"], a.get("domain") or "-", ",".join(a["kinds"]), str(a["hits"]),
+                      str(b.landing_score) if b and b.landing_score is not None else "-",
+                      (b.lead_label or "-") if b else "-", "new" if a.get("new") else "")
+    console.print(t)
+    console.print("Open the dashboard -> Ads finder for screenshots and details.")
+
+
 @app.command(name="jobs")
 def jobs_cmd(limit: int = typer.Option(20, "--limit")) -> None:
     """Recent background jobs (scans, previews, drafts, sends) and how far they got."""

@@ -25,6 +25,17 @@
   <button class="btn">Save</button></form>
   {% if events %}<ul class="clean small" style="margin-top:12px">{% for e in events %}<li><span class="muted">{{ e.at.strftime('%Y-%m-%d %H:%M') }}</span> {% if e.status %}<b>{{ e.status }}</b>{% endif %} {{ e.note or '' }}</li>{% endfor %}</ul>{% endif %}</div>
 </div>
+{% set land = enr.landing %}{% if land %}
+<div class="card" style="margin-top:16px"><h2>Ad landing page {% if land.score is not none %}score {{ land.score }}/100{% endif %}</h2>
+ <div class="grid g2"><div>
+  <p class="small">Their ad{% if land.ad_title %} “{{ land.ad_title }}”{% endif %} sends people to:
+   <a href="{{ land.final_url or land.url }}" target="_blank" rel="noopener">{{ (land.final_url or land.url)[:70] }}</a>
+   {% if land.load_ms %}<span class="muted">· loaded in {{ '%.1f'|format(land.load_ms / 1000) }}s</span>{% endif %}</p>
+  {% if land.issues %}<b class="small">Problems</b><ul class="clean small">{% for i in land.issues %}<li>{{ i }}</li>{% endfor %}</ul>{% endif %}
+  {% if land.facts %}<p class="small muted">Headline: “{{ land.facts.h1 or land.facts.title or '—' }}” · message match {{ ((land.facts.message_match or 0) * 100)|round|int }}% ·
+   {{ 'tap-to-call ✓' if land.facts.tel_links else 'no tap-to-call' }} · {{ 'form ✓' if land.facts.forms else 'no form' }}</p>{% endif %}</div>
+  <div class="shots">{% if media_url(land.screenshot) %}<a href="{{ media_url(land.screenshot) }}" target="_blank"><img src="{{ media_url(land.screenshot) }}" alt="landing page"></a>{% endif %}
+   {% if media_url(land.mobile_screenshot) %}<a href="{{ media_url(land.mobile_screenshot) }}" target="_blank"><img src="{{ media_url(land.mobile_screenshot) }}" alt="landing page on a phone"></a>{% endif %}</div></div></div>{% endif %}
 <div class="card" style="margin-top:16px"><h2>Website {% if b.website_score is not none %}score {{ b.website_score }}/100 · {{ b.website_grade }}{% endif %}</h2>
  {% if web.flags %}<p>{% for f in web.flags %}<span class="badge Skip">{{ f|replace('_',' ') }}</span> {% endfor %}</p>{% endif %}
  <div class="grid g2"><div>{% if web.reasons %}<b class="small">Weaknesses</b><ul class="clean small">{% for r in web.reasons %}<li>{{ r }}</li>{% endfor %}</ul>{% endif %}

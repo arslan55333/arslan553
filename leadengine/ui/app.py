@@ -202,6 +202,41 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
                 s.commit()
         return out
 
+    # ── Ads finder (ads-first discovery) ─────────────────────────────
+    @app.get("/ads", response_class=HTMLResponse)
+    def ads_page(request: Request):
+        from leadengine.db.models import AdSweep
+
+        with sf() as s:
+            sweeps = list(s.scalars(select(AdSweep).order_by(AdSweep.id.desc()).limit(30)))
+        return render(request, "ads.html", sweeps=sweeps, cfg=settings.section("ads"))
+
+    @app.post("/ads")
+    def ads_submit(keyword: str = Form(...), places: str = Form(...), variations: int = Form(6),
+                   landing: bool = Form(False), deep: bool = Form(False), refresh: bool = Form(False)):
+        locs = [x.strip() for x in places.replace(";", "\n").splitlines() if x.strip()]
+        locs = [p for x in locs for p in ([x] if "," in x else x.split())]
+        if not keyword.strip() or not locs:
+            raise HTTPException(400, "Enter a keyword and at least one place")
+        job_id = jobs.enqueue(sf, "sweep", {"keyword": keyword.strip(), "locations": locs[:25],
+                                            "variations": max(1, min(15, variations)), "landing": landing,
+                                            "deep": deep, "refresh": refresh})
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+    @app.get("/ads/{sweep_id}", response_class=HTMLResponse)
+    def ads_detail(request: Request, sweep_id: int):
+        from leadengine.db.models import AdSweep
+
+        with sf() as s:
+            sw = s.get(AdSweep, sweep_id)
+            if sw is None:
+                raise HTTPException(404)
+            ids = [a["business_id"] for a in sw.advertisers or []]
+            repo = Repository(s)
+            biz = {b.id: b for b in (repo.get_business(i) for i in ids) if b}
+            landing = {k: e.payload for k, e in repo.latest_enrichments(ids, "landing").items()}
+        return render(request, "ads_detail.html", sw=sw, biz=biz, landing=landing)
+
     @app.get("/jobs", response_class=HTMLResponse)
     def jobs_page(request: Request):
         with sf() as s:
@@ -266,7 +301,7 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
                 raise HTTPException(404)
             repo = Repository(s)
             enr = {k: (e.payload if (e := repo.latest_enrichment(business_id, k, fresh_only=False)) else None)
-                   for k in ("website", "ads", "emails", "maps_activity")}
+                   for k in ("website", "ads", "emails", "maps_activity", "landing")}
             emails = list(s.scalars(select(Email).where(Email.business_id == business_id)
                                     .order_by(Email.is_guess, Email.confidence.desc().nulls_last())))
             status = crm.current_status(s, business_id)

@@ -143,6 +143,10 @@ SERP_HTML = """<!doctype html><html><body><div id="search">
   <div data-lsa-card="1"><div role="heading">%(lsa_name)s</div><span>Google Guaranteed</span> 4.8 (31)</div>
   <div data-lsa-card="1"><div role="heading">Other Guaranteed Pro</div><span>Google Screened</span></div>
 </div>
+<div class="local"><span>Places</span><span>Sponsored</span>
+  <div data-cid="111"><span role="heading">Herman's Recycling</span> 4.5 (13) <a href="https://hermans.example.com/">Website</a> (732) 617-0000</div>
+  <div data-cid="222"><span role="heading">Organic Pack Business</span> 5.0 (799)</div>
+</div>
 <div class="g"><a href="https://organic.example.com"><h3>Organic result</h3></a></div>
 </div></body></html>"""
 

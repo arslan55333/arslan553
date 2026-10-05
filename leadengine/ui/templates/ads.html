@@ -1,0 +1,35 @@
+{% extends "base.html" %}{% block title %}Ads finder{% endblock %}{% block body %}
+<h1>Ads finder</h1>
+<p class="sub">Finds everyone who is <b>paying Google</b> for your keyword in your area: search ads, Local Services Ads and sponsored map listings.
+It searches many real phrases ("near me", "emergency …", Google's own suggestions) in every place, then audits each advertiser's ad landing page and website.</p>
+<form method="post" action="/ads" class="card" style="max-width:900px" autocomplete="off">
+ <div class="grid g2"><div class="ac"><label>Keyword</label><input name="keyword" id="kw" required placeholder="dumpster rental" style="width:100%"><div class="ac-list" id="kw-list"></div></div>
+ <div><label>Search phrases per place</label><input name="variations" type="number" min="1" max="15" value="{{ cfg.get('sweep_variations', 6) }}" style="width:100px">
+  <span class="small muted">more = more advertisers found, but more Google searches</span></div></div>
+ <div style="margin-top:12px"><label>Places — ZIPs or "City, ST", one per line</label>
+  <textarea name="places" required placeholder="New York, NY&#10;Jersey City, NJ&#10;11368"></textarea></div>
+ <div class="row" style="margin-top:10px;gap:18px">
+  <label style="font-weight:500"><input type="checkbox" name="landing" value="true" {{ 'checked' if cfg.get('sweep_landing', True) }}>Audit ad landing pages</label>
+  <label style="font-weight:500"><input type="checkbox" name="deep" value="true" {{ 'checked' if cfg.get('sweep_deep', True) }}>Website score + emails</label>
+  <label style="font-weight:500"><input type="checkbox" name="refresh" value="true">Ignore cache</label></div>
+ <div class="row" style="margin-top:14px"><button class="btn">Find advertisers</button>
+  <span class="small muted">Runs in the background with pauses between searches so Google doesn't block you.</span></div>
+</form>
+<h2 style="margin-top:22px">Past sweeps</h2>
+<div class="scroll"><table class="card"><tr><th>#</th><th>Keyword</th><th>Places</th><th class="num">Searches</th><th class="num">Advertisers</th><th class="num">New</th><th>When</th></tr>
+{% for s in sweeps %}<tr><td><a href="/ads/{{ s.id }}">{{ s.id }}</a></td><td><a href="/ads/{{ s.id }}"><b>{{ s.keyword }}</b></a></td><td class="small">{{ (s.locations or [])|join(' · ') }}</td>
+<td class="num">{{ s.searches }}{% if s.failed %} <span class="small muted">({{ s.failed }} failed)</span>{% endif %}</td><td class="num">{{ (s.advertisers or [])|length }}</td>
+<td class="num">{{ (s.advertisers or [])|selectattr('new')|list|length }}</td><td class="small muted">{{ s.created_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>
+{% else %}<tr><td colspan="7" class="muted">No sweeps yet.</td></tr>{% endfor %}</table></div>
+<script>
+(() => {
+  const kw = document.getElementById('kw'), list = document.getElementById('kw-list'); let t;
+  kw.addEventListener('input', () => { clearTimeout(t); t = setTimeout(async () => {
+    try { const r = await fetch('/api/suggest/keyword?q=' + encodeURIComponent(kw.value)); const d = await r.json();
+      list.innerHTML = d.map(x => `<div class="ac-item">${x.text.replace(/</g,'&lt;')}</div>`).join(''); list.style.display = d.length ? 'block' : 'none';
+    } catch (e) {} }, 180); });
+  list.addEventListener('mousedown', e => { const el = e.target.closest('.ac-item'); if (el) { e.preventDefault(); kw.value = el.textContent; list.style.display = 'none'; } });
+  kw.addEventListener('blur', () => setTimeout(() => list.style.display = 'none', 150));
+})();
+</script>
+{% endblock %}

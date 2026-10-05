@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% block title %}Ads: {{ sw.keyword }}{% endblock %}{% block body %}
+<div class="row" style="justify-content:space-between"><div><h1>Who pays Google for “{{ sw.keyword }}”</h1>
+<p class="sub">{{ (sw.locations or [])|join(' · ') }} · {{ sw.searches }} searches ({{ sw.failed }} failed) · {{ sw.created_at.strftime('%Y-%m-%d %H:%M') }}</p></div>
+<a class="btn ghost" href="/ads">← Ads finder</a></div>
+<p class="small muted">Sorted by how often they showed up. Landing = the page their ad sends people to (0–100, lower = easier sell). “new” = not in the previous sweep for this keyword.</p>
+<div class="scroll"><table class="card"><tr><th>Advertiser</th><th>Ad types</th><th class="num">Seen</th><th>Landing page</th><th>Website</th><th>Label</th><th>Biggest problem</th></tr>
+{% for a in sw.advertisers or [] %}{% set b = biz.get(a.business_id) %}{% set l = landing.get(a.business_id) %}<tr>
+ <td>{% if b %}<a href="/leads/{{ b.id }}"><b>{{ b.name }}</b></a>{% else %}{{ a.name }}{% endif %}{% if a.new %} <span class="badge Hot">new</span>{% endif %}
+  <div class="small muted">{{ a.domain or '' }}{% if b and b.phone %} · {{ b.phone }}{% endif %}</div></td>
+ <td class="small">{% for k in a.kinds %}<span class="badge Active">{{ {'search':'Search ad','lsa':'LSA','places':'Map ad'}.get(k, k) }}</span> {% endfor %}
+  {% if a.best_position %}<div class="muted">best position {{ a.best_position }}</div>{% endif %}</td>
+ <td class="num" title="{{ (a.queries or [])|join(', ') }}">{{ a.hits }}×</td>
+ <td>{% if l %}<b>{{ l.score }}</b>{% if l.final_url %}<div class="small"><a href="{{ l.final_url }}" target="_blank" rel="noopener">{{ l.final_url[:40] }}</a></div>{% endif %}{% else %}<span class="small muted">–</span>{% endif %}</td>
+ <td>{% if b and b.website_score is not none %}<b>{{ b.website_score }}</b> <span class="small muted">{{ b.website_grade }}</span>{% elif b and not b.website %}<span class="badge Hot">no website</span>{% else %}<span class="small muted">–</span>{% endif %}</td>
+ <td>{% if b and b.lead_label %}<span class="badge {{ b.lead_label }}">{{ b.lead_label }} · {{ b.opportunity_score }}</span>{% endif %}</td>
+ <td class="small why">{{ (l.issues[0] if l and l.issues else (b.lead_reason if b else '')) }}</td></tr>
+{% else %}<tr><td colspan="7" class="muted">No advertisers found in these searches.</td></tr>{% endfor %}</table></div>
+{% endblock %}

@@ -37,12 +37,14 @@ _UULE_KEYS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
 @dataclass
 class SerpAd:
-    kind: str                  # search | lsa
+    kind: str                  # search | lsa | places (sponsored local-pack listing)
     title: str
     domain: str | None = None
     phone: str | None = None
     badge: str | None = None   # Google Guaranteed / Google Screened
     position: int | None = None
+    landing_url: str | None = None   # where the ad sends people (search ads)
+    text: str | None = None          # ad copy (description), for message-match checks
 
 
 @dataclass
@@ -72,6 +74,25 @@ def uule(canonical: str) -> str:
     return "w+CAIQICI" + _UULE_KEYS[len(raw) % len(_UULE_KEYS)] + base64.b64encode(raw).decode()
 
 
+GOOGLE_HOSTS = ("google.com", "googleadservices.com", "doubleclick.net", "googlesyndication.com")
+
+
+def ad_landing_url(href: str | None, pcu: str | None = None) -> str | None:
+    """Final landing page of an ad: data-pcu, the adurl= inside Google's click URL, or the plain href."""
+    for cand in (pcu, href):
+        if not cand or not cand.startswith("http"):
+            continue
+        parsed = urlparse(cand)
+        if (parsed.hostname or "").endswith(GOOGLE_HOSTS):
+            qs = parse_qs(parsed.query)
+            for key in ("adurl", "url", "q"):
+                if qs.get(key) and qs[key][0].startswith("http"):
+                    return qs[key][0]
+            continue
+        return cand
+    return None
+
+
 def ad_landing_domain(href: str | None) -> str | None:
     """Ad click URLs wrap the real landing page (adurl=...)."""
     if not href:
@@ -94,9 +115,34 @@ SERP_JS = r"""
     pos++;
     const a = el.querySelector('a[href]');
     const title = el.querySelector('[role="heading"], h3');
+    const pcuEl = el.querySelector('[data-pcu]');
     ads.push({kind: 'search', title: title ? title.innerText : (el.innerText || '').split('\n')[0],
               dtld: (el.querySelector('[data-dtld]') || el).getAttribute('data-dtld'),
-              href: a ? a.href : null, text: (el.innerText || '').slice(0, 400), position: pos});
+              href: a ? a.href : null, pcu: pcuEl ? pcuEl.getAttribute('data-pcu') : (a ? a.getAttribute('data-pcu') : null),
+              text: (el.innerText || '').slice(0, 400), position: pos});
+  }
+  // Sponsored local-pack ("Places") listings: a "Sponsored" label inside / right above a business entry
+  let p = 0;
+  const pseen = new Set();
+  for (const lbl of document.querySelectorAll('span, div')) {
+    if (lbl.children.length || (lbl.textContent || '').trim() !== 'Sponsored' || lbl.closest('[data-text-ad]')) continue;
+    let box = lbl.parentElement;
+    for (let k = 0; k < 6 && box; k++, box = box.parentElement) {
+      if (box.querySelector('[data-cid], [role="heading"], .rllt__details, [data-local-ad]')) break;
+    }
+    if (!box) continue;
+    for (const ent of box.querySelectorAll('[data-local-ad], [data-cid]')) {
+      const prev = ent.previousElementSibling;
+      const own = (ent.innerText || '').includes('Sponsored') || (prev && (prev.innerText || '').trim() === 'Sponsored')
+                  || ent.hasAttribute('data-local-ad');
+      if (!own) continue;
+      const h = ent.querySelector('[role="heading"], .OSrXXb, span[class]');
+      const name = ((ent.getAttribute('data-local-ad') || '') || (h ? h.innerText : '')).trim();
+      if (!name || pseen.has(name)) continue;
+      pseen.add(name);
+      const w = ent.querySelector('a[href^="http"]:not([href*="google."])');
+      ads.push({kind: 'places', title: name, href: w ? w.href : null, text: (ent.innerText || '').slice(0, 300), position: ++p});
+    }
   }
   // Local Services Ads: each provider card has a name and a "Google Guaranteed/Screened" badge
   let i = 0;
@@ -141,14 +187,21 @@ def ads_from_dom(raw: list[dict[str, Any]]) -> list[SerpAd]:
         if key in seen:
             continue
         seen.add(key)
-        out.append(SerpAd(a["kind"], title[:200], domain, _phone_in(a.get("text")), a.get("badge"), a.get("position")))
+        landing = ad_landing_url(a.get("href"), a.get("pcu")) if a["kind"] in ("search", "places") else None
+        if domain is None and landing:
+            domain = normalize_domain(landing)
+        out.append(SerpAd(a["kind"], title[:200], domain, _phone_in(a.get("text")), a.get("badge"), a.get("position"),
+                          landing, (a.get("text") or "")[:400] or None))
     return out
 
 
-async def serp_browser(provider, keyword: str, city: str, state: str, base_url: str = "https://www.google.com") -> SerpSnapshot:
-    """Google results page in the Playwright provider's browser (same proxies / stealth / blocking)."""
+async def serp_browser(provider, keyword: str, city: str, state: str, base_url: str = "https://www.google.com",
+                       *, add_city: bool = True) -> SerpSnapshot:
+    """Google results page in the Playwright provider's browser (same proxies / stealth / blocking).
+    ``add_city=False`` searches the keyword as typed ("dumpster rental near me") from that location."""
     loc = canonical_location(city, state)
-    url = f"{base_url}/search?q={quote_plus(keyword + ' ' + city)}&hl=en&gl=us&pws=0&uule={quote_plus(uule(loc))}"
+    q = f"{keyword} {city}" if add_city else keyword
+    url = f"{base_url}/search?q={quote_plus(q)}&hl=en&gl=us&pws=0&uule={quote_plus(uule(loc))}"
     snap = SerpSnapshot(keyword, f"{city}, {state}", "playwright")
     proxy = provider.proxies.next()
     ctx = await provider._new_context(proxy, None)
@@ -177,7 +230,8 @@ def ads_from_serpapi(data: dict[str, Any]) -> list[SerpAd]:
     for i, ad in enumerate(data.get("ads") or [], 1):
         out.append(SerpAd("search", ad.get("title", "")[:200],
                           normalize_domain(ad.get("displayed_link") or "") or ad_landing_domain(ad.get("link")),
-                          ad.get("phone"), None, ad.get("position", i)))
+                          ad.get("phone"), None, ad.get("position", i), ad_landing_url(ad.get("link")),
+                          (ad.get("description") or "")[:400] or None))
     local = data.get("local_ads") or data.get("local_services_ads") or {}
     items = local.get("ads") if isinstance(local, dict) else local
     for i, ad in enumerate(items or [], 1):
@@ -187,10 +241,10 @@ def ads_from_serpapi(data: dict[str, Any]) -> list[SerpAd]:
     return [a for a in out if a.title]
 
 
-async def serp_serpapi(provider, keyword: str, city: str, state: str) -> SerpSnapshot:
+async def serp_serpapi(provider, keyword: str, city: str, state: str, *, add_city: bool = True) -> SerpSnapshot:
     snap = SerpSnapshot(keyword, f"{city}, {state}", "serpapi")
     r = await provider.http.request("GET", "https://serpapi.com/search.json", params={
-        "engine": "google", "q": f"{keyword} {city}", "location": canonical_location(city, state).replace(",", ", "),
+        "engine": "google", "q": f"{keyword} {city}" if add_city else keyword, "location": canonical_location(city, state).replace(",", ", "),
         "gl": "us", "hl": "en", "api_key": provider.settings.serpapi_api_key})
     data = provider._json(r)
     if data.get("error") and "hasn't returned any results" not in data["error"]:

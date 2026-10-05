@@ -60,6 +60,9 @@ class OutreachFacts:
     sender_name: str = ""
     agency: str = ""
     offer: str = ""
+    landing_issues: list[str] = field(default_factory=list)   # problems on the page their ads point to
+    landing_url: str | None = None
+    landing_score: int | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -145,6 +148,8 @@ def gather(session: Session, biz: Business, cfg: dict[str, Any], brand: dict[str
     web = repo.latest_enrichment(biz.id, "website", fresh_only=False)
     ads = repo.latest_enrichment(biz.id, "ads", fresh_only=False)
     prev = repo.latest_enrichment(biz.id, "preview", fresh_only=False)
+    land = repo.latest_enrichment(biz.id, "landing", fresh_only=False)
+    land_p = (land.payload or {}) if land else {}
     web_p = (web.payload or {}) if web else {}
     ads_p = (ads.payload or {}) if ads else {}
     prev_p = (prev.payload or {}) if prev else {}
@@ -180,5 +185,8 @@ def gather(session: Session, biz: Business, cfg: dict[str, Any], brand: dict[str
         preview_url=prev_p.get("url"), preview_image=prev_p.get("screenshot"),
         sender_name=cfg.get("sender_name", ""), agency=cfg.get("agency") or brand.get("brand_name", ""),
         offer=cfg.get("offer", ""),
+        landing_issues=list(land_p.get("issues") or [])[:3],
+        landing_url=land_p.get("final_url") or land_p.get("url"),
+        landing_score=land_p.get("score"),
     )
 

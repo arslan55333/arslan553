@@ -74,6 +74,8 @@ class Business(Base):
     ads_status: Mapped[str | None] = mapped_column(String(10))       # Active | Likely | Past | None
     lsa: Mapped[bool | None] = mapped_column(Boolean)
     ads_confidence: Mapped[int | None] = mapped_column(Integer)
+    landing_score: Mapped[int | None] = mapped_column(Integer)      # 0-100, the page their ads send people to
+    seo_score: Mapped[int | None] = mapped_column(Integer)          # 0-100 local SEO (on-page + Google profile)
     meta_ads: Mapped[bool | None] = mapped_column(Boolean)
 
     # Opportunity (Phase 6)
@@ -321,3 +323,48 @@ class GridCellCache(Base):
     records: Mapped[Any] = mapped_column(JSON, nullable=True)
     exhausted: Mapped[bool] = mapped_column(Boolean, default=True)
     fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
+class AdSweep(Base):
+    """One ads-first run: which businesses advertised for which searches, where (for 'new advertiser' alerts)."""
+
+    __tablename__ = "ad_sweeps"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    keyword: Mapped[str] = mapped_column(String(200), index=True)
+    locations: Mapped[Any] = mapped_column(JSON, nullable=True)      # ["New York, NY", ...]
+    queries: Mapped[Any] = mapped_column(JSON, nullable=True)        # search phrases used
+    searches: Mapped[int | None] = mapped_column(Integer, default=0)
+    failed: Mapped[int | None] = mapped_column(Integer, default=0)
+    advertisers: Mapped[Any] = mapped_column(JSON, nullable=True)    # [{business_id, name, domain, kinds, hits, new}]
+    watch_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
+class Watch(Base):
+    """A saved keyword + places to re-check every week for new advertisers."""
+
+    __tablename__ = "watches"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    keyword: Mapped[str] = mapped_column(String(200))
+    locations: Mapped[Any] = mapped_column(JSON, nullable=True)
+    variations: Mapped[int | None] = mapped_column(Integer, default=4)
+    every_days: Mapped[int | None] = mapped_column(Integer, default=7)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Alert(Base):
+    """Something worth your attention, e.g. a business that started advertising this week."""
+
+    __tablename__ = "alerts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(30), default="new_advertiser")
+    business_id: Mapped[int | None] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    watch_id: Mapped[int | None] = mapped_column(Integer)
+    message: Mapped[str] = mapped_column(Text)
+    seen: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
