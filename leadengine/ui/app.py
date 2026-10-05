@@ -19,6 +19,7 @@ from leadengine.config import Settings
 from leadengine.credits import CreditTracker
 from leadengine.db import Business, Email, Job, OutboundEmail, Repository, Suppression, init_db, make_engine, make_session_factory, utcnow
 from leadengine.exporting import lead_rows, to_csv, to_google_sheet, to_xlsx
+from leadengine.http import HttpClient
 from leadengine.normalize import normalize_zip
 
 HERE = Path(__file__).resolve().parent
@@ -160,6 +161,46 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
                         "ads": ads, "activity": activity, "fill": fill, "refresh": refresh,
                         "scope": "area" if area_only else "all"}})
         return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+    # ── search-box suggestions (keyword + places) ───────────────────
+    app.state.http_factory = lambda: HttpClient(settings.http, user_agent=settings.user_agent)
+
+    def online_ok() -> bool:
+        return bool(settings.section("ui").get("online_suggestions", True))
+
+    @app.get("/api/suggest/keyword")
+    async def suggest_keyword(q: str = ""):
+        from leadengine.db.models import Search
+        from leadengine.suggest import keyword_suggestions
+
+        with sf() as s:
+            past = list(dict.fromkeys(s.scalars(select(Search.keyword).order_by(Search.id.desc()).limit(200))))
+        async with app.state.http_factory() as http:
+            return await keyword_suggestions(q, http=http, past=past, online=online_ok())
+
+    @app.get("/api/suggest/place")
+    async def suggest_place(q: str = ""):
+        from leadengine.suggest import offline_places, online_places
+
+        items = offline_places(q)
+        if online_ok() and len(items) < 8:
+            async with app.state.http_factory() as http:
+                items += await online_places(q, http)
+        return items[:12]
+
+    @app.get("/api/areas")
+    async def areas(zip: str):
+        from leadengine.suggest import areas_for_zip
+
+        try:
+            z = normalize_zip(zip)
+        except ValueError:
+            raise HTTPException(400, "5-digit ZIP please")
+        async with app.state.http_factory() as http:
+            with sf() as s:
+                out = await areas_for_zip(z, http=http, repo=Repository(s), online=online_ok())
+                s.commit()
+        return out
 
     @app.get("/jobs", response_class=HTMLResponse)
     def jobs_page(request: Request):

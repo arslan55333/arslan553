@@ -129,6 +129,10 @@ min_delay_seconds = 120   # pause between sends (+ random jitter)
 attach_screenshot = false
 allowed_from_domains = [] # e.g. ["getacme-web.com"] - refuses to send from any other domain
 
+# Dashboard
+[ui]
+online_suggestions = true # keyword ideas from Google autocomplete + neighbourhoods from OpenStreetMap (free)
+
 # Exports
 [export]
 google_credentials_file = ""   # service-account JSON for Google Sheets export (pip install gspread)

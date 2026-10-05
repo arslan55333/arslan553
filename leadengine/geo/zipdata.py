@@ -85,6 +85,9 @@ class ZipDirectory:
     def __len__(self) -> int:
         return len(self._rows)
 
+    def all(self):
+        return self._rows.values()
+
     def get(self, zip_code: str) -> ZipInfo | None:
         return self._rows.get(zip_code)
 

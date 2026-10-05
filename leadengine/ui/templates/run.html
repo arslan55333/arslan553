@@ -1,15 +1,121 @@
 {% extends "base.html" %}{% block title %}New scan{% endblock %}{% block body %}
-<h1>New scan</h1><p class="sub">Covers each ZIP with the adaptive grid, then scores, finds emails, checks ads and websites for the shortlist.</p>
-<form method="post" action="/run" class="card" style="max-width:760px">
- <div class="grid g2"><div><label>Keyword</label><input name="keyword" required placeholder="dumpster rental" style="width:100%"></div>
- <div><label>Source</label><select name="provider" style="width:100%">
-  <option value="playwright">Browser (free)</option><option value="serpapi">SerpAPI (paid)</option>
-  <option value="google_places">Google Places (paid)</option><option value="osm">OpenStreetMap (free)</option></select></div></div>
- <div style="margin-top:12px"><label>ZIP codes (comma or space separated)</label><textarea name="zips" required placeholder="75201 75202 75204"></textarea></div>
+<h1>New scan</h1><p class="sub">Type a service and a place, like the Google Maps search bar. Pick towns or neighbourhoods around a ZIP to cover a whole area.</p>
+<form method="post" action="/run" class="card" style="max-width:900px" id="scanform" autocomplete="off">
+ <div class="grid g2">
+  <div class="ac"><label>What (keyword)</label>
+   <input name="keyword" id="kw" required placeholder="dumpster rental" style="width:100%">
+   <div class="ac-list" id="kw-list"></div></div>
+  <div><label>Source</label><select name="provider" style="width:100%">
+   <option value="playwright">Browser (free)</option><option value="serpapi">SerpAPI (paid)</option>
+   <option value="google_places">Google Places (paid)</option><option value="osm">OpenStreetMap (free)</option></select></div>
+ </div>
+
+ <div class="ac" style="margin-top:14px"><label>Where (ZIP, city or neighbourhood)</label>
+  <input id="place" placeholder="10001  ·  Dallas, TX  ·  Astoria" style="width:100%">
+  <div class="ac-list" id="place-list"></div></div>
+ <div id="chips" class="chips"></div>
+
+ <div id="areas" class="areas" hidden>
+  <div class="row" style="justify-content:space-between"><b id="areas-title">Areas</b>
+   <span class="small"><a href="#" id="add-all">add all</a> · <a href="#" id="close-areas">close</a></span></div>
+  <p class="small muted" id="areas-note"></p>
+  <div id="areas-list" class="area-grid"></div>
+ </div>
+
+ <div style="margin-top:12px"><label>ZIP codes to scan <span class="muted small">(filled for you — you can also type)</span></label>
+  <textarea name="zips" id="zips" required placeholder="75201 75202 75204"></textarea></div>
+
  <div class="grid g3" style="margin-top:12px">
   {% for key, text in [('emails','Find emails'),('website','Score websites'),('ads','Detect Google Ads'),('activity','Review activity'),('fill','Fill gaps with paid API'),('towns','Also search towns'),('refresh','Ignore cache')] %}
   <label style="font-weight:500;color:var(--ink)"><input type="checkbox" name="{{ key }}" value="true" {{ 'checked' if disc.get(key, key in ['emails','website','ads','activity']) and key not in ['towns','refresh'] }}>{{ text }}</label>{% endfor %}
   <label style="font-weight:500;color:var(--ink)" title="Leave off for big cities: Google shows businesses from the whole area"><input type="checkbox" name="area_only" value="true">Only deep-check businesses inside my ZIPs</label>
  </div>
  <div class="row" style="margin-top:16px"><button class="btn">Start scan</button><span class="muted small">Runs in the background — you can leave this page.</span></div>
-</form>{% endblock %}
+</form>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const zipsBox = $('zips');
+  const zips = () => zipsBox.value.split(/[\s,]+/).filter(z => /^\d{5}$/.test(z));
+  function addZips(list) {
+    const cur = zips(); for (const z of list) if (!cur.includes(z)) cur.push(z);
+    zipsBox.value = cur.join(' '); renderChips();
+  }
+  function renderChips() {
+    $('chips').innerHTML = zips().map(z => `<span class="chip">${z} <a href="#" data-z="${z}" title="remove">×</a> <a href="#" data-areas="${z}" title="towns & neighbourhoods around ${z}">areas</a></span>`).join('');
+  }
+  zipsBox.addEventListener('input', renderChips);
+  $('chips').addEventListener('click', e => {
+    const a = e.target.closest('a'); if (!a) return; e.preventDefault();
+    if (a.dataset.z) { zipsBox.value = zips().filter(z => z !== a.dataset.z).join(' '); renderChips(); }
+    if (a.dataset.areas) loadAreas(a.dataset.areas);
+  });
+
+  // generic dropdown
+  function dropdown(input, list, fetcher, onPick) {
+    let items = [], idx = -1;
+    const show = () => {
+      list.innerHTML = items.map((it, i) => `<div class="ac-item${i === idx ? ' on' : ''}" data-i="${i}">${it.html}</div>`).join('');
+      list.style.display = items.length ? 'block' : 'none';
+    };
+    input.addEventListener('input', debounce(async () => { items = await fetcher(input.value); idx = -1; show(); }, 180));
+    input.addEventListener('focus', async () => { if (!input.value) { items = await fetcher(''); idx = -1; show(); } });
+    input.addEventListener('keydown', e => {
+      if (!items.length) return;
+      if (e.key === 'ArrowDown') { idx = Math.min(items.length - 1, idx + 1); show(); e.preventDefault(); }
+      else if (e.key === 'ArrowUp') { idx = Math.max(0, idx - 1); show(); e.preventDefault(); }
+      else if (e.key === 'Enter' && idx >= 0) { e.preventDefault(); onPick(items[idx]); items = []; show(); }
+      else if (e.key === 'Escape') { items = []; show(); }
+    });
+    list.addEventListener('mousedown', e => {
+      const el = e.target.closest('.ac-item'); if (!el) return; e.preventDefault();
+      onPick(items[+el.dataset.i]); items = []; show();
+    });
+    input.addEventListener('blur', () => setTimeout(() => { items = []; show(); }, 150));
+  }
+
+  dropdown($('kw'), $('kw-list'), async q => {
+    try {
+      const r = await fetch('/api/suggest/keyword?q=' + encodeURIComponent(q)); const data = await r.json();
+      return data.map(d => ({value: d.text, html: `${esc(d.text)} <span class="muted small">${esc(d.source)}</span>`}));
+    } catch (e) { return []; }
+  }, it => { $('kw').value = it.value; });
+
+  dropdown($('place'), $('place-list'), async q => {
+    if (!q.trim()) return [];
+    try {
+      const r = await fetch('/api/suggest/place?q=' + encodeURIComponent(q)); const data = await r.json();
+      return data.map(d => ({d, html: `<b>${esc(d.label)}</b> <span class="muted small">${esc(d.type)}${d.zips.length ? ' → ' + d.zips.slice(0, 4).join(', ') + (d.zips.length > 4 ? ' …' : '') : ''}</span>`}));
+    } catch (e) { return []; }
+  }, it => {
+    const d = it.d; $('place').value = '';
+    if (d.type === 'city' && d.zips.length > 6 && !confirm(`${d.label}: add all ${d.zips.length} ZIPs? (Cancel = only the biggest one + its areas)`)) {
+      addZips([d.zips[0]]); loadAreas(d.zips[0]);
+    } else { addZips(d.zips); if (d.zips.length === 1) loadAreas(d.zips[0]); }
+  });
+
+  let currentAreas = [];
+  async function loadAreas(zip) {
+    $('areas').hidden = false; $('areas-title').textContent = `Around ${zip} …`; $('areas-list').innerHTML = '<span class="muted small">loading…</span>';
+    try {
+      const r = await fetch('/api/areas?zip=' + zip); const data = await r.json();
+      currentAreas = data.areas || [];
+      $('areas-title').textContent = `Towns & neighbourhoods around ${zip}${data.label ? ' (' + data.label + ')' : ''}`;
+      $('areas-note').textContent = `Within ${data.radius_km} km. Click one to add its ZIP code(s) to the scan.`;
+      $('areas-list').innerHTML = currentAreas.map((a, i) => `<button type="button" class="area" data-i="${i}" title="ZIP ${a.zips.join(', ')}">
+          <b>${esc(a.name)}</b><span class="small muted">${esc(a.type || '')} · ${a.km} km · ${a.zips.slice(0, 3).join(', ')}${a.zips.length > 3 ? ' …' : ''}</span></button>`).join('')
+        || '<span class="muted small">No areas found.</span>';
+    } catch (e) { $('areas-list').innerHTML = '<span class="muted small">Could not load areas.</span>'; }
+  }
+  $('areas-list').addEventListener('click', e => {
+    const b = e.target.closest('.area'); if (!b) return;
+    addZips(currentAreas[+b.dataset.i].zips); b.classList.add('added');
+  });
+  $('add-all').addEventListener('click', e => { e.preventDefault(); currentAreas.forEach(a => addZips(a.zips));
+    document.querySelectorAll('.area').forEach(b => b.classList.add('added')); });
+  $('close-areas').addEventListener('click', e => { e.preventDefault(); $('areas').hidden = true; });
+})();
+</script>
+{% endblock %}
