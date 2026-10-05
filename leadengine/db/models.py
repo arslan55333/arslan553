@@ -58,6 +58,12 @@ class Business(Base):
     google_maps_url: Mapped[str | None] = mapped_column(Text)
     business_status: Mapped[str | None] = mapped_column(String(64))
     claimed: Mapped[bool | None] = mapped_column(Boolean)
+    # Best email (Phase 3) - quick filtering without opening the emails table
+    best_email: Mapped[str | None] = mapped_column(String(320))
+    email_confidence: Mapped[int | None] = mapped_column(Integer)
+    email_status: Mapped[str | None] = mapped_column(String(20))      # valid | catch_all | unknown | invalid | risky
+    owner_name: Mapped[str | None] = mapped_column(String(255))
+
     # Activity signals (Phase 2 Maps scraping)
     photo_count: Mapped[int | None] = mapped_column(Integer)
     last_review_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -148,7 +154,10 @@ class Email(Base):
     business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
     email: Mapped[str] = mapped_column(String(320))
     source: Mapped[str | None] = mapped_column(String(255))
+    method: Mapped[str | None] = mapped_column(String(30))
+    source_url: Mapped[str | None] = mapped_column(Text)
     is_guess: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_role: Mapped[bool | None] = mapped_column(Boolean)
     verification: Mapped[str | None] = mapped_column(String(50))
     confidence: Mapped[int | None] = mapped_column(Integer)
     found_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -190,5 +199,16 @@ class GeoCache(Base):
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
     lat: Mapped[float] = mapped_column(Float)
     lng: Mapped[float] = mapped_column(Float)
+    payload: Mapped[Any] = mapped_column(JSON, nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class DomainCheck(Base):
+    """Cached per-domain facts (MX records, catch-all ...) shared by all businesses."""
+
+    __tablename__ = "domain_checks"
+
+    domain: Mapped[str] = mapped_column(String(255), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(30), primary_key=True)
     payload: Mapped[Any] = mapped_column(JSON, nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

@@ -157,6 +157,7 @@ def discover(
     towns: Optional[bool] = typer.Option(None, "--towns/--no-towns", help="Also search each town in/around the ZIP"),
     activity: Optional[bool] = typer.Option(None, "--activity/--no-activity", help="Open shortlisted place pages for review dates, owner replies, claimed, photos"),
     fill: Optional[bool] = typer.Option(None, "--fill/--no-fill", help="Use the paid API to fill missing phone/website for shortlisted leads"),
+    emails: Optional[bool] = typer.Option(None, "--emails/--no-emails", help="Find emails on shortlisted websites"),
     cell_km: Optional[float] = typer.Option(None, "--cell-km", help="Starting grid cell size in km"),
     max_depth: Optional[int] = typer.Option(None, "--max-depth", help="How often saturated cells may split"),
     max_cells: Optional[int] = typer.Option(None, "--max-cells", help="Cap on searches this run"),
@@ -191,7 +192,7 @@ def discover(
             try:
                 return await service.discover(
                     keyword, zip_code, provider_name=provider, refresh=refresh, towns=towns, activity=activity,
-                    fill=fill, cell_km=cell_km, max_depth=max_depth, max_cells=max_cells,
+                    fill=fill, emails=emails, cell_km=cell_km, max_depth=max_depth, max_cells=max_cells,
                     on_progress=lambda m: console.print(f"[dim]{m}[/]"),
                 )
             finally:
@@ -206,7 +207,7 @@ def discover(
 
     rows = sorted(out.results, key=lambda t: (-(t[0].review_count or 0), t[1]))
     table = Table(title=f"{keyword} - ZIP {zip_code}  [{out.provider}]  {len(out.results)} businesses")
-    for col in ("Name", "Rating", "Reviews", "Last review", "Replies", "Claimed", "Phone", "Website", "ZIP"):
+    for col in ("Name", "Rating", "Reviews", "Last review", "Replies", "Claimed", "Phone", "Website", "Email"):
         table.add_column(col, justify="right" if col in ("Rating", "Reviews") else "left",
                          no_wrap=True, overflow="ellipsis", min_width=4 if col != "Name" else 12)
     for biz, _rank in rows[:show]:
@@ -216,7 +217,7 @@ def discover(
             f"{biz.last_review_at:%Y-%m-%d}" if biz.last_review_at else "-",
             f"{biz.owner_response_rate:.0%}" if biz.owner_response_rate is not None else "-",
             {True: "yes", False: "NO"}.get(biz.claimed, "-"),
-            biz.phone or "-", _short_url(biz.website, 26), biz.zip_code or "-",
+            biz.phone or "-", _short_url(biz.website, 26), _email_cell(biz),
         )
     console.print(table)
     if out.from_cache:
@@ -231,8 +232,132 @@ def discover(
                   f"Shortlisted: {out.shortlisted}  |  Activity pages opened: {out.activity_checked} "
                   f"(cached {out.activity_cached})  |  Paid fills: {out.filled} using {out.paid_calls} credit(s) "
                   f"(cached {out.fill_cached})")
+    if out.emails:
+        e = out.emails
+        console.print(f"Emails: {e.with_email} of {e.with_email + e.guesses_only + e.unreachable} shortlisted sites "
+                      f"(crawled {e.checked}, cached {e.cached}, unreachable {e.unreachable}, guesses only {e.guesses_only})")
     if out.skipped:
         console.print(f"[yellow]{out.skipped} record(s) skipped - see logs.[/]")
+
+
+def _email_cell(biz) -> str:
+    if not biz.best_email:
+        return "-"
+    mark = {"valid": " ✓", "invalid": " ✗", "catch_all": " ~"}.get(biz.email_status or "", "")
+    return f"{biz.best_email} ({biz.email_confidence}){mark}"
+
+
+def _print_email_rows(rows: list[dict], title: str) -> None:
+    table = Table(title=title)
+    for col in ("Business / site", "Best email", "Conf.", "Verified", "Found as", "Owner", "Other emails"):
+        table.add_column(col, no_wrap=col not in ("Other emails", "Found as"), overflow="ellipsis")
+    for r in rows:
+        best = r.get("best")
+        others = ", ".join(
+            f"{o['email']} ({o['confidence']}{', guess' if o['is_guess'] else ''})" for o in r.get("others", []))
+        table.add_row(
+            (r.get("name") or r.get("website") or "")[:34],
+            best["email"] if best else ("[dim]site unreachable[/]" if r.get("reachable") is False else "-"),
+            str(best["confidence"]) if best else "-",
+            ((best.get("verification") or {}).get("status") or "-") if best else "-",
+            best["source"] if best else "-",
+            r.get("owner") or "-",
+            others or "-",
+        )
+    console.print(table)
+
+
+@app.command()
+def emails(
+    zip_code: Optional[str] = typer.Option(None, "--zip", "-z"),
+    keyword: Optional[str] = typer.Option(None, "--keyword", "-k"),
+    min_reviews: Optional[int] = typer.Option(None, "--min-reviews"),
+    min_rating: Optional[float] = typer.Option(None, "--min-rating"),
+    all_leads: bool = typer.Option(False, "--all", help="Ignore the shortlist thresholds"),
+    limit: int = typer.Option(50, "--limit"),
+    refresh: bool = typer.Option(False, "--refresh", help="Re-crawl even if cached"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Find + verify emails for saved businesses (websites crawled once, then cached)."""
+    settings, sf = _bootstrap(verbose)
+    disc = settings.section("discovery")
+    if not all_leads and settings.section("emails").get("shortlist_only", True):
+        min_reviews = min_reviews if min_reviews is not None else int(disc.get("shortlist_min_reviews", 20))
+        min_rating = min_rating if min_rating is not None else float(disc.get("shortlist_min_rating", 4.0))
+    with sf() as s:
+        rows = Repository(s).list_businesses(keyword=keyword, zip_code=zip_code, min_rating=min_rating,
+                                             min_reviews=min_reviews, has_website=True, limit=limit)
+        ids = [b.id for b in rows]
+    if not ids:
+        _fail("no saved businesses with a website match these filters (run `discover` first, or use --all)")
+    console.print(f"Finding emails for {len(ids)} businesses...")
+
+    async def _run():
+        async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
+            return await LeadService(settings, sf, http, CreditTracker(sf, settings)).find_emails(
+                ids, refresh=refresh, on_progress=(lambda m: console.print(f"[dim]{m}[/]")) if verbose else None)
+
+    summary = asyncio.run(_run())
+    _print_email_rows(summary.rows, f"Emails ({summary.with_email}/{len(ids)} businesses)")
+    console.print(f"Crawled {summary.checked}, from cache {summary.cached}, unreachable {summary.unreachable}, "
+                  f"guesses only {summary.guesses_only}, verified deliverable {summary.valid}.")
+
+
+@app.command(name="find-email")
+def find_email(
+    sites: list[str] = typer.Argument(None, help="Domains or URLs"),
+    file: Optional[Path] = typer.Option(None, "--file", "-f", help="Text file, one domain per line"),
+    out: Optional[Path] = typer.Option(None, "--out", "-o", help="Save results to CSV"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Find emails for any list of websites (replaces v3's Bulk Email Finder)."""
+    from leadengine.enrich.emails import build_email_finder
+
+    targets = list(sites or [])
+    if file:
+        targets += [l.strip() for l in file.read_text(encoding="utf-8").splitlines()
+                    if l.strip() and not l.strip().startswith("#")]
+    if not targets:
+        _fail("give one or more domains, or --file")
+    settings, sf = _bootstrap(verbose)
+    concurrency = int(settings.section("emails").get("concurrency", 5))
+
+    async def _run():
+        async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
+            with sf() as s:
+                finder = build_email_finder(settings, http, Repository(s))
+                sem = asyncio.Semaphore(concurrency)
+
+                async def one(site):
+                    async with sem:
+                        return await finder.find(site)
+                try:
+                    reports = await asyncio.gather(*(one(t) for t in targets))
+                finally:
+                    await finder.crawler.aclose()
+                s.commit()
+                return reports
+
+    reports = asyncio.run(_run())
+    rows = []
+    for rep in reports:
+        d = rep.as_dict()
+        rows.append({"website": rep.website, "best": d["best"], "reachable": rep.reachable,
+                     "owner": rep.people[0]["name"] if rep.people else None,
+                     "others": [e for e in d["emails"] if not d["best"] or e["email"] != d["best"]["email"]][:3]})
+    _print_email_rows(rows, f"Email finder ({sum(1 for r in rows if r['best'])}/{len(rows)} found)")
+    if out:
+        with out.open("w", newline="", encoding="utf-8-sig") as f:
+            w = csv.writer(f)
+            w.writerow(["website", "email", "confidence", "verification", "source", "is_guess", "owner"])
+            for rep in reports:
+                owner = rep.people[0]["name"] if rep.people else ""
+                if not rep.emails:
+                    w.writerow([rep.website, "", "", "", "unreachable" if not rep.reachable else "none found", "", owner])
+                for e in rep.emails:
+                    w.writerow([rep.website, e.email, e.confidence, (e.verification or {}).get("status", ""),
+                                e.source, "yes" if e.is_guess else "", owner])
+        console.print(f"[green]Saved ->[/] {out}")
 
 
 @app.command(name="zip")
@@ -362,7 +487,8 @@ def export(
     settings, sf = _bootstrap()
     with sf() as s:
         rows = Repository(s).list_businesses(keyword=keyword, zip_code=zip_code)
-    fields = ["id", "place_id", "data_id", "name", "categories", "rating", "review_count", "last_review_at",
+    fields = ["id", "place_id", "data_id", "name", "best_email", "email_confidence", "email_status", "owner_name",
+              "categories", "rating", "review_count", "last_review_at",
               "recent_review_dates", "owner_response_rate", "claimed", "photo_count", "maps_ad_seen",
               "phone", "website", "domain", "address", "city", "state", "zip_code", "lat", "lng",
               "google_maps_url", "first_seen", "last_seen"]

@@ -25,6 +25,7 @@ DEFAULT_TTL_DAYS: dict[str, float] = {
     "geocode": 365,
     "activity": 14,
     "paid_place": 30,
+    "domain": 30,
     "default": 30,
 }
 
@@ -67,6 +68,7 @@ class Settings:
     sections: dict[str, dict[str, Any]] = field(default_factory=dict)  # other config.toml tables
     proxy_list: str = ""
     proxy_file: str = ""
+    reacher_secret: str = ""
 
     def ttl(self, kind: str) -> float:
         """Freshness window in days for a cached data kind."""
@@ -130,6 +132,7 @@ class Settings:
                       if isinstance(v, dict) and k not in ("http", "providers", "cache", "general")},
             proxy_list=env.get("PROXIES", ""),
             proxy_file=env.get("PROXY_FILE", ""),
+            reacher_secret=env.get("REACHER_SECRET", ""),
         )
 
 

@@ -46,6 +46,18 @@ class SearchOutcome:
 
 
 @dataclass
+class EmailRunSummary:
+    checked: int = 0          # websites crawled now
+    cached: int = 0           # results reused from cache
+    with_email: int = 0       # businesses with at least one found (not guessed) email
+    valid: int = 0            # best email verified deliverable (smtp/reacher)
+    guesses_only: int = 0     # nothing found, only pattern guesses
+    no_website: int = 0
+    unreachable: int = 0
+    rows: list[dict] = field(default_factory=list)   # per business, for display
+
+
+@dataclass
 class DiscoverOutcome:
     search_id: int
     provider: str
@@ -62,6 +74,7 @@ class DiscoverOutcome:
     filled: int = 0
     fill_cached: int = 0
     paid_calls: int = 0
+    emails: EmailRunSummary | None = None
     skipped: int = 0
 
 
@@ -173,6 +186,7 @@ class LeadService:
         towns: bool | None = None,
         activity: bool | None = None,
         fill: bool | None = None,
+        emails: bool | None = None,
         cell_km: float | None = None,
         max_depth: int | None = None,
         max_cells: int | None = None,
@@ -184,6 +198,7 @@ class LeadService:
         towns = cfg.get("towns", False) if towns is None else towns
         activity = cfg.get("activity", True) if activity is None else activity
         fill = cfg.get("fill_missing", True) if fill is None else fill
+        emails = cfg.get("emails", True) if emails is None else emails
 
         info = zip_directory().get(zip_code)
         with self._sf() as session:
@@ -267,8 +282,14 @@ class LeadService:
                 filled, cached, calls = await self.fill_missing(repo, shortlist, cfg)
                 outcome.filled, outcome.fill_cached, outcome.paid_calls = filled, cached, calls
                 session.commit()
+            shortlist_ids = [b.id for b in shortlist]
             outcome.results = repo.search_results(outcome.search_id)
-            return outcome
+        if emails and shortlist_ids:
+            say(f"Finding emails for {len(shortlist_ids)} shortlisted websites...")
+            outcome.emails = await self.find_emails(shortlist_ids)
+            with self._sf() as session:
+                outcome.results = Repository(session).search_results(outcome.search_id)
+        return outcome
 
     async def enrich_activity(self, repo: Repository, provider: PlaywrightMapsProvider,
                               businesses: list[Business]) -> tuple[int, int]:
@@ -340,6 +361,80 @@ class LeadService:
                 repo.session.commit()
                 filled += 1
         return filled, cached, calls
+
+
+    # ── emails (Phase 3) ─────────────────────────────────────────────
+    async def find_emails(self, business_ids: list[int], *, refresh: bool = False,
+                          on_progress: Callable[[str], None] | None = None) -> EmailRunSummary:
+        """Crawl each business website for emails (cached per business), store and score them."""
+        from leadengine.enrich.emails import build_email_finder
+
+        say = on_progress or (lambda _m: None)
+        cfg = self.settings.section("emails")
+        summary = EmailRunSummary()
+        with self._sf() as session:
+            repo = Repository(session)
+            finder = build_email_finder(self.settings, self.http, repo)
+            sem = asyncio.Semaphore(int(cfg.get("concurrency", 5)))
+            businesses = [b for b in (repo.get_business(i) for i in business_ids) if b is not None]
+
+            async def one(biz: Business) -> None:
+                if not biz.website:
+                    summary.no_website += 1
+                    return
+                async with sem:
+                    async def compute():
+                        say(f"  crawling {biz.website}")
+                        return (await finder.find(biz.website, owner_hint=biz.owner_name)).as_dict()
+                    try:
+                        payload, hit = await cached_enrichment(
+                            repo, biz.id, "emails", self.settings.ttl("emails"), compute, refresh=refresh,
+                            source="crawler",
+                            ttl_for=lambda p: self.settings.ttl("emails") if p.get("reachable") else 1.0)
+                    except Exception as exc:
+                        log.warning("email search failed", extra={"data": {"name": biz.name, "error": str(exc)[:150]}})
+                        summary.unreachable += 1
+                        return
+                summary.cached += hit
+                summary.checked += not hit
+                self._store_emails(repo, biz, payload, summary)
+                session.commit()
+
+            try:
+                await asyncio.gather(*(one(b) for b in businesses))
+            finally:
+                await finder.crawler.aclose()
+            session.commit()
+        return summary
+
+    def _store_emails(self, repo: Repository, biz: Business, payload: dict, summary: EmailRunSummary) -> None:
+        if not payload.get("reachable"):
+            summary.unreachable += 1
+        emails = payload.get("emails") or []
+        repo.save_emails(biz.id, [{
+            "email": e["email"], "source": e["source"][:255], "method": e["method"], "source_url": e["source_url"],
+            "is_guess": e["is_guess"], "is_role": e["is_role"], "confidence": e["confidence"],
+            "verification": (e.get("verification") or {}).get("status"),
+        } for e in emails])
+        repo.set_enrichment(biz.id, "site_fetch", {
+            "reachable": payload.get("reachable"), "ssl_error": payload.get("ssl_error"),
+            "redirected_to": payload.get("redirected_to"), "pages": payload.get("pages_crawled"),
+            "facebook": payload.get("facebook_urls")}, ttl_days=self.settings.ttl("website"), source="crawler")
+        best = payload.get("best")
+        people = payload.get("people") or []
+        if people and not biz.owner_name:
+            biz.owner_name = people[0]["name"]
+        if best:
+            biz.best_email = best["email"]
+            biz.email_confidence = best["confidence"]
+            biz.email_status = (best.get("verification") or {}).get("status")
+            summary.with_email += 1
+            summary.valid += biz.email_status == "valid"
+        elif any(e["is_guess"] for e in emails):
+            summary.guesses_only += 1
+        summary.rows.append({"name": biz.name, "website": biz.website, "best": best, "owner": biz.owner_name,
+                             "others": [e for e in emails if not best or e["email"] != best["email"]][:3],
+                             "reachable": payload.get("reachable")})
 
 
 def apply_activity(biz: Business, payload: dict) -> None:

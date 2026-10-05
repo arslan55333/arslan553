@@ -12,6 +12,7 @@ from leadengine.db.models import (
     ApiUsage,
     Business,
     BusinessSource,
+    DomainCheck,
     Email,
     Enrichment,
     GeoCache,
@@ -288,6 +289,35 @@ class Repository:
         self.session.add(row)
         self.session.flush()
         return row
+
+    # ── Domain checks (MX, catch-all) ────────────────────────────────
+    def get_domain_check(self, domain: str, kind: str, ttl_days: float) -> DomainCheck | None:
+        row = self.session.get(DomainCheck, (domain, kind))
+        return row if row and row.fetched_at >= _cutoff(ttl_days) else None
+
+    def set_domain_check(self, domain: str, kind: str, payload: Any) -> None:
+        row = self.session.get(DomainCheck, (domain, kind)) or DomainCheck(domain=domain, kind=kind)
+        row.payload, row.fetched_at = payload, utcnow()
+        self.session.add(row)
+        self.session.flush()
+
+    # ── Emails ───────────────────────────────────────────────────────
+    def save_emails(self, business_id: int, rows: list[dict[str, Any]]) -> None:
+        """Upsert this business's emails (keyed by address)."""
+        existing = {e.email: e for e in self.session.scalars(select(Email).where(Email.business_id == business_id))}
+        now = utcnow()
+        for r in rows:
+            row = existing.get(r["email"]) or Email(business_id=business_id, email=r["email"], found_at=now)
+            for key in ("source", "method", "source_url", "is_guess", "is_role", "verification", "confidence"):
+                if key in r:
+                    setattr(row, key, r[key])
+            row.checked_at = now
+            self.session.add(row)
+        self.session.flush()
+
+    def emails_for(self, business_id: int) -> list[Email]:
+        return list(self.session.scalars(
+            select(Email).where(Email.business_id == business_id).order_by(Email.confidence.desc().nulls_last())))
 
     # ── Stats ────────────────────────────────────────────────────────
     def stats(self) -> dict[str, int]:

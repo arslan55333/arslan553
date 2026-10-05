@@ -10,6 +10,7 @@ website = 30       # website checks (Phase 4)
 emails = 30        # email extraction (Phase 3)
 ads = 7            # ads detection (Phase 5)
 geocode = 365      # ZIP -> coordinates (fallback only; ZIPs are bundled offline)
+domain = 30        # per-domain MX / catch-all results
 activity = 14      # review dates / owner replies / claimed / photos from the place page
 paid_place = 30    # paid API lookups used to fill missing phone/website
 default = 30
@@ -37,6 +38,22 @@ activity = true           # open shortlisted place pages: review dates, owner re
 fill_missing = true       # use the paid provider only for shortlisted leads missing phone/website
 fill_provider = "serpapi"
 max_fill = 25             # max paid lookups per run
+emails = true             # crawl shortlisted websites for emails (see [emails])
+
+# Email finding (Phase 3)
+[emails]
+max_pages = 8             # pages per website (homepage + contact/about/team/privacy ...)
+timeout_seconds = 12
+concurrency = 5           # websites crawled in parallel
+facebook = true           # also read the business's Facebook page if the site links it
+guess_patterns = true     # add owner-name guesses (first@, first.last@ ...) marked as GUESSED
+verify = "mx"             # none | mx | smtp | reacher   (smtp needs port 25 - use a VPS; or run Reacher)
+verify_guesses = true
+smtp_helo = ""            # your sending domain, required for verify = "smtp"
+smtp_from = ""            # e.g. verify@yourdomain.com
+smtp_timeout_seconds = 10
+reacher_url = ""          # e.g. http://your-vps:8080 (self-hosted Reacher)
+shortlist_only = true     # `emails` command: only businesses passing the discovery shortlist
 
 [proxy]
 max_failures = 3          # failures before a proxy is benched

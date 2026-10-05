@@ -74,7 +74,7 @@ class HttpClient:
                     if self.settings.delay_seconds:
                         await self._sleep(self.settings.delay_seconds)
             except (httpx.TimeoutException, httpx.TransportError) as exc:
-                if attempt >= retries:
+                if attempt >= retries or "CERTIFICATE_VERIFY_FAILED" in str(exc):  # retrying won't fix a bad cert
                     raise NetworkError(f"{method} {host} failed after {attempt + 1} tries: {type(exc).__name__}") from exc
                 log.warning("network error, retrying", extra={"data": {"host": host, "attempt": attempt + 1, "error": type(exc).__name__}})
             else:

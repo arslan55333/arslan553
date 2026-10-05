@@ -19,6 +19,8 @@ copy .env.example .env                  # macOS/Linux: cp .env.example .env
 python -m leadengine init
 python -m leadengine zip 75201                                  # offline ZIP facts + planned grid
 python -m leadengine discover "dumpster rental" --zip 75201     # whole-ZIP scan (free)
+python -m leadengine emails --zip 75201                         # find + verify emails for saved leads
+python -m leadengine find-email acme-roofing.com bestplumber.com  # any domains (old "Bulk Email Finder")
 python -m leadengine leads --min-reviews 50
 python -m leadengine export leads.csv
 python -m leadengine credits
@@ -39,9 +41,31 @@ pytest
    activity signals: newest review dates, owner reply rate, claimed status, photo count.
 6. Only shortlisted leads still missing phone/website use the paid API (SerpAPI), capped
    per run. Everything is cached — repeating a run costs nothing.
+7. Shortlisted websites are crawled for emails (see below).
 
 Options: `--towns` (also search each town), `--cell-km`, `--max-depth`, `--max-cells`,
-`--no-activity`, `--no-fill`, `--refresh`, `-p serpapi|google_places|osm|selenium`.
+`--no-activity`, `--no-fill`, `--no-emails`, `--refresh`, `-p serpapi|google_places|osm|selenium`.
+
+## Email finder (Phase 3)
+
+Per website: homepage → linked contact / about / team / privacy pages (footer links too) → standard
+paths only if not linked → the business's Facebook page if linked. Extraction covers mailto, visible
+text, Cloudflare-protected emails, schema.org JSON-LD, data attributes, JS-assembled addresses,
+HTML entities and "name [at] domain [dot] com" styles. Junk (Sentry/Wix ids, image names,
+placeholders, no-reply, platform addresses) is rejected.
+
+Every email gets a **confidence (0–100)** and a **source** ("mailto on contact page (/contact-us)").
+Emails on another company's domain (usually the web designer) score low. Owner/manager names are
+read from schema.org and about pages; pattern guesses (`first@`, `first.last@`, `info@`) are added
+and clearly marked **guessed** (capped at 35 unless verified).
+
+Verification levels (`[emails] verify` in config.toml): `mx` (default: syntax + domain accepts mail,
+null-MX aware), `smtp` (mailbox check + catch-all detection — needs outbound port 25, so run it on a
+VPS), or `reacher` (your self-hosted [Reacher](https://github.com/reacherhq/check-if-email-exists)).
+
+Benchmark v3 vs v2: `python scripts/benchmark_emails.py` (built-in sites) or
+`python scripts/benchmark_emails.py --live my_sites.txt` (your real sites). Latest result:
+`benchmarks/email_benchmark.md`.
 
 ## Providers
 

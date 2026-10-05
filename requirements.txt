@@ -5,6 +5,8 @@ python-dotenv>=1.0
 rich>=13
 typer>=0.12
 playwright>=1.45      # then: python -m playwright install chromium
+beautifulsoup4>=4.12
+dnspython>=2.6
 # Optional: legacy Selenium provider
 selenium>=4.20
 # Tests

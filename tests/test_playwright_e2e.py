@@ -139,6 +139,8 @@ def test_discover_end_to_end_with_activity_fill_and_cache(pw_settings, session_f
     serp_calls = []
 
     def serpapi(request: httpx.Request) -> httpx.Response:
+        if "serpapi.com" not in request.url.host:   # website crawls for emails: sites are offline here
+            return httpx.Response(404, text="not found")
         serp_calls.append(str(request.url))
         return httpx.Response(200, json={"place_results": {
             "title": "Filled Name", "place_id": request.url.params.get("place_id"),
@@ -175,3 +177,6 @@ def test_discover_end_to_end_with_activity_fill_and_cache(pw_settings, session_f
         assert sum(1 for b in shortlisted if b.website == "https://filled.example.com") == 2  # #8, #12
     # paid API only used for shortlisted businesses that were missing phone or website
     assert len(serp_calls) == first.paid_calls <= 3
+    # emails step ran for the shortlist (fake business websites are unreachable in this test)
+    assert first.emails is not None and first.emails.unreachable == first.shortlisted
+    assert second.emails.cached == second.shortlisted and second.emails.checked == 0

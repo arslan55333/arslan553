@@ -1,15 +1,15 @@
 # PROGRESS
 
 ## Current Status
-- Current phase: Phase 2 — Scraping engine v2 (built and self-tested, waiting for owner's live test)
-- Last completed step: Playwright Maps scraper + bundled ZIP data + adaptive grid + proxies + hybrid `discover` pipeline; 91 tests passing (6 of them drive real headless Chromium)
-- Waiting on: owner running `discover` on a real ZIP on their own PC (Google is unreachable from the build machine), then "next" for Phase 3
+- Current phase: Phase 3 — Email extraction v2 (built and self-tested)
+- Last completed step: email crawler + extractor + people/guesses + verifier (MX/SMTP/Reacher) + confidence scoring + CLI (`emails`, `find-email`, `discover --emails`); benchmark v3 6/20 vs v2 20/20 on built-in sites; 128 tests passing
+- Waiting on: owner's live tests of Phase 2 (`discover`) and Phase 3 (`benchmark_emails.py --live` on 20 real sites), then "next" for Phase 4
 
 ## Phase Checklist
 - [x] Phase 0 — Audit & plan (approved: Path B)
 - [x] Phase 1 — Foundation: storage, cache, config, provider interface (self-tested by Claude at owner's request)
 - [ ] Phase 2 — Scraping engine v2 (Playwright, ZIP grid, proxies) — built + self-tested, awaiting live run
-- [ ] Phase 3 — Email extraction v2 (+ verification, confidence)
+- [ ] Phase 3 — Email extraction v2 (+ verification, confidence) — built + self-tested, awaiting live run
 - [ ] Phase 4 — Website Score (0–100)
 - [ ] Phase 5 — Google Ads detection
 - [ ] Phase 6 — Opportunity Score & filtering
@@ -19,6 +19,40 @@
 - [ ] Phase 10 — Hardening & polish
 
 ## Phase Log (newest first)
+### Phase 3 — Email extraction v2 (2026-10-05)
+- What was done:
+  - `leadengine/enrich/emails/`: `crawl.py` (site crawler), `extract.py` (candidates), `filters.py` (junk rejection, role/free-mail/own-domain), `people.py` (owner/manager names), `guess.py` (pattern guesses), `verify.py` (MX/SMTP/Reacher), `finder.py` (pipeline + confidence).
+  - Crawl order fixed vs v3: homepage -> linked contact/about/team/privacy pages (scored by URL + link text incl. "Get in Touch", footer bonus) -> standard paths only for page types not linked -> Facebook page if linked. www/http fallbacks, redirects followed (new domain counts as own domain), broken SSL retried without verification and flagged (`ssl_error`, useful for Phase 4), 1.5 MB page cap, max pages configurable.
+  - Extraction: mailto (URL-encoded too), visible text, Cloudflare cfemail (href + data attr), JSON-LD, data-* attributes, JS string concatenation, comments, HTML entities, obfuscations ([at]/(at)/{at}/_at_/＠ and "x at y dot com"; plain "at" only with a word "dot", so "find us at facebook.com" is not an email).
+  - Filters (v3 bugs fixed): junk domains matched with subdomains (Sentry ingest, wixpress), asset names (logo@2x.png), placeholders (you@, yourname@), no-reply/system, hash/token locals.
+  - Owner/manager names from schema.org (Person, founder, employee) and text ("John Smith, Owner", "Owner: ...", "founded by ...", "Meet ...", "My name is ...").
+  - Guesses: first@, first.last@, flast@ for the top 2 people (or the learned pattern if a real address like mary.jones@ was found) + info@/contact@/office@ when nothing on the own domain was found. Always `is_guess`, capped at 35 unless verified valid.
+  - Verification: syntax/placeholder -> disposable -> MX (null-MX aware, cached per domain in new `domain_checks` table) -> optional SMTP RCPT probe with random-address catch-all detection (one connection) or self-hosted Reacher. Port-25-blocked = "unknown" with a clear reason.
+  - Confidence 0–100: method + page type + own-domain/free-mail/foreign-domain + seen on several pages + matches owner name, then adjusted by verification (valid up, invalid -> ~0, catch-all capped 75). Each email stores a human-readable source ("mailto on contact page (/contact-us)").
+  - Storage: `emails` table (method, source URL, guess, role, verification, confidence), business `best_email` / `email_confidence` / `email_status` / `owner_name`, enrichment `emails` (30-day cache, 1 day when the site was unreachable) and `site_fetch` (reachable, ssl_error, redirect, pages, Facebook) for Phase 4.
+  - CLI: `emails` (saved leads, shortlist filters by default), `find-email` (any domains / file, CSV out — replaces v3 Bulk Email Finder), `discover --emails` (on by default for shortlisted leads); `discover` table + `export` now show email + confidence.
+  - Benchmark script `scripts/benchmark_emails.py` loads the v3 extractor straight from the untouched legacy file and runs both on the same sites; `--live sites.txt` for real websites.
+- How it was done (key decisions):
+  - Facebook: logged-out pages sometimes include the email in page JSON (`\u0040`); best effort, low confidence (52) because it may be stale.
+  - Self-test found and fixed: link text "Get in Touch" (spaces) not matched; "find us at facebook.com" read as an email; names regex too permissive; retries on certificate errors; unreachable sites cached 30 days.
+- How to test: see "How to test Phase 3" below.
+- Test result (filled after I test): Claude self-test — benchmark on 20 built-in sites: **v3 6/20 correct (1 picked the web designer's email), v2 20/20 correct, 0 junk picks** (`benchmarks/email_benchmark.md`). Note: these sites were written to mirror common real-site patterns but by the same author as the code, so the live benchmark on real sites is the real judge. Live MX lookups checked (gmail.com, homedepot.com, null-MX example.com, NXDOMAIN). SMTP probe tested against a local SMTP server (valid / rejected / catch-all); from the build machine port 25 is blocked, which correctly yields "unknown". 128 tests pass.
+- Known issues / limitations:
+  - Not yet run on real websites (blocked from the build machine) — run the live benchmark.
+  - SMTP verification needs port 25 (VPS) or Reacher; default level is MX, which proves the domain takes mail but not the mailbox.
+  - Facebook often shows a login wall to logged-out visitors; expect few hits there.
+  - JavaScript-only sites (email rendered by JS frameworks) are read from the raw HTML; a browser-rendered fallback can be added in Phase 4 (Playwright is already in the project).
+
+#### How to test Phase 3 (on your PC)
+1. `pip install -e ".[dev]"` (adds beautifulsoup4, dnspython).
+2. `pytest` -> `128 passed`.
+3. `python scripts/benchmark_emails.py` -> the v3 vs v2 table on built-in sites.
+4. Make `sites.txt` with 20 real business websites (one per line, e.g. from your old v3 results) and run
+   `python scripts/benchmark_emails.py --live sites.txt` -> side-by-side v3 vs v2 with confidence; check which is right.
+5. `python -m leadengine find-email somebusiness.com anotherone.com -o found.csv`
+6. After a `discover`: `python -m leadengine emails --zip 75201` -> best email, confidence, verified status, source, owner.
+7. Optional SMTP: on a VPS set `verify = "smtp"`, `smtp_helo`, `smtp_from` in config.toml (or run Reacher and set `reacher_url` + `REACHER_SECRET`).
+
 ### Phase 2 — Scraping engine v2 (2026-10-05)
 - What was done:
   - **Playwright provider** (`providers/playwright_maps.py`, name `playwright`, free): async headless Chromium; images/fonts/media + trackers blocked; N parallel browser contexts; real-Chrome user agent; consent cookies; per-context proxy.
@@ -182,11 +216,14 @@ tests/
 - (2026-10-05) Owner asked Claude to self-test Phase 1 and continue to Phase 2 without waiting.
 - (2026-10-05) Discovery default = free Playwright; paid APIs only fill gaps for shortlisted leads (capped, cached, fill-only).
 - (2026-10-05) ZIP data bundled offline (Ready APIs CC BY 4.0 + Census Gazetteer) because census.gov is unreachable from the build machine and offline lookups are faster anyway.
+- (2026-10-05) Owner said "start" Phase 3 before live-testing Phase 2; Phase 2 live test still outstanding.
+- (2026-10-05) Email verification default = MX (works everywhere); SMTP/Reacher opt-in because port 25 is usually blocked on home connections.
+- (2026-10-05) Guessed emails are stored but never used as "best email" and capped at 35 unless verified deliverable.
 - (2026-10-05) Per-context proxies; captcha -> immediate proxy ban; without proxies a captcha stops the run with a clear message.
 
 ## Next Steps
-- Owner: run Phase 2 test steps on a real ZIP and report results / empty columns.
-- Then Phase 3 — Email extraction v2: port v3 extractor (fix the /contact queue bug), JSON-LD, cfemail, obfuscations, Facebook page, owner name + guessed patterns, MX/SMTP/catch-all verification (Reacher optional), confidence + source per email, benchmark old vs new on 20 sites.
+- Owner: run Phase 2 (`discover` on a real ZIP) and Phase 3 (live email benchmark on 20 real sites) and report.
+- Then Phase 4 — Website Score (0–100): copyright year, HTTPS/SSL validity & expiry (crawler already flags broken SSL), mobile viewport, tech stack via webappanalyzer fingerprints (old jQuery/WordPress/Flash/tables/builders), PageSpeed Insights (free key), Wayback CDX + sitemap lastmod age, conversion basics (click-to-call, forms, reviews widget, CTA), Playwright screenshot, optional AI vision rating, flags for no/broken/parked/Facebook-only sites.
 
 ### Open questions for owner
 1. Which OS and Python version do you use? (Instructions assume Windows + Python 3.11+.)
@@ -202,5 +239,6 @@ tests/
 - `LOG_LEVEL` — DEBUG / INFO / WARNING.
 - `PROXIES` — optional comma-separated proxy list (http://user:pass@host:port, host:port, host:port:user:pass, socks5://...).
 - `PROXY_FILE` — optional file with one proxy per line.
+- `REACHER_SECRET` — optional secret header for a self-hosted Reacher email verifier.
 Non-secret settings (cache days, retries, concurrency, price estimates) live in `config.toml`.
 The legacy v3 tool still keeps its own keys in `leadhunter_settings.json` (ignored by git).

@@ -31,6 +31,7 @@ async def cached_enrichment(
     *,
     refresh: bool = False,
     source: str | None = None,
+    ttl_for: Callable[[Any], float] | None = None,
 ) -> tuple[Any, bool]:
     """Return ``(payload, from_cache)``. Runs ``compute`` only when nothing fresh is stored.
 
@@ -44,6 +45,7 @@ async def cached_enrichment(
             return hit.payload, True
     repo.session.commit()  # end any open transaction before the slow network call
     payload = await compute()
-    repo.set_enrichment(business_id, kind, payload, ttl_days=ttl_days, source=source)
+    ttl = ttl_for(payload) if ttl_for is not None else ttl_days   # e.g. retry failures sooner
+    repo.set_enrichment(business_id, kind, payload, ttl_days=ttl, source=source)
     repo.session.commit()
     return payload, False
