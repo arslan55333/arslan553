@@ -36,6 +36,7 @@ class Business(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     place_id: Mapped[str | None] = mapped_column(String(255), unique=True, index=True)
+    data_id: Mapped[str | None] = mapped_column(String(64), index=True)  # Google "0x..:0x.." feature id
     dedupe_key: Mapped[str | None] = mapped_column(String(255), index=True)
 
     name: Mapped[str] = mapped_column(String(500))
@@ -57,9 +58,11 @@ class Business(Base):
     google_maps_url: Mapped[str | None] = mapped_column(Text)
     business_status: Mapped[str | None] = mapped_column(String(64))
     claimed: Mapped[bool | None] = mapped_column(Boolean)
-    # Filled in Phase 2 (richer Maps scraping)
+    # Activity signals (Phase 2 Maps scraping)
     photo_count: Mapped[int | None] = mapped_column(Integer)
     last_review_at: Mapped[datetime | None] = mapped_column(DateTime)
+    recent_review_dates: Mapped[Any] = mapped_column(JSON, nullable=True)  # newest reviews, ISO dates
+    owner_response_rate: Mapped[float | None] = mapped_column(Float)      # share of sampled reviews answered
 
     first_seen: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -104,6 +107,8 @@ class Search(Base):
     lat: Mapped[float | None] = mapped_column(Float)
     lng: Mapped[float | None] = mapped_column(Float)
     max_results: Mapped[int] = mapped_column(Integer)
+    mode: Mapped[str | None] = mapped_column(String(20), default="single")  # single | grid
+    cells: Mapped[int | None] = mapped_column(Integer)
     result_count: Mapped[int] = mapped_column(Integer, default=0)
     exhausted: Mapped[bool] = mapped_column(Boolean, default=False)
     api_calls: Mapped[int] = mapped_column(Integer, default=0)

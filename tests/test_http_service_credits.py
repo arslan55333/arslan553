@@ -137,13 +137,16 @@ def test_service_geocodes_zip_once_and_caches_it(settings, session_factory, cred
         async with make_http(handler) as http:
             p = NeedsCoords(settings, http, credits, make_records())
             service = LeadService(settings, session_factory, http, credits, providers={"serpapi": p})
+            # 75201 is in the bundled ZIP data -> no network; 99999 is not -> Nominatim once, then DB cache
             await service.search(SearchQuery("roofer", zip_code="75201"), "serpapi")
-            await service.search(SearchQuery("plumber", zip_code="75201"), "serpapi")
+            await service.search(SearchQuery("roofer", zip_code="99999"), "serpapi")
+            await service.search(SearchQuery("plumber", zip_code="99999"), "serpapi")
             return p
 
     p = run(go())
-    assert p.seen == [(32.78, -96.8), (32.78, -96.8)]
-    assert len(geo_calls) == 1 and "postalcode=75201" in geo_calls[0]
+    assert p.seen[0] == (32.7878, -96.79948)  # bundled Census centroid
+    assert p.seen[1:] == [(32.78, -96.8), (32.78, -96.8)]
+    assert len(geo_calls) == 1 and "postalcode=99999" in geo_calls[0]
 
 
 def test_one_bad_record_does_not_break_the_run(settings, session_factory, make_http):
@@ -207,7 +210,7 @@ def test_bad_geocode_response_does_not_crash(settings, session_factory, make_htt
             fake = FakeProvider(settings, http, None, make_records())
             fake.wants_coordinates = True
             service = LeadService(settings, session_factory, http, providers={"serpapi": fake})
-            return await service.search(SearchQuery("x", "75201"), "serpapi")
+            return await service.search(SearchQuery("x", "99999"), "serpapi")
 
     outcome = run(go())  # provider still runs, just without coordinates
     assert len(outcome.results) == 2

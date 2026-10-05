@@ -18,7 +18,10 @@ from leadengine.errors import LeadEngineError, ProviderAuthError, ProviderNotCon
 from leadengine.http import HttpClient
 from leadengine.log import setup_logging
 from leadengine.models import SearchQuery
+from leadengine.geo.grid import plan_cells
+from leadengine.geo.zipdata import zip_directory
 from leadengine.normalize import normalize_zip
+from leadengine.proxy import ProxyPool
 from leadengine.providers import PROVIDERS, build_provider
 from leadengine.providers.serpapi import SerpApiProvider
 from leadengine.service import LeadService
@@ -111,7 +114,11 @@ def search(
 
     async def _run():
         async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
-            return await LeadService(settings, sf, http, credits).search(query, provider, refresh=refresh)
+            service = LeadService(settings, sf, http, credits)
+            try:
+                return await service.search(query, provider, refresh=refresh)
+            finally:
+                await service.aclose()
 
     try:
         outcome = asyncio.run(_run())
@@ -143,6 +150,136 @@ def search(
 
 
 @app.command()
+def discover(
+    keyword: str = typer.Argument(..., help='What to search, e.g. "dumpster rental"'),
+    zip_code: str = typer.Option(..., "--zip", "-z", help="US ZIP code"),
+    provider: Optional[str] = typer.Option(None, "--provider", "-p", help="Discovery source (default from config: playwright)"),
+    towns: Optional[bool] = typer.Option(None, "--towns/--no-towns", help="Also search each town in/around the ZIP"),
+    activity: Optional[bool] = typer.Option(None, "--activity/--no-activity", help="Open shortlisted place pages for review dates, owner replies, claimed, photos"),
+    fill: Optional[bool] = typer.Option(None, "--fill/--no-fill", help="Use the paid API to fill missing phone/website for shortlisted leads"),
+    cell_km: Optional[float] = typer.Option(None, "--cell-km", help="Starting grid cell size in km"),
+    max_depth: Optional[int] = typer.Option(None, "--max-depth", help="How often saturated cells may split"),
+    max_cells: Optional[int] = typer.Option(None, "--max-cells", help="Cap on searches this run"),
+    show: int = typer.Option(30, "--show", help="Rows to print"),
+    refresh: bool = typer.Option(False, "--refresh", help="Ignore cached discovery"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Don't ask before spending paid credits"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Cover a whole ZIP: free adaptive-grid scraping, then paid API only for shortlisted gaps."""
+    try:
+        zip_code = normalize_zip(zip_code)
+    except ValueError as exc:
+        _fail(str(exc))
+    settings, sf = _bootstrap(verbose)
+    credits = CreditTracker(sf, settings)
+    cfg = settings.section("discovery")
+    chosen = provider or cfg.get("provider", "playwright")
+    if chosen in PROVIDERS and PROVIDERS[chosen].paid and not yes:
+        cls = PROVIDERS[chosen]
+        cells_cap = max_cells or int(cfg.get("max_cells", 40))
+        pages = max(1, cls.max_per_query // 20)
+        price = settings.provider(chosen).cost_per_call_usd
+        console.print(f"[yellow]{chosen} is a paid API.[/] A grid scan can use up to {cells_cap} cells x {pages} "
+                      f"pages = {cells_cap * pages} calls (~${cells_cap * pages * price:.2f}) if every cell is dense. "
+                      "Cached results are reused for free.")
+        if not typer.confirm("Continue?", default=False):
+            raise typer.Exit(0)
+
+    async def _run():
+        async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
+            service = LeadService(settings, sf, http, credits)
+            try:
+                return await service.discover(
+                    keyword, zip_code, provider_name=provider, refresh=refresh, towns=towns, activity=activity,
+                    fill=fill, cell_km=cell_km, max_depth=max_depth, max_cells=max_cells,
+                    on_progress=lambda m: console.print(f"[dim]{m}[/]"),
+                )
+            finally:
+                await service.aclose()
+
+    try:
+        out = asyncio.run(_run())
+    except ProviderNotConfigured as exc:
+        _fail(f"{exc}. Run `python -m leadengine providers` to see what is set up.")
+    except LeadEngineError as exc:
+        _fail(str(exc))
+
+    rows = sorted(out.results, key=lambda t: (-(t[0].review_count or 0), t[1]))
+    table = Table(title=f"{keyword} - ZIP {zip_code}  [{out.provider}]  {len(out.results)} businesses")
+    for col in ("Name", "Rating", "Reviews", "Last review", "Replies", "Claimed", "Phone", "Website", "ZIP"):
+        table.add_column(col, justify="right" if col in ("Rating", "Reviews") else "left",
+                         no_wrap=True, overflow="ellipsis", min_width=4 if col != "Name" else 12)
+    for biz, _rank in rows[:show]:
+        table.add_row(
+            biz.name[:38], f"{biz.rating:.1f}" if biz.rating is not None else "-",
+            str(biz.review_count) if biz.review_count is not None else "-",
+            f"{biz.last_review_at:%Y-%m-%d}" if biz.last_review_at else "-",
+            f"{biz.owner_response_rate:.0%}" if biz.owner_response_rate is not None else "-",
+            {True: "yes", False: "NO"}.get(biz.claimed, "-"),
+            biz.phone or "-", _short_url(biz.website, 26), biz.zip_code or "-",
+        )
+    console.print(table)
+    if out.from_cache:
+        console.print("[bold green]From CACHE[/] - discovery reused, 0 searches.")
+    elif out.grid:
+        g = out.grid
+        console.print(f"[bold cyan]Scanned[/] {g.cells_run} cell(s), split {g.cells_split}, "
+                      f"failed {g.cells_failed}, still-saturated {g.saturated_leaves}, skipped by budget {g.cells_skipped}.")
+        for err in g.errors[:3]:
+            console.print(f"[yellow]  {err}[/]")
+    console.print(f"In/near ZIP: {out.in_area}  |  Sponsored (running Maps ads): {out.sponsored}  |  "
+                  f"Shortlisted: {out.shortlisted}  |  Activity pages opened: {out.activity_checked} "
+                  f"(cached {out.activity_cached})  |  Paid fills: {out.filled} using {out.paid_calls} credit(s) "
+                  f"(cached {out.fill_cached})")
+    if out.skipped:
+        console.print(f"[yellow]{out.skipped} record(s) skipped - see logs.[/]")
+
+
+@app.command(name="zip")
+def zip_info(zip_code: str = typer.Argument(..., help="US ZIP code")) -> None:
+    """Offline facts about a ZIP: city, population, income, area, towns, suggested grid."""
+    try:
+        zip_code = normalize_zip(zip_code)
+    except ValueError as exc:
+        _fail(str(exc))
+    info = zip_directory().get(zip_code)
+    if info is None:
+        _fail(f"{zip_code} is not in the bundled ZIP data")
+    settings = Settings.load()
+    cfg = settings.section("discovery")
+    area_km = info.radius_km * (1 + float(cfg.get("area_margin", 0.15)))
+    cells = plan_cells(info.lat, info.lng, area_km, float(cfg.get("initial_cell_km", 6)))
+    def money(v): return f"${v:,}" if v else "-"
+    console.print(f"[bold]{zip_code}[/] {info.label}  ({info.county} County)")
+    console.print(f"Centre {info.lat:.5f}, {info.lng:.5f}  |  land {info.land_sqmi or '?'} sq mi  |  "
+                  f"search radius {area_km:.1f} km  |  starting grid {len(cells)} cell(s) at zoom {cells[0].zoom}")
+    extra = ""
+    if info.median_household_income:
+        extra = f"  |  median income {money(info.median_household_income)}  |  median home {money(info.median_home_value)}"
+    console.print(f"Population {info.population or 0:,}{extra}")
+    console.print("Towns: " + ", ".join(zip_directory().towns(zip_code)))
+
+
+@app.command()
+def proxies(check: bool = typer.Option(False, "--check", help="Test each proxy now")) -> None:
+    """Show configured proxies (from PROXIES / PROXY_FILE in .env) and optionally health-check them."""
+    settings = Settings.load()
+    pool = ProxyPool.from_env(settings.proxy_list, settings.proxy_file)
+    if not pool.enabled:
+        console.print("No proxies configured - running direct (fine for small runs). "
+                      "Add PROXIES=... to .env for large runs.")
+        return
+    results = asyncio.run(pool.health_check()) if check else {}
+    table = Table(title=f"Proxies ({len(pool)})")
+    table.add_column("proxy")
+    table.add_column("status")
+    for p in pool.proxies():
+        status = "-" if not check else ("[green]ok[/]" if results.get(p.label) else f"[red]dead[/] {p.last_error or ''}")
+        table.add_row(p.label, status)
+    console.print(table)
+
+
+@app.command()
 def leads(
     keyword: Optional[str] = typer.Option(None, "--keyword", "-k"),
     zip_code: Optional[str] = typer.Option(None, "--zip", "-z"),
@@ -157,13 +294,15 @@ def leads(
             keyword=keyword, zip_code=zip_code, min_rating=min_rating, min_reviews=min_reviews, limit=limit
         )
     table = Table(title=f"Saved leads ({len(rows)})")
-    for col in ("id", "Name", "Rating", "Reviews", "Phone", "Website", "ZIP", "place_id"):
-        table.add_column(col)
+    for col in ("id", "Name", "Rating", "Reviews", "Last review", "Claimed", "Phone", "Website", "ZIP"):
+        table.add_column(col, no_wrap=True, overflow="ellipsis")
     for b in rows:
         table.add_row(
             str(b.id), b.name[:40], f"{b.rating:.1f}" if b.rating is not None else "-",
-            str(b.review_count if b.review_count is not None else "-"), b.phone or "-",
-            _short_url(b.website, 28), b.zip_code or "-", (b.place_id or "-")[:16],
+            str(b.review_count if b.review_count is not None else "-"),
+            f"{b.last_review_at:%Y-%m-%d}" if b.last_review_at else "-",
+            {True: "yes", False: "NO"}.get(b.claimed, "-"), b.phone or "-",
+            _short_url(b.website, 28), b.zip_code or "-",
         )
     console.print(table)
 
@@ -223,16 +362,20 @@ def export(
     settings, sf = _bootstrap()
     with sf() as s:
         rows = Repository(s).list_businesses(keyword=keyword, zip_code=zip_code)
-    fields = ["id", "place_id", "name", "categories", "rating", "review_count", "phone", "website",
-              "domain", "address", "city", "state", "zip_code", "lat", "lng", "google_maps_url",
-              "first_seen", "last_seen"]
+    fields = ["id", "place_id", "data_id", "name", "categories", "rating", "review_count", "last_review_at",
+              "recent_review_dates", "owner_response_rate", "claimed", "photo_count", "maps_ad_seen",
+              "phone", "website", "domain", "address", "city", "state", "zip_code", "lat", "lng",
+              "google_maps_url", "first_seen", "last_seen"]
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8-sig") as f:
+    with sf() as s, path.open("w", newline="", encoding="utf-8-sig") as f:
+        repo = Repository(s)
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
         for b in rows:
-            row = {k: getattr(b, k) for k in fields}
+            row = {k: getattr(b, k, None) for k in fields}
             row["categories"] = ", ".join(b.categories or [])
+            row["recent_review_dates"] = ", ".join(b.recent_review_dates or [])
+            row["maps_ad_seen"] = "yes" if repo.latest_enrichment(b.id, "maps_sponsored") else ""
             writer.writerow(row)
     console.print(f"[green]{len(rows)} businesses ->[/] {path}")
 

@@ -39,6 +39,7 @@ class GooglePlacesProvider(Provider):
     label = "Google Places API (New)"
     paid = True
     wants_coordinates = True
+    max_per_query = 60
 
     def configured(self) -> tuple[bool, str]:
         if not self.settings.google_places_api_key:
@@ -46,13 +47,20 @@ class GooglePlacesProvider(Provider):
         return True, "ready"
 
     def _body(self, query: SearchQuery, page_size: int, token: str | None) -> dict[str, Any]:
+        text = query.keyword if query.bounds else f"{query.keyword} in {query.location_text()}"
         body: dict[str, Any] = {
-            "textQuery": f"{query.keyword} in {query.location_text()}".strip(),
+            "textQuery": text.strip(),
             "pageSize": page_size,
             "languageCode": "en",
             "regionCode": "US",
         }
-        if query.has_coordinates:
+        if query.bounds:  # grid cell: only results inside the cell
+            south, west, north, east = query.bounds
+            body["locationRestriction"] = {"rectangle": {
+                "low": {"latitude": south, "longitude": west},
+                "high": {"latitude": north, "longitude": east},
+            }}
+        elif query.has_coordinates:
             body["locationBias"] = {
                 "circle": {
                     "center": {"latitude": query.lat, "longitude": query.lng},

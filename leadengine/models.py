@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 
@@ -17,6 +18,8 @@ class SearchQuery:
     lng: float | None = None
     radius_m: int = 8000
     max_results: int = 20
+    zoom: int | None = None                                          # map zoom for this search cell
+    bounds: tuple[float, float, float, float] | None = None          # (south, west, north, east)
 
     def location_text(self) -> str:
         """Human-readable place used inside search queries."""
@@ -36,6 +39,7 @@ class BusinessRecord:
     provider: str
     provider_id: str | None = None
     place_id: str | None = None
+    data_id: str | None = None          # Google feature id "0x..:0x.." (CID is the 2nd part)
     phone: str | None = None
     website: str | None = None
     address: str | None = None
@@ -51,6 +55,11 @@ class BusinessRecord:
     google_maps_url: str | None = None
     business_status: str | None = None
     claimed: bool | None = None
+    photo_count: int | None = None
+    last_review_at: datetime | None = None
+    recent_review_dates: list[str] | None = None
+    owner_response_rate: float | None = None
+    sponsored: bool = False              # shown as an ad ("Sponsored") in the results
     rank: int | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 

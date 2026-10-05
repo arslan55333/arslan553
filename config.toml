@@ -1,7 +1,7 @@
 # LeadEngine settings (no secrets here; secrets live in .env)
 
 [general]
-default_provider = "serpapi"
+default_provider = "serpapi"   # used by `search`; `discover` uses [discovery].provider
 
 # How long cached data stays "fresh" before we pay for it again (days)
 [cache]
@@ -9,7 +9,9 @@ search = 14        # same keyword + ZIP + provider
 website = 30       # website checks (Phase 4)
 emails = 30        # email extraction (Phase 3)
 ads = 7            # ads detection (Phase 5)
-geocode = 365      # ZIP -> coordinates
+geocode = 365      # ZIP -> coordinates (fallback only; ZIPs are bundled offline)
+activity = 14      # review dates / owner replies / claimed / photos from the place page
+paid_place = 30    # paid API lookups used to fill missing phone/website
 default = 30
 
 [http]
@@ -19,8 +21,43 @@ backoff_base_seconds = 1.0   # waits 1s, 2s, 4s ... between retries
 concurrency = 5              # max parallel requests
 delay_seconds = 0.0          # extra pause after every request
 
+# Hybrid discovery: free browser scraping over an adaptive grid, paid APIs only
+# for shortlisted leads that are still missing data.
+[discovery]
+provider = "playwright"
+initial_cell_km = 6       # first grid cell size; dense cells split automatically
+max_depth = 2             # how many times a saturated cell may split (6 km -> 3 km -> 1.5 km)
+max_cells = 40            # safety cap on searches per run
+concurrency = 3           # cells searched in parallel
+area_margin = 0.15        # search a bit beyond the ZIP edge (ads/businesses near the border)
+towns = false             # also search "keyword in <town>" for towns in/around the ZIP
+shortlist_min_reviews = 20
+shortlist_min_rating = 4.0
+activity = true           # open shortlisted place pages: review dates, owner replies, claimed, photos
+fill_missing = true       # use the paid provider only for shortlisted leads missing phone/website
+fill_provider = "serpapi"
+max_fill = 25             # max paid lookups per run
+
+[proxy]
+max_failures = 3          # failures before a proxy is benched
+ban_seconds = 600
+
 # cost_per_call_usd is a list-price estimate used for the credits panel.
 # Check current pricing before relying on it.
+[providers.playwright]
+cost_per_call_usd = 0.0
+headless = true
+contexts = 3              # parallel browser contexts
+details = "missing"       # open place pages during search: "missing" fields only | "all" | "none"
+scroll_pause_s = 1.2
+max_scrolls = 40
+stale_scrolls = 4
+timeout_ms = 20000
+max_attempts = 3
+block_resources = ["image", "media", "font"]
+# executable_path = ""    # use a specific Chrome/Chromium
+# channel = "chrome"      # or use installed Google Chrome
+
 [providers.serpapi]
 cost_per_call_usd = 0.015    # paid plans ~ $75 / 5,000 searches
 monthly_free_calls = 250     # SerpAPI free plan

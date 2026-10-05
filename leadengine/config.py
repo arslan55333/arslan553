@@ -23,6 +23,8 @@ DEFAULT_TTL_DAYS: dict[str, float] = {
     "emails": 30,
     "ads": 7,
     "geocode": 365,
+    "activity": 14,
+    "paid_place": 30,
     "default": 30,
 }
 
@@ -62,6 +64,9 @@ class Settings:
     ttl_days: dict[str, float]
     http: HttpSettings
     providers: dict[str, ProviderSettings]
+    sections: dict[str, dict[str, Any]] = field(default_factory=dict)  # other config.toml tables
+    proxy_list: str = ""
+    proxy_file: str = ""
 
     def ttl(self, kind: str) -> float:
         """Freshness window in days for a cached data kind."""
@@ -69,6 +74,10 @@ class Settings:
 
     def provider(self, name: str) -> ProviderSettings:
         return self.providers.get(name, ProviderSettings())
+
+    def section(self, name: str) -> dict[str, Any]:
+        """A plain config.toml table such as ``[discovery]`` or ``[proxy]``."""
+        return self.sections.get(name, {})
 
     @property
     def user_agent(self) -> str:
@@ -117,6 +126,10 @@ class Settings:
             ttl_days={**DEFAULT_TTL_DAYS, **{k: float(v) for k, v in cfg.get("cache", {}).items()}},
             http=http,
             providers=providers,
+            sections={k: v for k, v in cfg.items()
+                      if isinstance(v, dict) and k not in ("http", "providers", "cache", "general")},
+            proxy_list=env.get("PROXIES", ""),
+            proxy_file=env.get("PROXY_FILE", ""),
         )
 
 

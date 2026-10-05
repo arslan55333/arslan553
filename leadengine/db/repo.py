@@ -32,6 +32,7 @@ from leadengine.normalize import (
 _MERGE_FIELDS = (
     "name", "phone", "website", "address", "city", "state", "zip_code", "lat", "lng",
     "rating", "review_count", "hours", "google_maps_url", "business_status", "claimed",
+    "photo_count", "last_review_at", "recent_review_dates", "owner_response_rate",
 )
 
 
@@ -45,12 +46,16 @@ class Repository:
 
     # ── Businesses ────────────────────────────────────────────────────
     def find_business(self, rec: BusinessRecord) -> Business | None:
-        """Match by place_id, then by this provider's own id, then by phone+domain."""
+        """Match by place_id, then Google data_id, then this provider's own id, then phone+domain."""
         s = self.session
         if rec.place_id:
             biz = s.scalar(select(Business).where(Business.place_id == rec.place_id))
             if biz:
                 return biz
+        if rec.data_id:
+            for cand in s.scalars(select(Business).where(Business.data_id == rec.data_id)):
+                if not (rec.place_id and cand.place_id and cand.place_id != rec.place_id):
+                    return cand
         if rec.provider_id:
             src = s.scalar(
                 select(BusinessSource).where(
@@ -69,8 +74,12 @@ class Repository:
                 return cand
         return None
 
-    def upsert_business(self, rec: BusinessRecord) -> Business:
-        """Insert or merge a provider record into the master table and store its raw payload."""
+    def upsert_business(self, rec: BusinessRecord, *, fill_only: bool = False) -> Business:
+        """Insert or merge a provider record into the master table and store its raw payload.
+
+        Normally newer non-empty values win. With ``fill_only=True`` (gap filling from a
+        secondary source) only fields that are still empty are filled.
+        """
         now = utcnow()
         if not (rec.city and rec.state and rec.zip_code):
             city, state, zip_code = parse_us_address(rec.address)
@@ -85,10 +94,15 @@ class Repository:
 
         for name in _MERGE_FIELDS:
             value = getattr(rec, name)
-            if value not in (None, "", [], {}):
-                setattr(biz, name, value)
+            if value in (None, "", [], {}):
+                continue
+            if fill_only and getattr(biz, name, None) not in (None, "", [], {}):
+                continue
+            setattr(biz, name, value)
         if rec.place_id and not biz.place_id:
             biz.place_id = rec.place_id
+        if rec.data_id and not biz.data_id:
+            biz.data_id = rec.data_id
         if rec.categories:
             merged = list(biz.categories or [])
             merged += [c for c in rec.categories if c and c not in merged]
@@ -157,8 +171,10 @@ class Repository:
         return list(self.session.scalars(stmt))
 
     # ── Searches (search-level cache) ─────────────────────────────────
-    def find_fresh_search(self, provider: str, query: SearchQuery, ttl_days: float) -> Search | None:
-        """A recent identical search that already covers ``query.max_results``."""
+    def find_fresh_search(
+        self, provider: str, query: SearchQuery, ttl_days: float, *, mode: str = "single"
+    ) -> Search | None:
+        """A recent identical search (same mode) that already covers ``query.max_results``."""
         stmt = (
             select(Search)
             .where(
@@ -167,6 +183,7 @@ class Repository:
                 Search.zip_code.is_(None) if query.zip_code is None else Search.zip_code == query.zip_code,
                 Search.location.is_(None) if query.location is None else Search.location == query.location,
                 Search.ran_at >= _cutoff(ttl_days),
+                Search.mode == mode,
             )
             .order_by(Search.ran_at.desc())
         )
@@ -183,6 +200,8 @@ class Repository:
         *,
         exhausted: bool,
         api_calls: int,
+        mode: str = "single",
+        cells: int | None = None,
     ) -> Search:
         best: dict[int, int] = {}
         for biz, rank in ranked:
@@ -199,6 +218,8 @@ class Repository:
             result_count=len(best),
             exhausted=exhausted,
             api_calls=api_calls,
+            mode=mode,
+            cells=cells,
         )
         self.session.add(search)
         self.session.flush()

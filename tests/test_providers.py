@@ -204,3 +204,27 @@ def test_parse_place_url():
 def test_unwrap_google_redirect():
     assert unwrap_google_redirect("https://www.google.com/url?q=https://acme.com/&sa=U") == "https://acme.com/"
     assert unwrap_google_redirect("https://acme.com") == "https://acme.com"
+
+
+def test_grid_cells_send_zoom_and_bounds(settings, make_http):
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "serpapi" in request.url.host:
+            seen["serp"] = parse_qs(request.url.query.decode())
+            return httpx.Response(200, json={"local_results": []})
+        seen["places"] = json.loads(request.content)
+        return httpx.Response(200, json={"places": []})
+
+    q = SearchQuery("roofer", zip_code="75201", lat=32.7, lng=-96.8, zoom=15, bounds=(32.6, -96.9, 32.8, -96.7))
+
+    async def go():
+        async with make_http(handler) as http:
+            await SerpApiProvider(settings, http).search(q)
+            await GooglePlacesProvider(settings, http).search(q)
+
+    run(go())
+    assert seen["serp"]["q"] == ["roofer"] and seen["serp"]["ll"] == ["@32.7,-96.8,15z"]
+    rect = seen["places"]["locationRestriction"]["rectangle"]
+    assert seen["places"]["textQuery"] == "roofer"
+    assert rect["low"] == {"latitude": 32.6, "longitude": -96.9} and "locationBias" not in seen["places"]

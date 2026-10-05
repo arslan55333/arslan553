@@ -30,14 +30,15 @@ class SerpApiProvider(Provider):
         params: dict[str, Any] = {
             "engine": "google_maps",
             "type": "search",
-            "q": f"{query.keyword} {query.location_text()}".strip(),
+            # inside a grid cell the map position defines the area, so search the keyword only
+            "q": query.keyword if query.zoom else f"{query.keyword} {query.location_text()}".strip(),
             "hl": "en",
             "gl": "us",
             "start": start,
             "api_key": self.settings.serpapi_api_key,
         }
         if query.has_coordinates:
-            params["ll"] = f"@{query.lat},{query.lng},13z"
+            params["ll"] = f"@{query.lat},{query.lng},{query.zoom or 13}z"
         return params
 
     async def search(self, query: SearchQuery) -> ProviderResult:
@@ -89,6 +90,7 @@ class SerpApiProvider(Provider):
             provider=self.name,
             provider_id=item.get("data_id") or place_id,
             place_id=place_id,
+            data_id=item.get("data_id"),
             phone=item.get("phone"),
             website=item.get("website"),
             address=item.get("address"),
@@ -106,6 +108,29 @@ class SerpApiProvider(Provider):
             rank=rank,
             raw=item,
         )
+
+    async def place(self, *, place_id: str | None = None, data_id: str | None = None) -> BusinessRecord | None:
+        """Look up one business (1 credit). Used to fill gaps for shortlisted leads only."""
+        params: dict[str, Any] = {
+            "engine": "google_maps", "type": "place", "hl": "en", "gl": "us",
+            "api_key": self.settings.serpapi_api_key,
+        }
+        if place_id:
+            params["place_id"] = place_id
+        elif data_id and ":" in data_id:
+            params["data_cid"] = str(int(data_id.split(":")[1], 16))  # CID = 2nd half of the feature id
+        else:
+            raise ProviderError(self.name, "place lookup needs a place_id or data_id")
+        response = await self.http.request("GET", SEARCH_URL, params=params)
+        data = self._json(response)
+        if error := data.get("error"):
+            self._record("google_maps_place", success=False, note=error[:200])
+            if response.status_code in (401, 403) or "api key" in error.lower():
+                raise ProviderAuthError(self.name, error)
+            return None
+        self._record("google_maps_place")
+        item = data.get("place_results")
+        return self.to_record(item, rank=1) if isinstance(item, dict) else None
 
     async def account(self) -> dict[str, Any]:
         """Live plan / remaining searches. This endpoint is free (uses no credits)."""

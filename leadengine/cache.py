@@ -32,12 +32,18 @@ async def cached_enrichment(
     refresh: bool = False,
     source: str | None = None,
 ) -> tuple[Any, bool]:
-    """Return ``(payload, from_cache)``. Runs ``compute`` only when nothing fresh is stored."""
+    """Return ``(payload, from_cache)``. Runs ``compute`` only when nothing fresh is stored.
+
+    The new result is committed straight away: a write transaction must never stay
+    open across the next ``await`` (SQLite would lock other writers meanwhile).
+    """
     if not refresh:
         hit = repo.latest_enrichment(business_id, kind)
         if hit is not None:
             log.debug("cache hit", extra={"data": {"business_id": business_id, "kind": kind}})
             return hit.payload, True
+    repo.session.commit()  # end any open transaction before the slow network call
     payload = await compute()
     repo.set_enrichment(business_id, kind, payload, ttl_days=ttl_days, source=source)
+    repo.session.commit()
     return payload, False

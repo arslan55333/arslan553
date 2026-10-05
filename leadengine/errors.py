@@ -25,3 +25,7 @@ class ProviderNotConfigured(ProviderError):
 
 class ProviderAuthError(ProviderError):
     """The provider rejected the API key."""
+
+
+class ProviderBlocked(ProviderError):
+    """The site showed a captcha / blocked us (try again later or use proxies)."""

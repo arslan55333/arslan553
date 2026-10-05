@@ -39,6 +39,7 @@ class OsmProvider(Provider):
     name = "osm"
     label = "OpenStreetMap Overpass (free)"
     needs_coordinates = True
+    max_per_query = 500
 
     @property
     def endpoint(self) -> str:

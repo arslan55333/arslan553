@@ -10,6 +10,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from leadengine.config import Settings
 from leadengine.db.models import ApiUsage, utcnow
+from leadengine.log import get_logger
+
+log = get_logger("credits")
 
 
 @dataclass
@@ -43,18 +46,25 @@ class CreditTracker:
         success: bool = True,
         note: str | None = None,
     ) -> None:
-        """Log one call. Failed calls are stored but cost nothing."""
+        """Log one call. Failed calls are stored but cost nothing.
+
+        Usage tracking is best effort: a storage problem is logged, never raised,
+        so it can't break a scraping run.
+        """
         price = self._settings.provider(provider).cost_per_call_usd
-        with self._sf() as s:
-            s.add(ApiUsage(
-                provider=provider,
-                endpoint=endpoint,
-                units=units,
-                cost_usd=units * price if success else 0.0,
-                success=success,
-                note=note,
-            ))
-            s.commit()
+        try:
+            with self._sf() as s:
+                s.add(ApiUsage(
+                    provider=provider,
+                    endpoint=endpoint,
+                    units=units,
+                    cost_usd=units * price if success else 0.0,
+                    success=success,
+                    note=note,
+                ))
+                s.commit()
+        except Exception:
+            log.exception("could not record API usage", extra={"data": {"provider": provider, "endpoint": endpoint}})
 
     def summary(self, now: datetime | None = None) -> list[UsageSummary]:
         now = now or utcnow()

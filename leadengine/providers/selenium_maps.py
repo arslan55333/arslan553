@@ -16,18 +16,16 @@ import random
 import re
 import time
 from typing import Any
-from urllib.parse import parse_qs, quote_plus, unquote, urlparse
+from urllib.parse import quote_plus
 
 from leadengine.errors import ProviderError
 from leadengine.log import get_logger
 from leadengine.models import BusinessRecord, SearchQuery, to_float, to_int
 from leadengine.providers.base import Provider, ProviderResult
+from leadengine.providers.maps_parser import parse_place_url, unwrap_google_redirect
 
 log = get_logger("providers.selenium")
 
-_PLACE_ID_RE = re.compile(r"!19s(ChIJ[\w-]+)")
-_DATA_ID_RE = re.compile(r"!1s(0x[0-9a-f]+:0x[0-9a-f]+)", re.I)
-_LATLNG_RE = re.compile(r"!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)")
 _CONSENT_SELECTORS = (
     "button[jsname='higCR']", "#L2AGLb", "button[aria-label*='Accept all']",
     "button[aria-label*='Reject all']", "form[action*='consent'] button",
@@ -37,32 +35,6 @@ Object.defineProperty(navigator,'webdriver',{get:()=>undefined});
 Object.defineProperty(navigator,'languages',{get:()=>['en-US','en']});
 window.chrome={runtime:{}};
 """
-
-
-def parse_place_url(url: str) -> dict[str, Any]:
-    """Extract place_id, data_id (CID) and coordinates from a Google Maps place URL."""
-    out: dict[str, Any] = {"place_id": None, "data_id": None, "lat": None, "lng": None}
-    if not url:
-        return out
-    text = unquote(url)
-    if m := _PLACE_ID_RE.search(text):
-        out["place_id"] = m.group(1)
-    if m := _DATA_ID_RE.search(text):
-        out["data_id"] = m.group(1).lower()
-    if m := _LATLNG_RE.search(text):
-        out["lat"], out["lng"] = float(m.group(1)), float(m.group(2))
-    return out
-
-
-def unwrap_google_redirect(url: str | None) -> str | None:
-    """``https://www.google.com/url?q=https://site.com&...`` -> ``https://site.com``."""
-    if not url:
-        return url
-    parsed = urlparse(url)
-    if parsed.netloc.endswith("google.com") and parsed.path == "/url":
-        target = parse_qs(parsed.query).get("q", [None])[0]
-        return target or url
-    return url
 
 
 class SeleniumMapsProvider(Provider):
@@ -223,6 +195,7 @@ class SeleniumMapsProvider(Provider):
             provider=self.name,
             provider_id=ids["data_id"] or ids["place_id"],
             place_id=ids["place_id"],
+            data_id=ids["data_id"],
             phone=phone or None,
             website=website or None,
             address=address or None,

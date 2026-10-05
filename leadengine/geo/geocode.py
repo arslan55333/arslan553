@@ -1,7 +1,7 @@
 """ZIP -> coordinates.
 
-Phase 1 uses OpenStreetMap Nominatim (free, cached for a year in the DB).
-Phase 2 switches to the bundled US Census ZCTA Gazetteer (offline, instant).
+First the bundled offline ZIP directory (instant, no network). Only ZIPs missing
+from it fall back to OpenStreetMap Nominatim (free, cached for a year in the DB).
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from leadengine.config import Settings
 from leadengine.credits import CreditTracker
 from leadengine.db.repo import Repository
 from leadengine.errors import NetworkError
+from leadengine.geo.zipdata import zip_directory
 from leadengine.http import HttpClient
 from leadengine.log import get_logger
 
@@ -27,6 +28,8 @@ async def geocode_zip(
     credits: CreditTracker | None = None,
 ) -> tuple[float, float] | None:
     """Return ``(lat, lng)`` for a US ZIP, or ``None`` if it cannot be found."""
+    if (info := zip_directory().get(zip_code)) is not None:
+        return info.lat, info.lng
     key = f"zip:{zip_code}"
     cached = repo.get_geo(key, settings.ttl("geocode"))
     if cached is not None:

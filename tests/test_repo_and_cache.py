@@ -141,3 +141,12 @@ def test_list_businesses_filters(session_factory):
         assert [b.name for b in repo.list_businesses(has_website=False)] == ["B"]
         assert [b.name for b in repo.list_businesses(keyword="Roofer")] == ["A"]
         assert len(repo.list_businesses(zip_code="75201")) == 2
+
+
+def test_fill_only_does_not_overwrite(session_factory):
+    with session_factory() as s:
+        repo = Repository(s)
+        biz = repo.upsert_business(rec(place_id="ChIJF", phone="214-555-0001", website=None, rating=4.2))
+        repo.upsert_business(rec(place_id="ChIJF", name="Other Name", phone="999-999-9999",
+                                 website="https://new.com", rating=1.0), fill_only=True)
+        assert (biz.name, biz.phone, biz.website, biz.rating) == ("Acme Dumpsters", "214-555-0001", "https://new.com", 4.2)
