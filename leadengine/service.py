@@ -75,6 +75,7 @@ class DiscoverOutcome:
     fill_cached: int = 0
     paid_calls: int = 0
     emails: EmailRunSummary | None = None
+    websites: list[dict] | None = None
     skipped: int = 0
 
 
@@ -187,6 +188,7 @@ class LeadService:
         activity: bool | None = None,
         fill: bool | None = None,
         emails: bool | None = None,
+        website: bool | None = None,
         cell_km: float | None = None,
         max_depth: int | None = None,
         max_cells: int | None = None,
@@ -199,6 +201,7 @@ class LeadService:
         activity = cfg.get("activity", True) if activity is None else activity
         fill = cfg.get("fill_missing", True) if fill is None else fill
         emails = cfg.get("emails", True) if emails is None else emails
+        website = cfg.get("website", True) if website is None else website
 
         info = zip_directory().get(zip_code)
         with self._sf() as session:
@@ -287,6 +290,10 @@ class LeadService:
         if emails and shortlist_ids:
             say(f"Finding emails for {len(shortlist_ids)} shortlisted websites...")
             outcome.emails = await self.find_emails(shortlist_ids)
+        if website and shortlist_ids:
+            say(f"Scoring {len(shortlist_ids)} shortlisted websites...")
+            outcome.websites = await self.score_websites(shortlist_ids, on_progress=say)
+        if (emails or website) and shortlist_ids:
             with self._sf() as session:
                 outcome.results = Repository(session).search_results(outcome.search_id)
         return outcome
@@ -435,6 +442,69 @@ class LeadService:
         summary.rows.append({"name": biz.name, "website": biz.website, "best": best, "owner": biz.owner_name,
                              "others": [e for e in emails if not best or e["email"] != best["email"]][:3],
                              "reachable": payload.get("reachable")})
+
+
+    # ── website score (Phase 4) ──────────────────────────────────────
+    async def score_websites(self, business_ids: list[int], *, refresh: bool = False, render: bool | None = None,
+                             vision: bool | None = None, on_progress: Callable[[str], None] | None = None) -> list[dict]:
+        """Analyse each business website (cached per business) and store the score."""
+        from dataclasses import replace as dc_replace
+
+        from leadengine.enrich.website.analyzer import WebsiteAnalyzer
+        from leadengine.enrich.website.render import WebsiteRenderer
+        from leadengine.llm import LLMError, build_llm
+
+        say = on_progress or (lambda _m: None)
+        cfg = dict(self.settings.section("website"))
+        if render is not None:
+            cfg["screenshot"] = render
+        if vision is not None:
+            cfg["vision"] = vision
+        settings = dc_replace(self.settings, sections={**self.settings.sections, "website": cfg})
+        renderer = None
+        if cfg.get("screenshot", True):
+            pw = settings.provider("playwright").extra
+            renderer = WebsiteRenderer(headless=pw.get("headless", True), executable_path=pw.get("executable_path", ""))
+        llm = None
+        if cfg.get("vision", False):
+            try:
+                llm = build_llm(settings, "llm")
+            except (LLMError, ImportError) as exc:
+                say(f"AI design review disabled: {exc}")
+        analyzer = WebsiteAnalyzer(settings, self.http, renderer=renderer, llm=llm)
+        rows: list[dict] = []
+        sem = asyncio.Semaphore(int(cfg.get("concurrency", 3)))
+        with self._sf() as session:
+            repo = Repository(session)
+            businesses = [b for b in (repo.get_business(i) for i in business_ids) if b is not None]
+
+            async def one(biz: Business) -> None:
+                async with sem:
+                    async def compute():
+                        say(f"  analysing {biz.website or '(no website)'}")
+                        return await analyzer.analyze(biz.website, key=str(biz.id), name=biz.name)
+                    try:
+                        payload, hit = await cached_enrichment(
+                            repo, biz.id, "website", self.settings.ttl("website"), compute, refresh=refresh,
+                            source="analyzer", ttl_for=lambda p: 1.0 if "broken" in (p.get("flags") or [])
+                            else self.settings.ttl("website"))
+                    except Exception as exc:
+                        log.exception("website analysis failed", extra={"data": {"name": biz.name}})
+                        rows.append({"name": biz.name, "website": biz.website, "error": str(exc)[:150]})
+                        return
+                biz.website_score = payload.get("score")
+                biz.website_grade = payload.get("grade")
+                biz.website_flags = payload.get("flags") or []
+                if payload.get("screenshot"):
+                    biz.screenshot_path = payload["screenshot"]
+                session.commit()
+                rows.append({"name": biz.name, "website": biz.website, "cached": hit, **payload})
+
+            try:
+                await asyncio.gather(*(one(b) for b in businesses))
+            finally:
+                await analyzer.aclose()
+        return rows
 
 
 def apply_activity(biz: Business, payload: dict) -> None:

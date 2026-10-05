@@ -67,6 +67,24 @@ Benchmark v3 vs v2: `python scripts/benchmark_emails.py` (built-in sites) or
 `python scripts/benchmark_emails.py --live my_sites.txt` (your real sites). Latest result:
 `benchmarks/email_benchmark.md`.
 
+## Website Score (Phase 4)
+
+`python -m leadengine website --zip 75201` (also runs inside `discover` for shortlisted leads).
+Score 0–100 (higher = more modern) from separately stored signals, each with a plain-English reason:
+HTTPS/certificate expiry, real mobile rendering (Playwright phone emulation), freshness (copyright
+year, sitemap lastmod, Last-Modified), outdated tech (old jQuery/WordPress, Flash, FrontPage, table
+layouts, frames, pre-HTML5), Google PageSpeed mobile score + Core Web Vitals, conversion basics
+(click-to-call, quote/booking form, CTA, reviews), SEO basics, and an optional AI design review of the
+screenshot (`--vision`, provider in `[llm]`). Flags: `no_website`, `facebook_only`, `broken`, `parked`,
+`ssl_invalid`, `builder_subdomain`, `redirects_elsewhere`. Desktop + mobile screenshots are saved in
+`data/screenshots/`. Wider tech detection: `python -m leadengine update-fingerprints` downloads the
+open-source webappanalyzer set (GPL-3.0, kept local).
+
+## AI providers
+
+`[llm]` in config.toml: `claude` (default, `claude-opus-5-5`, official Anthropic SDK, refusal fallback on),
+`gemini`, `groq` (text only) or `ollama` (local). Keys in `.env`.
+
 ## Providers
 
 | name | cost | notes |

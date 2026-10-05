@@ -50,6 +50,8 @@ class Page:
     status: int
     html: str
     kind: str = "home"               # home | contact | about | team | legal | other | facebook
+    headers: dict[str, str] = field(default_factory=dict)
+    cookies: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -124,17 +126,19 @@ class SiteCrawler:
         except NetworkError as exc:
             if not _is_ssl_error(exc):
                 return None
-            result.ssl_error = True
             try:
                 r = await self._insecure_client().get(url, headers=headers)
             except httpx.HTTPError:
                 return None
+            result.ssl_error = True  # only when the page really loads with certificate checks off
         if r.status_code >= 400:
             return None
         ctype = r.headers.get("content-type", "text/html")
         if "html" not in ctype and "text/plain" not in ctype:
             return None
-        return Page(url, str(r.url), r.status_code, r.text[:MAX_BYTES])
+        return Page(url, str(r.url), r.status_code, r.text[:MAX_BYTES],
+                    headers={k.lower(): v for k, v in r.headers.items()},
+                    cookies={k: v for k, v in r.cookies.items()})
 
     async def _home(self, website: str, result: CrawlResult) -> Page | None:
         text = website.strip()

@@ -69,6 +69,8 @@ class Settings:
     proxy_list: str = ""
     proxy_file: str = ""
     reacher_secret: str = ""
+    llm_keys: dict[str, str] = field(default_factory=dict)
+    pagespeed_api_key: str = ""
 
     def ttl(self, kind: str) -> float:
         """Freshness window in days for a cached data kind."""
@@ -133,6 +135,9 @@ class Settings:
             proxy_list=env.get("PROXIES", ""),
             proxy_file=env.get("PROXY_FILE", ""),
             reacher_secret=env.get("REACHER_SECRET", ""),
+            llm_keys={"anthropic": env.get("ANTHROPIC_API_KEY", ""), "gemini": env.get("GEMINI_API_KEY", ""),
+                      "groq": env.get("GROQ_API_KEY", ""), "ollama_url": env.get("OLLAMA_URL", "")},
+            pagespeed_api_key=env.get("PAGESPEED_API_KEY", ""),
         )
 
 

@@ -7,6 +7,8 @@ typer>=0.12
 playwright>=1.45      # then: python -m playwright install chromium
 beautifulsoup4>=4.12
 dnspython>=2.6
+cryptography>=42
+anthropic>=1.0
 # Optional: legacy Selenium provider
 selenium>=4.20
 # Tests

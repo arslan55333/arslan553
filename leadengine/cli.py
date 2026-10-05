@@ -158,6 +158,7 @@ def discover(
     activity: Optional[bool] = typer.Option(None, "--activity/--no-activity", help="Open shortlisted place pages for review dates, owner replies, claimed, photos"),
     fill: Optional[bool] = typer.Option(None, "--fill/--no-fill", help="Use the paid API to fill missing phone/website for shortlisted leads"),
     emails: Optional[bool] = typer.Option(None, "--emails/--no-emails", help="Find emails on shortlisted websites"),
+    website: Optional[bool] = typer.Option(None, "--website/--no-website", help="Score shortlisted websites 0-100"),
     cell_km: Optional[float] = typer.Option(None, "--cell-km", help="Starting grid cell size in km"),
     max_depth: Optional[int] = typer.Option(None, "--max-depth", help="How often saturated cells may split"),
     max_cells: Optional[int] = typer.Option(None, "--max-cells", help="Cap on searches this run"),
@@ -192,7 +193,7 @@ def discover(
             try:
                 return await service.discover(
                     keyword, zip_code, provider_name=provider, refresh=refresh, towns=towns, activity=activity,
-                    fill=fill, emails=emails, cell_km=cell_km, max_depth=max_depth, max_cells=max_cells,
+                    fill=fill, emails=emails, website=website, cell_km=cell_km, max_depth=max_depth, max_cells=max_cells,
                     on_progress=lambda m: console.print(f"[dim]{m}[/]"),
                 )
             finally:
@@ -207,7 +208,7 @@ def discover(
 
     rows = sorted(out.results, key=lambda t: (-(t[0].review_count or 0), t[1]))
     table = Table(title=f"{keyword} - ZIP {zip_code}  [{out.provider}]  {len(out.results)} businesses")
-    for col in ("Name", "Rating", "Reviews", "Last review", "Replies", "Claimed", "Phone", "Website", "Email"):
+    for col in ("Name", "Rating", "Reviews", "Last review", "Replies", "Claimed", "Site score", "Website", "Email"):
         table.add_column(col, justify="right" if col in ("Rating", "Reviews") else "left",
                          no_wrap=True, overflow="ellipsis", min_width=4 if col != "Name" else 12)
     for biz, _rank in rows[:show]:
@@ -217,7 +218,7 @@ def discover(
             f"{biz.last_review_at:%Y-%m-%d}" if biz.last_review_at else "-",
             f"{biz.owner_response_rate:.0%}" if biz.owner_response_rate is not None else "-",
             {True: "yes", False: "NO"}.get(biz.claimed, "-"),
-            biz.phone or "-", _short_url(biz.website, 26), _email_cell(biz),
+            _site_cell(biz), _short_url(biz.website, 26), _email_cell(biz),
         )
     console.print(table)
     if out.from_cache:
@@ -238,6 +239,14 @@ def discover(
                       f"(crawled {e.checked}, cached {e.cached}, unreachable {e.unreachable}, guesses only {e.guesses_only})")
     if out.skipped:
         console.print(f"[yellow]{out.skipped} record(s) skipped - see logs.[/]")
+
+
+def _site_cell(biz) -> str:
+    flags = biz.website_flags or []
+    for f in ("no_website", "facebook_only", "broken", "parked"):
+        if f in flags:
+            return f.replace("_", " ")
+    return f"{biz.website_score} {biz.website_grade}" if biz.website_score is not None else "-"
 
 
 def _email_cell(biz) -> str:
@@ -358,6 +367,60 @@ def find_email(
                     w.writerow([rep.website, e.email, e.confidence, (e.verification or {}).get("status", ""),
                                 e.source, "yes" if e.is_guess else "", owner])
         console.print(f"[green]Saved ->[/] {out}")
+
+
+@app.command()
+def website(
+    zip_code: Optional[str] = typer.Option(None, "--zip", "-z"),
+    keyword: Optional[str] = typer.Option(None, "--keyword", "-k"),
+    min_reviews: Optional[int] = typer.Option(None, "--min-reviews"),
+    min_rating: Optional[float] = typer.Option(None, "--min-rating"),
+    all_leads: bool = typer.Option(False, "--all", help="Ignore the shortlist thresholds"),
+    limit: int = typer.Option(50, "--limit"),
+    screenshots: Optional[bool] = typer.Option(None, "--screenshots/--no-screenshots"),
+    vision: Optional[bool] = typer.Option(None, "--vision/--no-vision", help="AI design review (uses [llm])"),
+    refresh: bool = typer.Option(False, "--refresh"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Website Score 0-100 for saved businesses: why each site is weak, with screenshots."""
+    settings, sf = _bootstrap(verbose)
+    disc = settings.section("discovery")
+    if not all_leads and settings.section("website").get("shortlist_only", True):
+        min_reviews = min_reviews if min_reviews is not None else int(disc.get("shortlist_min_reviews", 20))
+        min_rating = min_rating if min_rating is not None else float(disc.get("shortlist_min_rating", 4.0))
+    with sf() as s:
+        ids = [b.id for b in Repository(s).list_businesses(keyword=keyword, zip_code=zip_code, min_rating=min_rating,
+                                                           min_reviews=min_reviews, limit=limit)]
+    if not ids:
+        _fail("no saved businesses match (run `discover` first, or use --all)")
+    console.print(f"Scoring {len(ids)} websites...")
+
+    async def _run():
+        async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
+            return await LeadService(settings, sf, http, CreditTracker(sf, settings)).score_websites(
+                ids, refresh=refresh, render=screenshots, vision=vision,
+                on_progress=(lambda m: console.print(f"[dim]{m}[/]")) if verbose else None)
+
+    rows = sorted(asyncio.run(_run()), key=lambda r: (r.get("score") is not None, r.get("score") or 0))
+    table = Table(title=f"Website scores ({len(rows)})")
+    for col in ("Business", "Score", "Grade", "Main weaknesses", "Flags"):
+        table.add_column(col, overflow="fold" if col == "Main weaknesses" else "ellipsis",
+                         no_wrap=col not in ("Main weaknesses",))
+    for r in rows:
+        table.add_row(r["name"][:30], str(r.get("score") if r.get("score") is not None else "-"),
+                      r.get("grade", "-"), "; ".join((r.get("reasons") or [])[:3]) or r.get("error", "-"),
+                      ", ".join(r.get("flags") or []) or "-")
+    console.print(table)
+
+
+@app.command(name="update-fingerprints")
+def update_fingerprints() -> None:
+    """Download the open-source webappanalyzer fingerprints (GPL-3.0) for wider tech detection."""
+    from leadengine.enrich.website.tech import FINGERPRINT_DIR, download_webappanalyzer
+
+    count = asyncio.run(download_webappanalyzer())
+    console.print(f"[green]{count} technology fingerprints saved to[/] {FINGERPRINT_DIR} "
+                  "(GPL-3.0 data from github.com/enthec/webappanalyzer; kept local, not redistributed).")
 
 
 @app.command(name="zip")
@@ -488,6 +551,7 @@ def export(
     with sf() as s:
         rows = Repository(s).list_businesses(keyword=keyword, zip_code=zip_code)
     fields = ["id", "place_id", "data_id", "name", "best_email", "email_confidence", "email_status", "owner_name",
+              "website_score", "website_grade", "website_flags", "screenshot_path",
               "categories", "rating", "review_count", "last_review_at",
               "recent_review_dates", "owner_response_rate", "claimed", "photo_count", "maps_ad_seen",
               "phone", "website", "domain", "address", "city", "state", "zip_code", "lat", "lng",
@@ -502,6 +566,7 @@ def export(
             row["categories"] = ", ".join(b.categories or [])
             row["recent_review_dates"] = ", ".join(b.recent_review_dates or [])
             row["maps_ad_seen"] = "yes" if repo.latest_enrichment(b.id, "maps_sponsored") else ""
+            row["website_flags"] = ", ".join(b.website_flags or [])
             writer.writerow(row)
     console.print(f"[green]{len(rows)} businesses ->[/] {path}")
 

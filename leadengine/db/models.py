@@ -64,6 +64,12 @@ class Business(Base):
     email_status: Mapped[str | None] = mapped_column(String(20))      # valid | catch_all | unknown | invalid | risky
     owner_name: Mapped[str | None] = mapped_column(String(255))
 
+    # Website score (Phase 4)
+    website_score: Mapped[int | None] = mapped_column(Integer)
+    website_grade: Mapped[str | None] = mapped_column(String(20))
+    website_flags: Mapped[Any] = mapped_column(JSON, nullable=True)
+    screenshot_path: Mapped[str | None] = mapped_column(Text)
+
     # Activity signals (Phase 2 Maps scraping)
     photo_count: Mapped[int | None] = mapped_column(Integer)
     last_review_at: Mapped[datetime | None] = mapped_column(DateTime)

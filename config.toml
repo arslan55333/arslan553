@@ -39,6 +39,7 @@ fill_missing = true       # use the paid provider only for shortlisted leads mis
 fill_provider = "serpapi"
 max_fill = 25             # max paid lookups per run
 emails = true             # crawl shortlisted websites for emails (see [emails])
+website = true            # score shortlisted websites 0-100 (see [website])
 
 # Email finding (Phase 3)
 [emails]
@@ -54,6 +55,23 @@ smtp_from = ""            # e.g. verify@yourdomain.com
 smtp_timeout_seconds = 10
 reacher_url = ""          # e.g. http://your-vps:8080 (self-hosted Reacher)
 shortlist_only = true     # `emails` command: only businesses passing the discovery shortlist
+
+# Website Score (Phase 4)
+[website]
+timeout_seconds = 15
+concurrency = 3           # websites analysed in parallel
+pagespeed = true          # Google PageSpeed Insights (add PAGESPEED_API_KEY in .env for volume)
+wayback = true            # Wayback Machine: when the site first appeared
+screenshot = true         # full-page + mobile screenshots with Playwright (data/screenshots/)
+vision = false            # AI design review of the screenshot (uses [llm]); costs API credits
+shortlist_only = true
+
+# AI provider used by design review, preview copy and outreach drafts
+[llm]
+provider = "claude"       # claude | gemini | groq | ollama
+model = ""                # empty = provider default (claude-opus-5-5, gemini-2.5-flash, ...)
+effort = "medium"         # Claude effort: low | medium | high
+fallbacks = true          # Claude: re-run a declined request on Anthropic's recommended model
 
 [proxy]
 max_failures = 3          # failures before a proxy is benched

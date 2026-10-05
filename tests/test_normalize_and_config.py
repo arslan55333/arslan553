@@ -83,4 +83,6 @@ def test_secrets_never_in_config_files():
     for line in (root / ".env.example").read_text("utf-8").splitlines():
         if line.strip() and not line.startswith("#") and "KEY" in line:
             assert line.split("=", 1)[1].strip() == "", line
-    assert "api_key" not in (root / "config.toml").read_text("utf-8").lower()
+    import re
+    assert not re.search(r"(?im)^\s*\w*(api_key|secret|token)\w*\s*=\s*\"[^\"]+\"",
+                         (root / "config.toml").read_text("utf-8"))

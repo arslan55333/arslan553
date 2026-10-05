@@ -1,16 +1,16 @@
 # PROGRESS
 
 ## Current Status
-- Current phase: Phase 3 — Email extraction v2 (built and self-tested)
-- Last completed step: email crawler + extractor + people/guesses + verifier (MX/SMTP/Reacher) + confidence scoring + CLI (`emails`, `find-email`, `discover --emails`); benchmark v3 6/20 vs v2 20/20 on built-in sites; 128 tests passing
-- Waiting on: owner's live tests of Phase 2 (`discover`) and Phase 3 (`benchmark_emails.py --live` on 20 real sites), then "next" for Phase 4
+- Current phase: Phase 5 — Google Ads detection (next). Owner asked Claude to self-test and keep building all remaining phases without waiting.
+- Last completed step: Phase 4 Website Score built + self-tested (142 tests passing)
+- Waiting on: nothing for building; owner's live runs of Phases 2–4 still outstanding
 
 ## Phase Checklist
 - [x] Phase 0 — Audit & plan (approved: Path B)
 - [x] Phase 1 — Foundation: storage, cache, config, provider interface (self-tested by Claude at owner's request)
 - [ ] Phase 2 — Scraping engine v2 (Playwright, ZIP grid, proxies) — built + self-tested, awaiting live run
 - [ ] Phase 3 — Email extraction v2 (+ verification, confidence) — built + self-tested, awaiting live run
-- [ ] Phase 4 — Website Score (0–100)
+- [ ] Phase 4 — Website Score (0–100) — built + self-tested, awaiting live run
 - [ ] Phase 5 — Google Ads detection
 - [ ] Phase 6 — Opportunity Score & filtering
 - [ ] Phase 7 — Dashboard & mini CRM
@@ -19,6 +19,23 @@
 - [ ] Phase 10 — Hardening & polish
 
 ## Phase Log (newest first)
+### Phase 4 — Website Score (2026-10-05)
+- What was done:
+  - `leadengine/enrich/website/`: `signals.py` (HTML signals), `tech.py` (Wappalyzer-format engine + built-in rules), `remote.py` (TLS certificate, PageSpeed Insights, Wayback CDX, sitemap lastmod), `render.py` (Playwright desktop full-page + phone screenshots, real mobile layout test, JS-reported versions), `score.py` (0–100 with per-signal points and reasons), `analyzer.py` (pipeline).
+  - Score weights: security 10, mobile 15, freshness 15, tech 15, speed 15, conversion 15, SEO basics 5, AI design 10. Signals that could not be measured are left out and the score is re-normalised (no fake zeros).
+  - Reasons are written for pitches, worst first, e.g. "not mobile friendly (no mobile viewport tag, phones show a shrunken desktop page)", "copyright 2009 (~17 years without updates)", "slow on mobile (PageSpeed 22/100, loads in 9.4s)", "jQuery 1.7.2", "uses Flash", "no click-to-call button, no quote/booking form ...".
+  - Flags: no_website, facebook_only / social_or_directory_only, broken, parked, server_default_page, ssl_invalid, builder_subdomain, redirects_elsewhere. Parked/default pages are capped at 10.
+  - Tech detection: our own rules (CMS/builders + versions, old JS libs, Flash/Silverlight/FrontPage/iWeb, booking/review/chat widgets, GA/GTM/Google Ads/remarketing/Meta Pixel/Bing, CallRail/CTM/WhatConverts/Invoca, parking). `update-fingerprints` downloads the full webappanalyzer set (GPL-3.0 -> kept local, not shipped) and merges it.
+  - Optional AI design review (`--vision`): screenshot -> LLM -> outdated 1–10 + era + why + top fixes. New `leadengine/llm.py`: pluggable providers — Claude via the official Anthropic SDK (default `claude-opus-5-5`, effort configurable, server-side refusal fallback `fallbacks: "default"`), Gemini, Groq (text only), Ollama (local).
+  - Storage: enrichment `website` (30 days; broken sites retried after 1 day), business columns website_score / website_grade / website_flags / screenshot_path. CLI `website`, `update-fingerprints`; `discover --website` (on by default for the shortlist); discover table shows site score; export includes it.
+- How it was done / decisions:
+  - Certificate is read even when invalid (second handshake with verification off) so we can say "expired 10 days ago" instead of just "error".
+  - Mobile check uses real phone emulation: pages without a viewport tag render as a shrunken ~980px desktop layout — that is the signal, not horizontal overflow.
+  - Fixed while testing: http-only sites were wrongly flagged `ssl_invalid` (flag now only set when the page loads with verification off); secrets-guard test refined.
+- How to test: `python -m leadengine website --zip 75201` (after discover) or `--all`; add `PAGESPEED_API_KEY` for speed scores; `--vision` with an AI key. Screenshots in `data/screenshots/`.
+- Test result: Claude self-test — 14 new tests (signals, tech incl. Wappalyzer syntax/implies/js, scoring, PageSpeed/Wayback/sitemap parsing, expired self-signed certificate on a local TLS server, real Chromium analysis of local old/modern/parked/broken sites incl. screenshots and AI review with a stub model). Old 2009 FrontPage/Flash site scores 1/100 "Outdated"; modern site 85 "Modern" (only missing HTTPS on the local test server). 142 tests pass.
+- Known issues / limitations: not run on real sites from the build machine; PageSpeed without a key is heavily rate-limited (429 -> shown as "add PAGESPEED_API_KEY"); Wayback is slow at times (30 s timeout, optional); AI review costs API credits and is off by default.
+
 ### Phase 3 — Email extraction v2 (2026-10-05)
 - What was done:
   - `leadengine/enrich/emails/`: `crawl.py` (site crawler), `extract.py` (candidates), `filters.py` (junk rejection, role/free-mail/own-domain), `people.py` (owner/manager names), `guess.py` (pattern guesses), `verify.py` (MX/SMTP/Reacher), `finder.py` (pipeline + confidence).
@@ -219,11 +236,15 @@ tests/
 - (2026-10-05) Owner said "start" Phase 3 before live-testing Phase 2; Phase 2 live test still outstanding.
 - (2026-10-05) Email verification default = MX (works everywhere); SMTP/Reacher opt-in because port 25 is usually blocked on home connections.
 - (2026-10-05) Guessed emails are stored but never used as "best email" and capped at 35 unless verified deliverable.
+- (2026-10-05) Owner: "keep testing and build the remaining phases" — Claude continues phase by phase without waiting, self-testing each.
+- (2026-10-05) webappanalyzer is GPL-3.0: not bundled; optional local download command instead, plus our own rule set.
+- (2026-10-05) LLM layer pluggable; Claude uses the official Anthropic SDK with server-side refusal fallback by default.
 - (2026-10-05) Per-context proxies; captcha -> immediate proxy ban; without proxies a captcha stops the run with a clear message.
 
 ## Next Steps
-- Owner: run Phase 2 (`discover` on a real ZIP) and Phase 3 (live email benchmark on 20 real sites) and report.
-- Then Phase 4 — Website Score (0–100): copyright year, HTTPS/SSL validity & expiry (crawler already flags broken SSL), mobile viewport, tech stack via webappanalyzer fingerprints (old jQuery/WordPress/Flash/tables/builders), PageSpeed Insights (free key), Wayback CDX + sitemap lastmod age, conversion basics (click-to-call, forms, reviews widget, CTA), Playwright screenshot, optional AI vision rating, flags for no/broken/parked/Facebook-only sites.
+- Building Phase 5 — Google Ads detection (live SERP sponsored + LSA, website ad tags incl. GTM container, optional Ads Transparency) -> Phase 6 scoring -> Phase 7 dashboard -> 8 previews -> 9 outreach -> 10 hardening.
+- Owner (any time): live runs of Phases 2–4 on a real ZIP.
+- (Done) Phase 4 — Website Score (0–100): copyright year, HTTPS/SSL validity & expiry (crawler already flags broken SSL), mobile viewport, tech stack via webappanalyzer fingerprints (old jQuery/WordPress/Flash/tables/builders), PageSpeed Insights (free key), Wayback CDX + sitemap lastmod age, conversion basics (click-to-call, forms, reviews widget, CTA), Playwright screenshot, optional AI vision rating, flags for no/broken/parked/Facebook-only sites.
 
 ### Open questions for owner
 1. Which OS and Python version do you use? (Instructions assume Windows + Python 3.11+.)
@@ -240,5 +261,7 @@ tests/
 - `PROXIES` — optional comma-separated proxy list (http://user:pass@host:port, host:port, host:port:user:pass, socks5://...).
 - `PROXY_FILE` — optional file with one proxy per line.
 - `REACHER_SECRET` — optional secret header for a self-hosted Reacher email verifier.
+- `PAGESPEED_API_KEY` — Google PageSpeed Insights (free key; needed for volume).
+- `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` / `GROQ_API_KEY` / `OLLAMA_URL` — AI provider chosen in `[llm]`.
 Non-secret settings (cache days, retries, concurrency, price estimates) live in `config.toml`.
 The legacy v3 tool still keeps its own keys in `leadhunter_settings.json` (ignored by git).
