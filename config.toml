@@ -89,6 +89,17 @@ ads = 25                  # spends on Google Ads / LSA
 website = 25              # weak, old or missing website
 reachability = 10         # verified email / phone
 
+# Preview landing pages (Phase 8)
+[preview]
+brand_name = ""           # your agency name, shown in the preview banner and footer
+brand_url = ""
+brand_email = ""
+style = "auto"            # auto (rotates) | clean | bold | warm
+use_ai = true             # AI-written copy via [llm]; false = safe template copy
+deploy = "none"           # none | netlify | cloudflare
+base_domain = ""          # e.g. "previews.youragency.com" -> acme-dallas-12.previews.youragency.com
+                          # (point a wildcard DNS record *.previews.youragency.com at your host first)
+
 # Exports
 [export]
 google_credentials_file = ""   # service-account JSON for Google Sheets export (pip install gspread)

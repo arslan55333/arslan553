@@ -318,6 +318,7 @@ def parse_place_dom(dom: dict[str, Any], now: datetime) -> dict[str, Any]:
         "recent_review_dates": [d.date().isoformat() for d in sorted(dates, reverse=True)] or None,
         "last_review_at": max(dates) if dates else None,
         "owner_response_rate": round(owner_rate, 2) if owner_rate is not None else None,
+        "reviews_sample": [{k: r.get(k) for k in ("rating", "text", "author")} for r in sampled if r.get("text")],
     }
 
 

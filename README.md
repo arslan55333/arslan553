@@ -120,6 +120,24 @@ resume where they stopped; `python -m leadengine worker` runs the queue without 
 ![Leads](docs/img/dashboard-leads.jpg)
 ![Lead detail](docs/img/dashboard-lead1.jpg)
 
+## Preview landing pages (Phase 8)
+
+`python -m leadengine preview 12` (or `--label hot --limit 10`, or the button on a lead page) builds a
+modern, fast, mobile-first one-page site for the business: name, click-to-call, services, service area
+(nearby towns from the ZIP data), hours, up to 3 real Google review quotes (4–5★, first name + initial),
+FAQ, quote form and strong calls to action, in one of three styles (`clean`, `bold`, `warm`).
+Copy is written by the AI provider from verified facts only (a filter also removes unverifiable claims
+such as years in business, licences, awards, prices, guarantees), or by safe templates (`--no-ai`).
+
+Every preview is clearly a concept: a banner "Website redesign preview prepared for <Business> by <your
+brand>", a footer disclaimer, `noindex, nofollow` (meta, `X-Robots-Tag` header, robots.txt), and a demo
+form that sends nothing. No Google Maps photos are used. Desktop + phone screenshots are saved for the
+outreach email. Publish with `--deploy` to Netlify (`NETLIFY_TOKEN`) or Cloudflare Pages (wrangler),
+optionally as `business-slug.previews.yourdomain.com` (`[preview] base_domain`, wildcard DNS).
+Set your brand in `[preview]` in config.toml.
+
+![Preview](docs/img/preview-bold.jpg)
+
 ## AI providers
 
 `[llm]` in config.toml: `claude` (default, `claude-opus-5-5`, official Anthropic SDK, refusal fallback on),

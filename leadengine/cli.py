@@ -508,6 +508,40 @@ def worker(once: bool = typer.Option(False, "--once", help="Process the queue on
         console.print("stopped")
 
 
+@app.command()
+def preview(
+    ids: list[int] = typer.Argument(None, help="Business ids (see `leads`)"),
+    label: list[str] = typer.Option(None, "--label", "-L", help="Or: all leads with this label, e.g. hot"),
+    limit: int = typer.Option(10, "--limit"),
+    style: Optional[str] = typer.Option(None, "--style", help="clean | bold | warm (default: rotate)"),
+    deploy: Optional[bool] = typer.Option(None, "--deploy/--no-deploy", help="Publish to Netlify/Cloudflare"),
+    ai: Optional[bool] = typer.Option(None, "--ai/--no-ai", help="AI-written copy (uses [llm])"),
+    screenshots: bool = typer.Option(True, "--screenshots/--no-screenshots"),
+) -> None:
+    """Build a modern one-page preview site for leads (clearly marked as a concept, noindex)."""
+    settings, sf = _bootstrap()
+    targets = list(ids or [])
+    if label:
+        with sf() as s:
+            targets += [b.id for b in Repository(s).list_businesses(
+                labels=[l.capitalize() for l in label], order="opportunity", limit=limit)]
+    if not targets:
+        _fail("give business ids or --label hot")
+    if not settings.section("preview").get("brand_name"):
+        console.print("[yellow]Tip:[/] set brand_name in [preview] (config.toml) - it appears in the preview banner.")
+
+    async def _run():
+        async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
+            return await LeadService(settings, sf, http, CreditTracker(sf, settings)).build_previews(
+                list(dict.fromkeys(targets)), style=style, deploy=deploy, use_ai=ai, screenshots=screenshots,
+                on_progress=lambda m: console.print(f"[dim]{m}[/]"))
+
+    for r in asyncio.run(_run()):
+        where = r.get("url") or r.get("path") or ""
+        console.print(f"#{r['id']} {r['name']}: " + (f"[red]{r['error']}[/]" if r.get("error") else
+                                                    f"[green]{where}[/] ({r.get('style')}, copy: {r.get('copy_source')})"))
+
+
 @app.command(name="update-fingerprints")
 def update_fingerprints() -> None:
     """Download the open-source webappanalyzer fingerprints (GPL-3.0) for wider tech detection."""

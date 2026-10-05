@@ -71,6 +71,7 @@ class Settings:
     reacher_secret: str = ""
     llm_keys: dict[str, str] = field(default_factory=dict)
     pagespeed_api_key: str = ""
+    deploy_keys: dict[str, str] = field(default_factory=dict)
 
     def ttl(self, kind: str) -> float:
         """Freshness window in days for a cached data kind."""
@@ -138,6 +139,8 @@ class Settings:
             llm_keys={"anthropic": env.get("ANTHROPIC_API_KEY", ""), "gemini": env.get("GEMINI_API_KEY", ""),
                       "groq": env.get("GROQ_API_KEY", ""), "ollama_url": env.get("OLLAMA_URL", "")},
             pagespeed_api_key=env.get("PAGESPEED_API_KEY", ""),
+            deploy_keys={"netlify": env.get("NETLIFY_TOKEN", ""), "cloudflare_token": env.get("CLOUDFLARE_API_TOKEN", ""),
+                         "cloudflare_account": env.get("CLOUDFLARE_ACCOUNT_ID", "")},
         )
 
 

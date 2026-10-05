@@ -651,6 +651,52 @@ class LeadService:
         return out
 
 
+    # ── preview pages (Phase 8) ──────────────────────────────────────
+    async def build_previews(self, business_ids: list[int], *, style: str | None = None, deploy: bool | None = None,
+                             use_ai: bool | None = None, screenshots: bool = True,
+                             on_progress: Callable[[str], None] | None = None) -> list[dict]:
+        from leadengine import crm
+        from leadengine.enrich.website.render import WebsiteRenderer
+        from leadengine.llm import LLMError, build_llm
+        from leadengine.preview.builder import PreviewBuilder
+
+        say = on_progress or (lambda _m: None)
+        cfg = self.settings.section("preview")
+        llm = None
+        if (cfg.get("use_ai", True) if use_ai is None else use_ai):
+            try:
+                llm = build_llm(self.settings, "preview")
+            except (LLMError, ImportError) as exc:
+                say(f"AI copy unavailable ({exc}); using template copy")
+        renderer = WebsiteRenderer() if screenshots else None
+        builder = PreviewBuilder(self.settings, self.http, llm=llm, renderer=renderer)
+        rows = []
+        try:
+            with self._sf() as session:
+                repo = Repository(session)
+                for bid in business_ids:
+                    biz = repo.get_business(bid)
+                    if biz is None:
+                        continue
+                    act = repo.latest_enrichment(bid, "maps_activity", fresh_only=False)
+                    say(f"  building preview for {biz.name}")
+                    try:
+                        payload = await builder.build(biz, act.payload if act else None, style=style, deploy=deploy)
+                    except Exception as exc:
+                        log.exception("preview failed", extra={"data": {"name": biz.name}})
+                        rows.append({"id": bid, "name": biz.name, "error": str(exc)[:200]})
+                        continue
+                    repo.set_enrichment(bid, "preview", payload, source="preview")
+                    if crm.current_status(session, bid) == "New":
+                        crm.set_status(session, bid, "Preview Built", payload.get("url") or "local preview built")
+                    session.commit()
+                    rows.append({"id": bid, "name": biz.name, **payload})
+        finally:
+            if renderer is not None:
+                await renderer.aclose()
+        return rows
+
+
 def apply_activity(biz: Business, payload: dict) -> None:
     from datetime import datetime
 

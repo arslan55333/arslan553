@@ -131,9 +131,15 @@ REVIEWS_JS = r"""
     const t = card.innerText || '';
     const dateEl = card.querySelector('.rsqaWe, .xRkPPb');
     const m = t.match(/(?:a|an|\d+)\s+(?:second|minute|hour|day|week|month|year)s?\s+ago/i);
+    const stars = card.querySelector('[role="img"][aria-label*="star" i]');
+    const textEl = card.querySelector('.wiI7pd, [data-review-text]');
+    const author = card.querySelector('.d4r55, [data-review-author]');
     out.push({
       date: dateEl ? dateEl.innerText : (m ? m[0] : null),
       owner_response: !!card.querySelector('.CDe7pd') || /Response from the owner/i.test(t),
+      rating: stars ? parseFloat((stars.getAttribute('aria-label') || '').replace(',', '.')) : null,
+      text: textEl ? textEl.innerText.slice(0, 400) : null,
+      author: author ? author.innerText.trim().slice(0, 60) : null,
     });
     if (out.length >= limit) break;
   }
@@ -503,6 +509,7 @@ class PlaywrightMapsProvider(Provider):
                     items += businesses_from_payload(data)
             dom["reviews"] = await self._newest_reviews(page, review_limit) if reviews else []
             parsed = parse_place_dom(dom, utcnow())
+            parsed["top_reviews"] = top_reviews(parsed.pop("reviews_sample", []))
             parsed["json"] = items[0] if items else {}
             parsed["url_ids"] = parse_place_url(page.url)
             return parsed
@@ -550,10 +557,23 @@ def apply_details(rec: BusinessRecord, details: dict[str, Any]) -> None:
             setattr(rec, field, details[field])
 
 
+def top_reviews(reviews: list[dict[str, Any]], limit: int = 5) -> list[dict[str, Any]]:
+    """Best short testimonials: 4-5 stars, with text, author shortened to first name + initial."""
+    good = [r for r in reviews or [] if r.get("text") and (r.get("rating") or 5) >= 4 and len(r["text"]) >= 30]
+    good.sort(key=lambda r: (-(r.get("rating") or 5), -min(len(r["text"]), 260)))
+    out = []
+    for r in good[:limit]:
+        parts = (r.get("author") or "").split()
+        name = f"{parts[0]} {parts[-1][0]}." if len(parts) >= 2 else (parts[0] if parts else "Google reviewer")
+        out.append({"text": r["text"].strip(), "rating": r.get("rating") or 5, "author": name})
+    return out
+
+
 def activity_payload(details: dict[str, Any]) -> dict[str, Any]:
     """JSON-safe subset stored as the ``maps_activity`` enrichment."""
     last: datetime | None = details.get("last_review_at")
     return {
+        "top_reviews": details.get("top_reviews") or [],
         "claimed": details.get("claimed"),
         "photo_count": details.get("photo_count"),
         "recent_review_dates": details.get("recent_review_dates"),

@@ -45,4 +45,13 @@ def make_handlers(settings: Settings, sf: sessionmaker[Session]) -> dict[str, Ha
                 await service.aclose()
         return summary
 
-    return {"discover": discover}
+    async def preview(ctx: JobContext) -> list[dict[str, Any]]:
+        async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
+            service = LeadService(settings, sf, http, CreditTracker(sf, settings))
+            rows = await service.build_previews(ctx.params["ids"], style=ctx.params.get("style"),
+                                                deploy=ctx.params.get("deploy"), on_progress=ctx.log)
+        for r in rows:
+            ctx.log(f"{r['name']}: {r.get('url') or r.get('path') or r.get('error')}")
+        return [{k: r.get(k) for k in ("id", "name", "url", "path", "error")} for r in rows]
+
+    return {"discover": discover, "preview": preview}

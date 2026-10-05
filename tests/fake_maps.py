@@ -123,7 +123,9 @@ PLACE_HTML = """<!doctype html><html><body><div role="main">
 window.APP_INITIALIZATION_STATE = [[1], null, null, [null, null, null, null, null, null, %(state_json)s]];
 const relevant = %(relevant)s, newest = %(newest)s;
 function show(list) { document.getElementById('list').innerHTML = list.map((r, i) =>
-  '<div class="jftiEf" data-review-id="r' + i + '"><span class="rsqaWe">' + r[0] + '</span><span>Great service</span>' +
+  '<div class="jftiEf" data-review-id="r' + i + '"><div class="d4r55">Maria Gonzalez ' + i + '</div>' +
+  '<span role="img" aria-label="' + (r[2] || 5) + ' stars"></span><span class="rsqaWe">' + r[0] + '</span>' +
+  '<span class="wiI7pd">' + (r[3] || 'Great service') + '</span>' +
   (r[1] ? '<div class="CDe7pd">Response from the owner</div>' : '') + '</div>').join(''); }
 document.getElementById('revtab').onclick = () => { document.getElementById('reviews').style.display = 'block'; show(relevant); };
 document.getElementById('sort').onclick = () => { document.getElementById('menu').style.display = 'block'; };
@@ -252,8 +254,11 @@ class FakeMaps:
                     "street": b["street"], "photos": 40 + i, "website_html": website, "phone_html": phone,
                     "claim_html": claim, "state_json": json.dumps(state),
                     "relevant": json.dumps([["3 years ago", False], ["a year ago", True]]),
-                    "newest": json.dumps([["2 days ago", True], ["a week ago", False], ["3 weeks ago", True],
-                                          ["2 months ago", True]]),
+                    "newest": json.dumps([
+                        ["2 days ago", True, 5, "Showed up the same day, dropped the dumpster exactly where we asked and picked it up on time."],
+                        ["a week ago", False, 2, "Late pickup and hard to reach by phone this time around."],
+                        ["3 weeks ago", True, 5, "Fair price and the driver was careful with our new driveway."],
+                        ["2 months ago", True, 4, "ok"]]),
                 })
 
         return Handler

@@ -196,6 +196,12 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
                 return RedirectResponse(f"/leads/{business_id}?error={quote(str(exc))}", status_code=303)
         return RedirectResponse(f"/leads/{business_id}", status_code=303)
 
+    @app.post("/leads/{business_id}/preview")
+    def lead_preview(business_id: int, style: str = Form("auto"), deploy: bool = Form(False)):
+        job_id = jobs.enqueue(sf, "preview", {"ids": [business_id], "style": None if style == "auto" else style,
+                                              "deploy": deploy})
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
     @app.post("/leads/{business_id}/note")
     def lead_note(business_id: int, note: str = Form(...)):
         with sf() as s:

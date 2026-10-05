@@ -1,8 +1,8 @@
 # PROGRESS
 
 ## Current Status
-- Current phase: Phase 8 — Preview landing pages (next). Owner asked Claude to self-test and keep building all remaining phases without waiting.
-- Last completed step: Phase 7 Dashboard & mini CRM built + self-tested (166 tests passing)
+- Current phase: Phase 9 — AI outreach drafts (next). Owner asked Claude to self-test and keep building all remaining phases without waiting.
+- Last completed step: Phase 8 Preview landing pages built + self-tested (177 tests passing)
 - Waiting on: nothing for building; owner's live runs of Phases 2–4 still outstanding
 
 ## Phase Checklist
@@ -14,11 +14,23 @@
 - [ ] Phase 5 — Google Ads detection — built + self-tested, awaiting live run
 - [x] Phase 6 — Opportunity Score & filtering — built + self-tested (pure scoring, no live dependency)
 - [x] Phase 7 — Dashboard & mini CRM — built + self-tested (rendered and checked in a real browser)
-- [ ] Phase 8 — Preview landing page generator
+- [ ] Phase 8 — Preview landing page generator — built + self-tested; live AI copy + live deploy need owner keys
 - [ ] Phase 9 — AI personalised outreach drafts
 - [ ] Phase 10 — Hardening & polish
 
 ## Phase Log (newest first)
+### Phase 8 — Preview landing page generator (2026-10-05)
+- What was done:
+  - `leadengine/preview/`: `content.py` (facts from DB + review quotes + hours + service area; AI copy with strict no-invention prompt and a claim filter; template copy fallback), `templates/page.html` (one self-contained, mobile-first page, 3 styles: clean / bold / warm, sticky "Call" button on phones), `builder.py` (writes `data/previews/<slug>/site/` + screenshots, picks/rotates styles), `deploy.py` (Netlify API zip deploy with optional custom subdomain; Cloudflare Pages via wrangler, creating the project on first use).
+  - Safeguards: preview banner naming the business and your brand, footer disclaimer ("not affiliated / not the official website"), `noindex, nofollow, noarchive` meta + `X-Robots-Tag` via `_headers` + `robots.txt Disallow: /`, demo-only form (no action, shows "Demo only — this preview form does not send or store anything"), no external assets or Google Maps photos, HTML-escaped business data.
+  - Review quotes: Phase 2 place-page scraping now also captures review text, stars and author; `top_reviews` keeps 4–5★ reviews with real text and shortens names to "First L.".
+  - LLM layer tests: Claude request shape (official SDK, image block, effort, `fallbacks: "default"` beta, refusal -> error), Gemini, Ollama, config selection.
+  - Storage + CRM: enrichment `preview` (path, url, style, screenshots, copy source); status auto-moves New -> Preview Built. CLI `preview`; dashboard "Build preview" (style + publish) runs as a background job; lead page shows the preview screenshot/link.
+- Self-test found and fixed: "#1 rated" claims slipped through the filter (regex word boundary before '#'); template had an invented "same-week scheduling" claim (removed); awkward category/headline wording; phone number wrapping in the mobile header.
+- How to test: set `brand_name` etc. in `[preview]`; `python -m leadengine preview <id> --no-ai` (template copy) or with an AI key; open `data/previews/<slug>/site/index.html`; for hosting add `NETLIFY_TOKEN`, `deploy = "netlify"`, optional `base_domain`, then `--deploy`.
+- Test result: Claude self-test — 11 new tests (facts/hours/service area, review picking, claim filter, AI copy filtering + fallback, page safeguards incl. XSS escaping and no external assets, builder + CRM status, Netlify deploy flow with zip contents, Cloudflare create-then-deploy, LLM providers). Rendered all three styles in Chromium (desktop + phone) and checked them visually. 177 tests pass.
+- Known issues: real AI copy and real deploys not exercised from the build machine (no keys); Cloudflare needs Node.js + wrangler installed; custom subdomains need a wildcard DNS record pointing at the host.
+
 ### Phase 7 — Dashboard & mini CRM (2026-10-05)
 - Decision: **FastAPI + Jinja2 + htmx** (htmx 2.0.11 vendored, 0BSD) instead of Streamlit — long Playwright jobs run as real background tasks with a live, polling log; pages are plain HTML (fast, testable), no build step. Local only by default (127.0.0.1).
 - What was done:
@@ -275,7 +287,7 @@ tests/
 - (2026-10-05) Per-context proxies; captcha -> immediate proxy ban; without proxies a captcha stops the run with a clear message.
 
 ## Next Steps
-- Building Phase 8 — Preview landing page generator (templates, AI copy, preview banner/noindex/demo form, deploy to Netlify/Cloudflare, screenshot) -> Phase 7 dashboard -> 8 previews -> 9 outreach -> 10 hardening.
+- Building Phase 9 — AI outreach drafts (personalised from real findings, variants + follow-ups, drafts only, CAN-SPAM footer, export) -> Phase 7 dashboard -> 8 previews -> 9 outreach -> 10 hardening.
 - Owner (any time): live runs of Phases 2–4 on a real ZIP.
 - (Done) Phase 4 — Website Score (0–100): copyright year, HTTPS/SSL validity & expiry (crawler already flags broken SSL), mobile viewport, tech stack via webappanalyzer fingerprints (old jQuery/WordPress/Flash/tables/builders), PageSpeed Insights (free key), Wayback CDX + sitemap lastmod age, conversion basics (click-to-call, forms, reviews widget, CTA), Playwright screenshot, optional AI vision rating, flags for no/broken/parked/Facebook-only sites.
 
@@ -295,6 +307,7 @@ tests/
 - `PROXY_FILE` — optional file with one proxy per line.
 - `REACHER_SECRET` — optional secret header for a self-hosted Reacher email verifier.
 - `PAGESPEED_API_KEY` — Google PageSpeed Insights (free key; needed for volume).
+- `NETLIFY_TOKEN` / `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` — preview hosting (Phase 8).
 - `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` / `GROQ_API_KEY` / `OLLAMA_URL` — AI provider chosen in `[llm]`.
 Non-secret settings (cache days, retries, concurrency, price estimates) live in `config.toml`.
 The legacy v3 tool still keeps its own keys in `leadhunter_settings.json` (ignored by git).
