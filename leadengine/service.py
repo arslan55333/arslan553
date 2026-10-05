@@ -987,6 +987,39 @@ class LeadService:
             rows.append({"id": bid, "name": biz.name, **out})
         return rows
 
+    # ── audit report ─────────────────────────────────────────────────
+    async def build_reports(self, business_ids: list[int], *, deploy: bool | None = None,
+                            on_progress: Callable[[str], None] | None = None) -> list[dict]:
+        """One shareable audit page per lead (data/reports/<slug>/), optionally published like previews."""
+        from pathlib import Path
+
+        from leadengine.preview.builder import PreviewBuilder
+        from leadengine.report.builder import ReportBuilder
+
+        say = on_progress or (lambda _m: None)
+        builder = ReportBuilder(self.settings)
+        cfg = self.settings.section("preview")
+        deploy = cfg.get("deploy", "none") != "none" if deploy is None else deploy
+        rows = []
+        for bid in business_ids:
+            with self._sf() as session:
+                biz = Repository(session).get_business(bid)
+                if biz is None:
+                    continue
+                say(f"  audit report: {biz.name}")
+                out = builder.build(session, biz)
+                name = biz.name
+            if deploy:
+                try:
+                    out.update(await PreviewBuilder(self.settings, self.http).publish(Path(out["dir"]), out["slug"] + "-audit"))
+                except Exception as exc:
+                    out["error"] = f"publish failed: {exc}"[:200]
+            with self._sf() as session:
+                Repository(session).set_enrichment(bid, "audit", out, source="report")
+                session.commit()
+            rows.append({"id": bid, "name": name, **out})
+        return rows
+
     # ── geo-grid rank heatmap ────────────────────────────────────────
     async def rank_grid(self, keyword: str, *, zip_code: str | None = None, business_id: int | None = None,
                         lat: float | None = None, lng: float | None = None, size: int | None = None,

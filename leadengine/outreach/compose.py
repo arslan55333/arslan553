@@ -221,7 +221,7 @@ def clean_body(text: str, f: OutreachFacts) -> str:
             if URL.search(s):
                 if f.preview_url and f.preview_url in s:
                     s = s.replace(f.preview_url, LINK)
-                else:
+                elif not (f.audit_url and f.audit_url in s):
                     continue
             kept.append(s)
         out_lines.append(" ".join(kept).rstrip())
@@ -274,6 +274,21 @@ async def ai_drafts(llm: LLM, f: OutreachFacts, cfg: dict[str, Any], attach: boo
     return {"variants": variants, "followups": followups}
 
 
+def add_extras(body: str, f: OutreachFacts) -> str:
+    """Measured extras the reader can verify: map visibility and the audit link (added by code, not AI)."""
+    paras = body.split("\n\n")
+    extra = []
+    if f.map_points and f.map_top3 is not None and f.map_top3 < f.map_points / 2 and "map" not in body.lower():
+        extra.append(f"I also checked Google Maps from {f.map_points} spots around {f.city or 'your area'}: "
+                     f"{f.name} shows in the top 3 at {f.map_top3} of them.")
+    if f.audit_url and f.audit_url not in body:
+        extra.append(f"Here's a one-page audit with everything I found: {f.audit_url}")
+    if not extra:
+        return body
+    at = max(1, len(paras) - 1)            # before the closing question
+    return "\n\n".join(paras[:at] + [" ".join(extra)] + paras[at:])
+
+
 async def make_drafts(f: OutreachFacts, cfg: dict[str, Any], llm: LLM | None, attach: bool = False) -> dict[str, Any]:
     source = "template"
     drafts = None
@@ -287,6 +302,9 @@ async def make_drafts(f: OutreachFacts, cfg: dict[str, Any], llm: LLM | None, at
         drafts = template_drafts(f, cfg, attach)
         for d in drafts["variants"] + drafts["followups"]:
             d["source"] = "template"
+    for v in drafts["variants"]:
+        if v["angle"] != "short":
+            v["body"] = add_extras(v["body"], f)
     warnings = []
     if not f.email:
         warnings.append("no email address found yet - use the contact form or phone, or run `emails` first")

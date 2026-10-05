@@ -63,6 +63,9 @@ class OutreachFacts:
     landing_issues: list[str] = field(default_factory=list)   # problems on the page their ads point to
     landing_url: str | None = None
     landing_score: int | None = None
+    audit_url: str | None = None        # published audit report (only when it has a public link)
+    map_top3: int | None = None         # rank map: top-3 spots out of map_points
+    map_points: int | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -150,6 +153,9 @@ def gather(session: Session, biz: Business, cfg: dict[str, Any], brand: dict[str
     prev = repo.latest_enrichment(biz.id, "preview", fresh_only=False)
     land = repo.latest_enrichment(biz.id, "landing", fresh_only=False)
     land_p = (land.payload or {}) if land else {}
+    aud = repo.latest_enrichment(biz.id, "audit", fresh_only=False)
+    rank = repo.latest_enrichment(biz.id, "rank", fresh_only=False)
+    rank_p = (rank.payload or {}) if rank else {}
     web_p = (web.payload or {}) if web else {}
     ads_p = (ads.payload or {}) if ads else {}
     prev_p = (prev.payload or {}) if prev else {}
@@ -188,5 +194,7 @@ def gather(session: Session, biz: Business, cfg: dict[str, Any], brand: dict[str
         landing_issues=list(land_p.get("issues") or [])[:3],
         landing_url=land_p.get("final_url") or land_p.get("url"),
         landing_score=land_p.get("score"),
+        audit_url=((aud.payload or {}).get("url") if aud else None),
+        map_top3=rank_p.get("top3"), map_points=rank_p.get("points"),
     )
 

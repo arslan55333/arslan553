@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>Online visibility audit — {{ b.name }}</title>
+<style>
+:root{--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;--bg:#f8fafc;--brand:#4f46e5;--good:#16a34a;--ok:#d97706;--bad:#dc2626}
+*{box-sizing:border-box}body{margin:0;font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+.wrap{max-width:980px;margin:0 auto;padding:28px 18px 60px}
+header.top{background:#0f172a;color:#fff}header.top .wrap{padding:30px 18px}
+.kicker{text-transform:uppercase;letter-spacing:.12em;font-size:12px;color:#a5b4fc}
+h1{font-size:30px;margin:6px 0 4px}h2{font-size:20px;margin:0 0 12px}.sub{color:#cbd5e1;margin:0}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:-28px 0 22px}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:0 4px 18px rgba(15,23,42,.05)}
+.score{font-size:32px;font-weight:800}.score small{font-size:14px;color:var(--muted);font-weight:500}
+.good{color:var(--good)}.ok{color:var(--ok)}.bad{color:var(--bad)}.na{color:var(--muted)}
+.lbl{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.note{font-size:12px;color:var(--muted)}
+section{margin-top:18px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+ul.issues{margin:0;padding-left:20px}ul.issues li{margin:6px 0}
+.top li{font-size:16px;margin:8px 0}
+img.shot{width:100%;border:1px solid var(--line);border-radius:10px;display:block}
+.shots{display:grid;grid-template-columns:3fr 1fr;gap:10px;align-items:start}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line)}
+th{font-size:12px;text-transform:uppercase;color:var(--muted)}
+.pill{display:inline-block;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600;background:#eef2ff;color:#3730a3}
+.cta{background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;border:0}.cta a{color:#fff}
+footer{color:var(--muted);font-size:12px;margin-top:26px}
+@media(max-width:760px){.cards{grid-template-columns:1fr 1fr}.grid2,.shots{grid-template-columns:1fr}h1{font-size:24px}}
+@media print{body{background:#fff}.card{box-shadow:none;break-inside:avoid}header.top{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style></head><body>
+<header class="top"><div class="wrap">
+ <div class="kicker">Online visibility audit · {{ today }}</div>
+ <h1>{{ b.name }}</h1>
+ <p class="sub">{{ b.address or ((b.city ~ ', ' ~ b.state) if b.city else '') }}{% if b.rating %} · {{ '%.1f'|format(b.rating) }}★ from {{ b.review_count }} Google reviews{% endif %}</p>
+ <p class="sub" style="margin-top:6px">Prepared by {{ brand.name }}{% if brand.url %} · {{ brand.url }}{% endif %}</p>
+</div></header>
+<div class="wrap">
+<div class="cards">{% for c in cards %}<div class="card"><div class="lbl">{{ c.label }}</div>
+ <div class="score {{ c.grade }}">{% if c.value is not none %}{{ c.value }}<small>{{ c.suffix }}</small>{% else %}–{% endif %}</div>
+ <div class="note">{{ c.note }}</div></div>{% endfor %}</div>
+
+{% if top %}<section class="card"><h2>The biggest things holding {{ b.name }} back</h2>
+<ol class="top">{% for t in top %}<li>{{ t }}</li>{% endfor %}</ol></section>{% endif %}
+
+{% if heat %}<section class="card"><h2>Where you show up on Google Maps for “{{ rank.keyword }}”</h2>
+<div class="grid2"><div>{{ heat|safe }}</div>
+<div><p><b>In the top 3 at {{ rank.top3 }} of {{ rank.points }} spots</b> around your business ({{ rank.solv }}% share of the map pack).
+People searching from the red spots don't see you in the first 20 results.</p>
+<p class="note">Each dot is a real Google Maps search from that location, {{ grid.spacing_km }} km apart, on {{ grid.created_at.strftime('%B %d, %Y') }}.</p></div></div></section>{% endif %}
+
+{% if ads and ads.status in ['Active', 'Likely'] %}<section class="card"><h2>Your Google Ads</h2>
+<ul class="issues">{% for e in (ads.evidence or [])[:4] %}<li>{{ e }}</li>{% endfor %}</ul>
+{% if landing %}<h3 style="margin:16px 0 8px">The page your ads send people to {% if landing.score is not none %}<span class="pill">{{ landing.score }}/100</span>{% endif %}</h3>
+<p class="note">{{ landing.final_url or landing.url }}</p>
+{% if landing.issues %}<ul class="issues">{% for i in landing.issues %}<li>{{ i }}</li>{% endfor %}</ul>{% endif %}
+{% if shots.landing %}<div class="shots" style="margin-top:12px"><img class="shot" src="{{ shots.landing }}" alt="ad landing page">
+{% if shots.landing_mobile %}<img class="shot" src="{{ shots.landing_mobile }}" alt="ad landing page on a phone">{% endif %}</div>{% endif %}{% endif %}
+</section>{% endif %}
+
+<section class="card"><h2>Your website {% if b.website_score is not none %}<span class="pill">{{ b.website_score }}/100</span>{% endif %}</h2>
+{% if not b.website %}<p>There is no website linked from the Google listing — customers who find you on Maps have nothing to check before calling.</p>{% endif %}
+{% if website_issues %}<ul class="issues">{% for i in website_issues %}<li>{{ i[0]|upper }}{{ i[1:] }}</li>{% endfor %}</ul>{% endif %}
+{% if web.pagespeed and web.pagespeed.performance is not none %}<p class="note">Google PageSpeed (mobile): {{ web.pagespeed.performance }}/100</p>{% endif %}
+{% if shots.site %}<div class="shots" style="margin-top:12px"><img class="shot" src="{{ shots.site }}" alt="website today">
+{% if shots.site_mobile %}<img class="shot" src="{{ shots.site_mobile }}" alt="website on a phone">{% endif %}</div>{% endif %}
+</section>
+
+{% if seo %}<section class="card"><h2>Local SEO {% if seo.score is not none %}<span class="pill">{{ seo.score }}/100</span>{% endif %}</h2>
+<div class="grid2"><div><div class="lbl">Fix first</div><ul class="issues">{% for i in (seo.issues or [])[:7] %}<li>{{ i }}</li>{% endfor %}</ul></div>
+<div><div class="lbl">Already working</div><ul class="issues">{% for p in (seo.positives or [])[:7] %}<li>{{ p }}</li>{% endfor %}</ul></div></div></section>{% endif %}
+
+{% if competitors %}<section class="card"><h2>Who is winning the customers in your area</h2>
+<table><tr><th>Business</th><th>Rating</th><th>Reviews</th>{% if competitors[0].solv is not none %}<th>Map pack share</th>{% endif %}<th>Website</th><th>Google Ads</th></tr>
+<tr style="background:#f1f5f9"><td><b>{{ b.name }} (you)</b></td><td>{{ b.rating or '–' }}</td><td>{{ b.review_count or 0 }}</td>
+{% if competitors[0].solv is not none %}<td>{{ rank.solv if rank else '–' }}%</td>{% endif %}<td>{{ b.website_score if b.website_score is not none else '–' }}</td><td>{{ b.ads_status or '–' }}</td></tr>
+{% for c in competitors %}<tr><td>{{ c.name }}</td><td>{{ c.rating or '–' }}</td><td>{{ c.reviews or 0 }}</td>{% if competitors[0].solv is not none %}<td>{{ c.solv }}%</td>{% endif %}
+<td>{{ c.site if c.site is not none else '–' }}</td><td>{{ c.ads or '–' }}</td></tr>{% endfor %}</table></section>{% endif %}
+
+<section class="card cta"><h2>What fixing this looks like</h2>
+{% if shots.preview %}<img class="shot" src="{{ shots.preview }}" alt="concept homepage" style="margin-bottom:12px">{% endif %}
+<p>{% if preview.url %}We built a free concept of a modern, fast homepage for {{ b.name }}: <a href="{{ preview.url }}">{{ preview.url }}</a>{% else %}We can show you a free concept of a modern, fast homepage for {{ b.name }}.{% endif %}</p>
+<p>Questions? {{ brand.name }}{% if brand.email %} · <a href="mailto:{{ brand.email }}">{{ brand.email }}</a>{% endif %}{% if brand.url %} · <a href="{{ brand.url }}">{{ brand.url }}</a>{% endif %}</p></section>
+
+<footer>Independent audit based on public information collected on {{ today }} (Google search and Maps results, the public website).
+Not affiliated with or endorsed by Google. Results change over time and by location.{% if heat %} Map data © OpenStreetMap contributors.{% endif %}</footer>
+</div></body></html>

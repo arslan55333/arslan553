@@ -342,7 +342,7 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
                 raise HTTPException(404)
             repo = Repository(s)
             enr = {k: (e.payload if (e := repo.latest_enrichment(business_id, k, fresh_only=False)) else None)
-                   for k in ("website", "ads", "emails", "maps_activity", "landing", "rank", "seo")}
+                   for k in ("website", "ads", "emails", "maps_activity", "landing", "rank", "seo", "audit")}
             emails = list(s.scalars(select(Email).where(Email.business_id == business_id)
                                     .order_by(Email.is_guess, Email.confidence.desc().nulls_last())))
             status = crm.current_status(s, business_id)
@@ -462,6 +462,11 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             text = to_merge_csv(merge_rows(items, outreach_cfg(), angle))
         return Response(text, media_type="text/csv",
                         headers={"Content-Disposition": "attachment; filename=drafts.csv"})
+
+    @app.post("/leads/{business_id}/audit")
+    def lead_audit(business_id: int, deploy: bool = Form(False)):
+        job_id = jobs.enqueue(sf, "audit", {"ids": [business_id], "deploy": deploy})
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
     @app.post("/leads/{business_id}/note")
     def lead_note(business_id: int, note: str = Form(...)):

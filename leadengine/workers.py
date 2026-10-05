@@ -132,5 +132,13 @@ def make_handlers(settings: Settings, sf: sessionmaker[Session]) -> dict[str, Ha
             finally:
                 await service.aclose()
 
+    async def audit(ctx: JobContext) -> list[dict[str, Any]]:
+        async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
+            service = LeadService(settings, sf, http, CreditTracker(sf, settings))
+            rows = await service.build_reports(ctx.params["ids"], deploy=ctx.params.get("deploy"), on_progress=ctx.log)
+        for r in rows:
+            ctx.log(f"{r['name']}: {r.get('url') or r.get('path')}" + (f" ({r['error']})" if r.get("error") else ""))
+        return [{k: r.get(k) for k in ("id", "name", "url", "path", "error")} for r in rows]
+
     return {"discover": discover, "preview": preview, "outreach": outreach, "send": send, "enrich": enrich,
-            "sweep": sweep, "rankgrid": rankgrid}
+            "sweep": sweep, "rankgrid": rankgrid, "audit": audit}

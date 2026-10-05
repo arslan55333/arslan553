@@ -28,6 +28,12 @@
   <button class="btn">Save</button></form>
   {% if events %}<ul class="clean small" style="margin-top:12px">{% for e in events %}<li><span class="muted">{{ e.at.strftime('%Y-%m-%d %H:%M') }}</span> {% if e.status %}<b>{{ e.status }}</b>{% endif %} {{ e.note or '' }}</li>{% endfor %}</ul>{% endif %}</div>
 </div>
+<div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between">
+ <div><h2 style="margin:0">Audit report</h2><p class="small muted" style="margin:4px 0 0">One shareable page with every finding (scores, map, ads, website, SEO, competitors, your concept). Open it and use Print → Save as PDF for a PDF.</p></div>
+ <form method="post" action="/leads/{{ b.id }}/audit" class="row"><label style="font-weight:500;margin:0"><input type="checkbox" name="deploy" value="true">Publish</label>
+  <button class="btn">{{ 'Rebuild report' if enr.audit else 'Build audit report' }}</button></form></div>
+ {% if enr.audit %}<p class="small" style="margin-top:8px"><a href="{{ enr.audit.url or media_url(enr.audit.path) }}" target="_blank" rel="noopener"><b>Open audit report</b></a>
+  {% if enr.audit.url %}<span class="muted"> · {{ enr.audit.url }}</span>{% endif %}</p>{% endif %}</div>
 {% if enr.rank %}{% set rk = enr.rank %}
 <div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between"><h2>Google Maps visibility for “{{ rk.keyword }}”</h2>
  <a href="/rank/{{ rk.grid_id }}?b={{ b.id }}">full map & competitors →</a></div>

@@ -88,11 +88,14 @@ def svg_heatmap(points: list[dict[str, Any]], business_id: int | None, *, title:
     left, top = cx - width / 2, cy - width / 2
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {width + 34}" width="100%" '
              f'role="img" aria-label="{html.escape(title or "rank heatmap")}" style="max-width:{width}px;font-family:system-ui,sans-serif">',
+             f'<rect width="{width}" height="{width + 34}" fill="#ffffff"/>',
              f'<rect width="{width}" height="{width}" fill="#eef2f7"/>']
     if tiles:
         t0x, t0y = int(left // 256), int(top // 256)
         t1x, t1y = int((left + width) // 256), int((top + width) // 256)
-        parts.append('<g opacity="0.85">')
+        clip = f"mapclip{abs(hash((round(left), round(top), business_id))) % 10**8}"
+        parts.append(f'<clipPath id="{clip}"><rect width="{width}" height="{width}"/></clipPath>'
+                     f'<g opacity="0.85" clip-path="url(#{clip})">')
         for tx in range(t0x, t1x + 1):
             for ty in range(t0y, t1y + 1):
                 parts.append(f'<image href="https://tile.openstreetmap.org/{z}/{tx}/{ty}.png" x="{tx * 256 - left:.1f}" '
