@@ -80,6 +80,21 @@ screenshot (`--vision`, provider in `[llm]`). Flags: `no_website`, `facebook_onl
 `data/screenshots/`. Wider tech detection: `python -m leadengine update-fingerprints` downloads the
 open-source webappanalyzer set (GPL-3.0, kept local).
 
+## Google Ads detection (Phase 5)
+
+`python -m leadengine ads --zip 75201 -k "dumpster rental"` (also inside `discover`). Combines:
+1. **Live Google search** for "keyword + city" (localised with Google's `uule` location): Sponsored
+   text ads and Local Services Ads (Google Guaranteed / Screened), matched to businesses by domain,
+   phone or name. Free via the headless browser, or `serp_provider = "serpapi"` (1 credit per
+   keyword+city). One results page is cached and shared by every business in that city.
+2. **Website code** (free): Google Ads conversion/remarketing tags (`AW-...`), tags hidden inside the
+   site's Google Tag Manager container, gclid handling, call tracking (CallRail, CTM, WhatConverts,
+   Invoca, Marchex), Meta Pixel (reported separately as Meta ads), Microsoft Ads.
+3. **Sponsored on Google Maps** (seen during discovery) and, optionally, the **Ads Transparency
+   Center** via SerpAPI (`transparency = true`, 1 credit per business).
+
+Result per business: `ads_status` Active / Likely / Past / None, `lsa` yes/no, confidence and evidence.
+
 ## AI providers
 
 `[llm]` in config.toml: `claude` (default, `claude-opus-5-5`, official Anthropic SDK, refusal fallback on),

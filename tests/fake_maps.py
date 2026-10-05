@@ -130,12 +130,32 @@ document.getElementById('sort').onclick = () => { document.getElementById('menu'
 document.getElementById('newest').onclick = () => { document.getElementById('menu').style.display = 'none'; show(newest); };
 </script></body></html>"""
 
+SERP_HTML = """<!doctype html><html><body><div id="search">
+<div data-text-ad="1"><span>Sponsored</span>
+  <a href="https://www.googleadservices.com/pagead/aclk?sa=L&adurl=https://pros%(ad_domain)s/landing">
+  <div role="heading">Same-Day Dumpster Rental - Free Delivery</div></a>
+  <span data-dtld="pros%(ad_domain)s">pros%(ad_domain)s</span> Call (214) 555-1002</div>
+<div data-text-ad="1"><span>Sponsored</span><a href="https://www.googleadservices.com/pagead/aclk?adurl=https://bigchain.com/">
+  <div role="heading">BigChain Dumpsters</div></a><span data-dtld="bigchain.com">bigchain.com</span></div>
+<div class="lsa"><div>Sponsored</div>
+  <div data-lsa-card="1"><div role="heading">%(lsa_name)s</div><span>Google Guaranteed</span> 4.8 (31)</div>
+  <div data-lsa-card="1"><div role="heading">Other Guaranteed Pro</div><span>Google Screened</span></div>
+</div>
+<div class="g"><a href="https://organic.example.com"><h3>Organic result</h3></a></div>
+</div></body></html>"""
+
 SORRY_HTML = "<html><body>Our systems have detected unusual traffic from your computer network.</body></html>"
+
+
+# business #2 (default seed) runs a search ad, business #3 a Local Services Ad
+_b2, _b3 = business(2), business(3)
+SERP_HTML = SERP_HTML % {"ad_domain": _b2["website"].split("pros", 1)[1].split("/")[0], "lsa_name": _b3["name"]}
 
 
 class FakeMaps:
     def __init__(self) -> None:
         self.requests: list[str] = []
+        self.serp_queries: list[str] = []
         self.blocked_types: list[str] = []
         handler = self._handler()
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -174,6 +194,9 @@ class FakeMaps:
                 path = unquote(url.path)
                 if path.startswith("/maps/search/"):
                     return self.search(path)
+                if path == "/search" and "tbm=map" not in url.query:
+                    fake.serp_queries.append(url.query)
+                    return self.send(SERP_HTML)
                 if path == "/search":
                     qs = parse_qs(url.query)
                     start, total = int(qs["start"][0]), int(qs["total"][0])

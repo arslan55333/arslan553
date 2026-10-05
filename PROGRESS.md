@@ -1,8 +1,8 @@
 # PROGRESS
 
 ## Current Status
-- Current phase: Phase 5 — Google Ads detection (next). Owner asked Claude to self-test and keep building all remaining phases without waiting.
-- Last completed step: Phase 4 Website Score built + self-tested (142 tests passing)
+- Current phase: Phase 6 — Opportunity Score (next). Owner asked Claude to self-test and keep building all remaining phases without waiting.
+- Last completed step: Phase 5 Google Ads detection built + self-tested (152 tests passing)
 - Waiting on: nothing for building; owner's live runs of Phases 2–4 still outstanding
 
 ## Phase Checklist
@@ -11,7 +11,7 @@
 - [ ] Phase 2 — Scraping engine v2 (Playwright, ZIP grid, proxies) — built + self-tested, awaiting live run
 - [ ] Phase 3 — Email extraction v2 (+ verification, confidence) — built + self-tested, awaiting live run
 - [ ] Phase 4 — Website Score (0–100) — built + self-tested, awaiting live run
-- [ ] Phase 5 — Google Ads detection
+- [ ] Phase 5 — Google Ads detection — built + self-tested, awaiting live run
 - [ ] Phase 6 — Opportunity Score & filtering
 - [ ] Phase 7 — Dashboard & mini CRM
 - [ ] Phase 8 — Preview landing page generator
@@ -19,6 +19,17 @@
 - [ ] Phase 10 — Hardening & polish
 
 ## Phase Log (newest first)
+### Phase 5 — Google Ads detection (2026-10-05)
+- What was done:
+  - `leadengine/enrich/ads/`: `site_tags.py` (ad tech in the site's code + Google Tag Manager container), `serp.py` (live Google results: browser or SerpAPI, uule localisation, ad parsing, matching), `status.py` (verdict + Ads Transparency parsing).
+  - Verdict rules: live search ad or LSA, Sponsored on Maps, or Transparency ad shown in the last 30 days -> **Active**; Google Ads tag/remarketing on site (incl. inside GTM) -> **Likely** (70); call tracking + gclid -> Likely (55); call tracking only -> Likely (40); Transparency ads older than 30 days -> **Past**; else **None**. `lsa` = matched Local Services Ad. Meta Pixel -> `meta_ads` flag. Every verdict carries plain-English evidence ("Google search ad live now (position 1: ...)", "Google Ads tag on website: AW-111222333 (inside Google Tag Manager)").
+  - Matching: ad landing/display domain = business domain, or same phone, or strong name match (>= 2 meaningful words); single generic words never match.
+  - Caching: one SERP snapshot per keyword + city (new `serp_snapshots` table, 7 days) shared by all businesses there; site tags and Transparency cached per business. Columns ads_status / lsa / ads_confidence / meta_ads; CLI `ads`; `discover --ads` (on by default for the shortlist); discover table shows "Active +LSA"; export includes ads columns.
+- Self-test found and fixed: LSA parser treated the whole results block as one card (missed every LSA) — rewritten to find each card by its badge.
+- How to test: after a discover, `python -m leadengine ads --zip 75201 -k "dumpster rental"`; compare with what you see searching Google in that city. `serp_provider = "serpapi"` in config for the paid, captcha-free source.
+- Test result: Claude self-test — 10 new tests: tag scanning, GTM container with hidden AW- tag, uule, ad URL unwrapping, SerpAPI ads/local_ads parsing, matching, all verdict levels, Transparency dates, real Chromium against a local fake Google results page (2 search ads + 2 LSAs parsed, uule sent), full service run (Active / Active+LSA / Likely via GTM / None, one SERP fetch then cache). 152 tests pass.
+- Known issues / limitations: Google's results DOM changes often; the parser uses `data-text-ad`, `data-dtld` and the badge text — validate on the first live run. Google may show a captcha to the headless browser at volume (use proxies or SerpAPI). Transparency Center parsing follows SerpAPI's documented fields defensively.
+
 ### Phase 4 — Website Score (2026-10-05)
 - What was done:
   - `leadengine/enrich/website/`: `signals.py` (HTML signals), `tech.py` (Wappalyzer-format engine + built-in rules), `remote.py` (TLS certificate, PageSpeed Insights, Wayback CDX, sitemap lastmod), `render.py` (Playwright desktop full-page + phone screenshots, real mobile layout test, JS-reported versions), `score.py` (0–100 with per-signal points and reasons), `analyzer.py` (pipeline).
@@ -242,7 +253,7 @@ tests/
 - (2026-10-05) Per-context proxies; captcha -> immediate proxy ban; without proxies a captcha stops the run with a clear message.
 
 ## Next Steps
-- Building Phase 5 — Google Ads detection (live SERP sponsored + LSA, website ad tags incl. GTM container, optional Ads Transparency) -> Phase 6 scoring -> Phase 7 dashboard -> 8 previews -> 9 outreach -> 10 hardening.
+- Building Phase 6 — Opportunity Score (weights, Hot/Warm/Cold/Skip + reason, filters, ZIP prioritisation) -> Phase 7 dashboard -> 8 previews -> 9 outreach -> 10 hardening.
 - Owner (any time): live runs of Phases 2–4 on a real ZIP.
 - (Done) Phase 4 — Website Score (0–100): copyright year, HTTPS/SSL validity & expiry (crawler already flags broken SSL), mobile viewport, tech stack via webappanalyzer fingerprints (old jQuery/WordPress/Flash/tables/builders), PageSpeed Insights (free key), Wayback CDX + sitemap lastmod age, conversion basics (click-to-call, forms, reviews widget, CTA), Playwright screenshot, optional AI vision rating, flags for no/broken/parked/Facebook-only sites.
 

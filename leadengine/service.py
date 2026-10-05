@@ -76,6 +76,7 @@ class DiscoverOutcome:
     paid_calls: int = 0
     emails: EmailRunSummary | None = None
     websites: list[dict] | None = None
+    ads: list[dict] | None = None
     skipped: int = 0
 
 
@@ -189,6 +190,7 @@ class LeadService:
         fill: bool | None = None,
         emails: bool | None = None,
         website: bool | None = None,
+        ads: bool | None = None,
         cell_km: float | None = None,
         max_depth: int | None = None,
         max_cells: int | None = None,
@@ -202,6 +204,7 @@ class LeadService:
         fill = cfg.get("fill_missing", True) if fill is None else fill
         emails = cfg.get("emails", True) if emails is None else emails
         website = cfg.get("website", True) if website is None else website
+        ads = cfg.get("ads", True) if ads is None else ads
 
         info = zip_directory().get(zip_code)
         with self._sf() as session:
@@ -293,7 +296,10 @@ class LeadService:
         if website and shortlist_ids:
             say(f"Scoring {len(shortlist_ids)} shortlisted websites...")
             outcome.websites = await self.score_websites(shortlist_ids, on_progress=say)
-        if (emails or website) and shortlist_ids:
+        if ads and shortlist_ids:
+            say(f"Checking Google Ads for {len(shortlist_ids)} shortlisted businesses...")
+            outcome.ads = await self.detect_ads(shortlist_ids, keyword=keyword, on_progress=say)
+        if (emails or website or ads) and shortlist_ids:
             with self._sf() as session:
                 outcome.results = Repository(session).search_results(outcome.search_id)
         return outcome
@@ -504,6 +510,109 @@ class LeadService:
                 await asyncio.gather(*(one(b) for b in businesses))
             finally:
                 await analyzer.aclose()
+        return rows
+
+
+    # ── ads detection (Phase 5) ──────────────────────────────────────
+    async def detect_ads(self, business_ids: list[int], *, keyword: str | None = None, refresh: bool = False,
+                         on_progress: Callable[[str], None] | None = None) -> list[dict]:
+        """Live SERP ads + LSA (per keyword/city, cached), website ad tags (per business, cached),
+        optional Ads Transparency -> ads_status / lsa on each business."""
+        from datetime import date
+
+        from leadengine.enrich.ads.serp import SerpSnapshot, match_ads, serp_browser, serp_serpapi
+        from leadengine.enrich.ads.site_tags import SiteAdSignals, scan_gtm, scan_html
+        from leadengine.enrich.ads.status import decide, parse_transparency
+        from leadengine.enrich.emails.crawl import CrawlResult, SiteCrawler
+
+        say = on_progress or (lambda _m: None)
+        cfg = self.settings.section("ads")
+        serp_source = str(cfg.get("serp_provider", "playwright")).lower()
+        ttl = self.settings.ttl("ads")
+        today = date.today()
+        crawler = SiteCrawler(self.http, max_pages=1, timeout=float(cfg.get("timeout_seconds", 15)))
+        rows: list[dict] = []
+        try:
+            with self._sf() as session:
+                repo = Repository(session)
+                businesses = [b for b in (repo.get_business(i) for i in business_ids) if b is not None]
+
+                # 1) one results page per keyword + city
+                snapshots: dict[tuple[str, str], SerpSnapshot | None] = {}
+                plans: dict[int, tuple[str, str] | None] = {}
+                for biz in businesses:
+                    kw = keyword or next(iter(repo.keywords_for(biz.id)), None) or (biz.categories or [None])[0]
+                    plans[biz.id] = (kw, f"{biz.city}|{biz.state}") if kw and biz.city and biz.state else None
+                if serp_source != "none":
+                    for kw, loc in {p for p in plans.values() if p}:
+                        city, state = loc.split("|")
+                        cached = None if refresh else repo.get_serp(kw, loc, serp_source, ttl)
+                        if cached is not None:
+                            snapshots[(kw, loc)] = SerpSnapshot.from_dict(cached.payload)
+                            continue
+                        say(f"  Google search: {kw} {city}, {state} ({serp_source})")
+                        try:
+                            if serp_source == "serpapi":
+                                snap = await serp_serpapi(self._ready("serpapi"), kw, city, state)
+                            else:
+                                prov = self._ready("playwright")
+                                snap = await serp_browser(prov, kw, city, state, prov.base_url)
+                        except LeadEngineError as exc:
+                            snap = SerpSnapshot(kw, f"{city}, {state}", serp_source, error=str(exc))
+                        snapshots[(kw, loc)] = snap
+                        if not snap.error:
+                            repo.save_serp(kw, loc, serp_source, snap.as_dict())
+                            session.commit()
+
+                # 2) per business: site tags, transparency, verdict
+                for biz in businesses:
+                    async def site_compute(b=biz):
+                        if not b.website:
+                            return None
+                        page = await crawler._home(b.website, CrawlResult(start_url=b.website))
+                        if page is None:
+                            return None
+                        sig = scan_html(page.html)
+                        if cfg.get("gtm", True) and sig.gtm_containers:
+                            sig = await scan_gtm(self.http, sig)
+                        return sig.as_dict()
+
+                    site_payload, _ = await cached_enrichment(repo, biz.id, "ads_site", ttl, site_compute,
+                                                              refresh=refresh, source="site")
+                    site = SiteAdSignals(**site_payload) if site_payload else None
+
+                    transparency = None
+                    if cfg.get("transparency", False) and biz.domain:
+                        async def tc_compute(b=biz):
+                            prov = self._ready("serpapi")
+                            r = await self.http.request("GET", "https://serpapi.com/search.json", params={
+                                "engine": "google_ads_transparency_center", "text": b.domain, "region": "2840",
+                                "api_key": self.settings.serpapi_api_key})
+                            data = prov._json(r)
+                            prov._record("ads_transparency", success=not data.get("error"))
+                            return parse_transparency(data, b.domain, today) if not data.get("error") else None
+                        try:
+                            transparency, _ = await cached_enrichment(repo, biz.id, "ads_transparency", ttl,
+                                                                      tc_compute, refresh=refresh, source="serpapi")
+                        except LeadEngineError as exc:
+                            say(f"  transparency check skipped: {exc}")
+
+                    plan = plans.get(biz.id)
+                    snap = snapshots.get(plan) if plan else None
+                    hits = match_ads(snap.ads, name=biz.name, domain=biz.domain, phone=biz.phone) if snap else []
+                    verdict = decide(serp_hits=hits, serp_checked=bool(snap and not snap.error), site=site,
+                                     maps_sponsored=repo.latest_enrichment(biz.id, "maps_sponsored") is not None,
+                                     transparency=transparency, today=today)
+                    payload = {**verdict.as_dict(), "keyword": plan[0] if plan else None,
+                               "serp_error": snap.error if snap else None,
+                               "serp_ads_seen": len(snap.ads) if snap else None}
+                    repo.set_enrichment(biz.id, "ads", payload, ttl_days=ttl, source="ads")
+                    biz.ads_status, biz.lsa = verdict.status, verdict.lsa
+                    biz.ads_confidence, biz.meta_ads = verdict.confidence, verdict.meta_ads
+                    session.commit()
+                    rows.append({"name": biz.name, **payload})
+        finally:
+            await crawler.aclose()
         return rows
 
 

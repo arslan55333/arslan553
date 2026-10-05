@@ -18,6 +18,7 @@ from leadengine.db.models import (
     GeoCache,
     Search,
     SearchResult,
+    SerpSnapshot,
     utcnow,
 )
 from leadengine.models import BusinessRecord, SearchQuery
@@ -300,6 +301,28 @@ class Repository:
         row.payload, row.fetched_at = payload, utcnow()
         self.session.add(row)
         self.session.flush()
+
+    # ── SERP snapshots (ads) ─────────────────────────────────────────
+    def get_serp(self, keyword: str, location: str, provider: str, ttl_days: float) -> SerpSnapshot | None:
+        return self.session.scalar(
+            select(SerpSnapshot).where(
+                SerpSnapshot.keyword_norm == normalize_keyword(keyword), SerpSnapshot.location == location,
+                SerpSnapshot.provider == provider, SerpSnapshot.fetched_at >= _cutoff(ttl_days),
+            ).order_by(SerpSnapshot.fetched_at.desc()).limit(1))
+
+    def save_serp(self, keyword: str, location: str, provider: str, payload: Any) -> SerpSnapshot:
+        row = SerpSnapshot(keyword_norm=normalize_keyword(keyword), location=location, provider=provider,
+                           payload=payload)
+        self.session.add(row)
+        self.session.flush()
+        return row
+
+    def keywords_for(self, business_id: int) -> list[str]:
+        """Search keywords this business was found with (most recent first)."""
+        rows = self.session.execute(
+            select(Search.keyword).join(SearchResult, SearchResult.search_id == Search.id)
+            .where(SearchResult.business_id == business_id).order_by(Search.ran_at.desc())).scalars()
+        return list(dict.fromkeys(rows))
 
     # ── Emails ───────────────────────────────────────────────────────
     def save_emails(self, business_id: int, rows: list[dict[str, Any]]) -> None:

@@ -40,6 +40,7 @@ fill_provider = "serpapi"
 max_fill = 25             # max paid lookups per run
 emails = true             # crawl shortlisted websites for emails (see [emails])
 website = true            # score shortlisted websites 0-100 (see [website])
+ads = true                # detect Google Ads / LSA for shortlisted leads (see [ads])
 
 # Email finding (Phase 3)
 [emails]
@@ -65,6 +66,13 @@ wayback = true            # Wayback Machine: when the site first appeared
 screenshot = true         # full-page + mobile screenshots with Playwright (data/screenshots/)
 vision = false            # AI design review of the screenshot (uses [llm]); costs API credits
 shortlist_only = true
+
+# Google Ads detection (Phase 5)
+[ads]
+serp_provider = "playwright"   # playwright (free) | serpapi (1 credit per keyword+city) | none
+gtm = true                     # read the site's Google Tag Manager container for hidden AW- tags
+transparency = false           # Ads Transparency Center via SerpAPI (1 credit per business)
+timeout_seconds = 15
 
 # AI provider used by design review, preview copy and outreach drafts
 [llm]

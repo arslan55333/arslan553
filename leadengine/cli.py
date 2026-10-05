@@ -159,6 +159,7 @@ def discover(
     fill: Optional[bool] = typer.Option(None, "--fill/--no-fill", help="Use the paid API to fill missing phone/website for shortlisted leads"),
     emails: Optional[bool] = typer.Option(None, "--emails/--no-emails", help="Find emails on shortlisted websites"),
     website: Optional[bool] = typer.Option(None, "--website/--no-website", help="Score shortlisted websites 0-100"),
+    ads: Optional[bool] = typer.Option(None, "--ads/--no-ads", help="Detect Google Ads / Local Services Ads"),
     cell_km: Optional[float] = typer.Option(None, "--cell-km", help="Starting grid cell size in km"),
     max_depth: Optional[int] = typer.Option(None, "--max-depth", help="How often saturated cells may split"),
     max_cells: Optional[int] = typer.Option(None, "--max-cells", help="Cap on searches this run"),
@@ -193,7 +194,7 @@ def discover(
             try:
                 return await service.discover(
                     keyword, zip_code, provider_name=provider, refresh=refresh, towns=towns, activity=activity,
-                    fill=fill, emails=emails, website=website, cell_km=cell_km, max_depth=max_depth, max_cells=max_cells,
+                    fill=fill, emails=emails, website=website, ads=ads, cell_km=cell_km, max_depth=max_depth, max_cells=max_cells,
                     on_progress=lambda m: console.print(f"[dim]{m}[/]"),
                 )
             finally:
@@ -208,7 +209,7 @@ def discover(
 
     rows = sorted(out.results, key=lambda t: (-(t[0].review_count or 0), t[1]))
     table = Table(title=f"{keyword} - ZIP {zip_code}  [{out.provider}]  {len(out.results)} businesses")
-    for col in ("Name", "Rating", "Reviews", "Last review", "Replies", "Claimed", "Site score", "Website", "Email"):
+    for col in ("Name", "Rating", "Reviews", "Last review", "Replies", "Ads", "Site score", "Website", "Email"):
         table.add_column(col, justify="right" if col in ("Rating", "Reviews") else "left",
                          no_wrap=True, overflow="ellipsis", min_width=4 if col != "Name" else 12)
     for biz, _rank in rows[:show]:
@@ -217,8 +218,7 @@ def discover(
             str(biz.review_count) if biz.review_count is not None else "-",
             f"{biz.last_review_at:%Y-%m-%d}" if biz.last_review_at else "-",
             f"{biz.owner_response_rate:.0%}" if biz.owner_response_rate is not None else "-",
-            {True: "yes", False: "NO"}.get(biz.claimed, "-"),
-            _site_cell(biz), _short_url(biz.website, 26), _email_cell(biz),
+            _ads_cell(biz), _site_cell(biz), _short_url(biz.website, 26), _email_cell(biz),
         )
     console.print(table)
     if out.from_cache:
@@ -239,6 +239,12 @@ def discover(
                       f"(crawled {e.checked}, cached {e.cached}, unreachable {e.unreachable}, guesses only {e.guesses_only})")
     if out.skipped:
         console.print(f"[yellow]{out.skipped} record(s) skipped - see logs.[/]")
+
+
+def _ads_cell(biz) -> str:
+    if not biz.ads_status:
+        return "-"
+    return biz.ads_status + (" +LSA" if biz.lsa else "")
 
 
 def _site_cell(biz) -> str:
@@ -413,6 +419,49 @@ def website(
     console.print(table)
 
 
+@app.command(name="ads")
+def ads_cmd(
+    zip_code: Optional[str] = typer.Option(None, "--zip", "-z"),
+    keyword: Optional[str] = typer.Option(None, "--keyword", "-k", help="Search keyword for the live ad check"),
+    min_reviews: Optional[int] = typer.Option(None, "--min-reviews"),
+    min_rating: Optional[float] = typer.Option(None, "--min-rating"),
+    all_leads: bool = typer.Option(False, "--all"),
+    limit: int = typer.Option(50, "--limit"),
+    refresh: bool = typer.Option(False, "--refresh"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """Who runs Google Ads? Live search ads + Local Services Ads + ad tags on the website."""
+    settings, sf = _bootstrap(verbose)
+    disc = settings.section("discovery")
+    if not all_leads:
+        min_reviews = min_reviews if min_reviews is not None else int(disc.get("shortlist_min_reviews", 20))
+        min_rating = min_rating if min_rating is not None else float(disc.get("shortlist_min_rating", 4.0))
+    with sf() as s:
+        ids = [b.id for b in Repository(s).list_businesses(keyword=keyword, zip_code=zip_code, min_rating=min_rating,
+                                                           min_reviews=min_reviews, limit=limit)]
+    if not ids:
+        _fail("no saved businesses match (run `discover` first, or use --all)")
+
+    async def _run():
+        async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
+            service = LeadService(settings, sf, http, CreditTracker(sf, settings))
+            try:
+                return await service.detect_ads(ids, keyword=keyword, refresh=refresh,
+                                                on_progress=lambda m: console.print(f"[dim]{m}[/]"))
+            finally:
+                await service.aclose()
+
+    rows = asyncio.run(_run())
+    order = {"Active": 0, "Likely": 1, "Past": 2, "None": 3}
+    table = Table(title=f"Google Ads status ({len(rows)})")
+    for col in ("Business", "Ads", "LSA", "Conf.", "Meta ads", "Evidence"):
+        table.add_column(col, overflow="fold" if col == "Evidence" else "ellipsis", no_wrap=col != "Evidence")
+    for r in sorted(rows, key=lambda r: (order.get(r["status"], 9), -r["confidence"])):
+        table.add_row(r["name"][:30], r["status"], "yes" if r["lsa"] else "-", str(r["confidence"]),
+                      "yes" if r["meta_ads"] else "-", "; ".join(r["evidence"][:3]) or (r.get("serp_error") or "-"))
+    console.print(table)
+
+
 @app.command(name="update-fingerprints")
 def update_fingerprints() -> None:
     """Download the open-source webappanalyzer fingerprints (GPL-3.0) for wider tech detection."""
@@ -551,7 +600,8 @@ def export(
     with sf() as s:
         rows = Repository(s).list_businesses(keyword=keyword, zip_code=zip_code)
     fields = ["id", "place_id", "data_id", "name", "best_email", "email_confidence", "email_status", "owner_name",
-              "website_score", "website_grade", "website_flags", "screenshot_path",
+              "website_score", "website_grade", "website_flags", "screenshot_path", "ads_status", "lsa",
+              "ads_confidence", "meta_ads",
               "categories", "rating", "review_count", "last_review_at",
               "recent_review_dates", "owner_response_rate", "claimed", "photo_count", "maps_ad_seen",
               "phone", "website", "domain", "address", "city", "state", "zip_code", "lat", "lng",

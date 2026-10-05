@@ -70,6 +70,12 @@ class Business(Base):
     website_flags: Mapped[Any] = mapped_column(JSON, nullable=True)
     screenshot_path: Mapped[str | None] = mapped_column(Text)
 
+    # Ads (Phase 5)
+    ads_status: Mapped[str | None] = mapped_column(String(10))       # Active | Likely | Past | None
+    lsa: Mapped[bool | None] = mapped_column(Boolean)
+    ads_confidence: Mapped[int | None] = mapped_column(Integer)
+    meta_ads: Mapped[bool | None] = mapped_column(Boolean)
+
     # Activity signals (Phase 2 Maps scraping)
     photo_count: Mapped[int | None] = mapped_column(Integer)
     last_review_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -216,5 +222,19 @@ class DomainCheck(Base):
 
     domain: Mapped[str] = mapped_column(String(255), primary_key=True)
     kind: Mapped[str] = mapped_column(String(30), primary_key=True)
+    payload: Mapped[Any] = mapped_column(JSON, nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class SerpSnapshot(Base):
+    """Cached Google results page (ads) for one keyword + location, shared by all businesses there."""
+
+    __tablename__ = "serp_snapshots"
+    __table_args__ = (Index("ix_serp_lookup", "keyword_norm", "location", "provider", "fetched_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    keyword_norm: Mapped[str] = mapped_column(String(255))
+    location: Mapped[str] = mapped_column(String(255))
+    provider: Mapped[str] = mapped_column(String(30))
     payload: Mapped[Any] = mapped_column(JSON, nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
