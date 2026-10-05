@@ -102,6 +102,30 @@ def test_adaptive_grid_respects_depth_budget_and_failures():
     assert report2.cells_failed == 1 and len(report2.records) == 5 and "boom" in report2.errors[0]
 
 
+def test_grid_resumes_from_cell_checkpoints(session_factory):
+    """A scan that dies half-way reuses the finished cells next time (0 provider calls for them)."""
+    from datetime import datetime
+
+    from leadengine.discovery import DbCellCache
+
+    cells = [Cell(32.78, -96.8, 1.0), Cell(33.0, -96.8, 1.0), Cell(33.2, -96.8, 1.0)]
+    first = GridFake(fail_key="33.20000")                 # last cell crashes (captcha, network...)
+    cache = DbCellCache(session_factory, "fake|x", 14)
+    asyncio.run(run_adaptive_grid(first, SearchQuery("x"), cells, cache=cache))
+    again = GridFake()
+    report = asyncio.run(run_adaptive_grid(again, SearchQuery("x"), cells, cache=cache))
+    assert report.cells_cached == 2 and len(again.queries) == 1 and len(report.records) == 15
+    assert report.api_calls == 1
+    fresh = GridFake()
+    asyncio.run(run_adaptive_grid(fresh, SearchQuery("x"), cells,
+                                  cache=DbCellCache(session_factory, "fake|x", 14, read=False)))
+    assert len(fresh.queries) == 3                        # --refresh ignores checkpoints
+    rec = BusinessRecord(name="A", provider="p", last_review_at=datetime(2026, 1, 2), categories=["x"], raw={"big": 1})
+    cache.put("k", [rec], True)
+    back, exhausted = cache.get("k")
+    assert back[0].last_review_at == datetime(2026, 1, 2) and back[0].raw == {} and exhausted
+
+
 # ── Proxies ──────────────────────────────────────────────────────────
 @pytest.mark.parametrize("line, expected", [
     ("1.2.3.4:8080", "http://1.2.3.4:8080"),

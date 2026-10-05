@@ -95,11 +95,7 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             min_reviews=int(q["min_reviews"]) if q.get("min_reviews") else None,
             labels=[q["label"]] if q.get("label") else None, ads_statuses=[q["ads"]] if q.get("ads") else None,
             max_site_score=int(q["max_site"]) if q.get("max_site") else None, email=q.get("email") or None,
-            order=q.get("sort") or "opportunity", limit=limit)
-        text = (q.get("q") or "").lower().strip()
-        if text:
-            rows = [b for b in rows if text in " ".join(filter(None, [b.name, b.best_email, b.website, b.phone,
-                                                                       b.city])).lower()]
+            text=q.get("q") or None, order=q.get("sort") or "opportunity", limit=limit)
         return rows
 
     # ── pages ────────────────────────────────────────────────────────
@@ -171,7 +167,8 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
         q = dict(request.query_params)
         with sf() as s:
             rows = filtered(s, q)
-            statuses = {b.id: crm.current_status(s, b.id) for b in rows}
+            known = Repository(s).lead_statuses([b.id for b in rows])
+            statuses = {b.id: known.get(b.id, "New") for b in rows}
         return render(request, "leads.html", rows=rows, q=q, statuses=statuses,
                       query=str(request.url.query))
 

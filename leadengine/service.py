@@ -19,7 +19,7 @@ from leadengine.config import Settings
 from leadengine.credits import CreditTracker
 from leadengine.db.models import Business, utcnow
 from leadengine.db.repo import Repository
-from leadengine.discovery import GridReport, run_adaptive_grid
+from leadengine.discovery import DbCellCache, GridReport, run_adaptive_grid
 from leadengine.errors import LeadEngineError, ProviderError, ProviderNotConfigured
 from leadengine.geo.geocode import geocode_zip
 from leadengine.geo.grid import plan_cells
@@ -27,6 +27,7 @@ from leadengine.geo.zipdata import DEFAULT_RADIUS_KM, haversine_km, zip_director
 from leadengine.http import HttpClient
 from leadengine.log import get_logger
 from leadengine.models import BusinessRecord, SearchQuery
+from leadengine.normalize import normalize_keyword
 from leadengine.providers import Provider, build_provider
 from leadengine.providers.playwright_maps import PlaywrightMapsProvider, activity_payload
 from leadengine.providers.serpapi import SerpApiProvider
@@ -236,7 +237,11 @@ class LeadService:
                     concurrency=int(cfg.get("concurrency", 3)),
                     on_cell=lambda c, n, sat: say(f"  cell z{c.zoom} depth {c.depth}: {n} results"
                                                   + (" (saturated -> splitting)" if sat else "")),
+                    cache=DbCellCache(self._sf, f"{provider.name}|{normalize_keyword(keyword)}",
+                                      self.settings.ttl("search"), read=not refresh),
                 )
+                if report.cells_cached:
+                    say(f"  resumed: {report.cells_cached} cell(s) reused from the interrupted run")
                 records = list(report.records)
                 town_names: list[str] = []
                 if towns:
@@ -639,10 +644,13 @@ class LeadService:
                 businesses = list(session.scalars(select(Business)))
             else:
                 businesses = [b for b in (repo.get_business(i) for i in business_ids) if b]
+            ids = [b.id for b in businesses]
+            webs = repo.latest_enrichments(ids, "website")
+            statuses = repo.lead_statuses(ids if len(ids) <= 900 else None)
             for biz in businesses:
-                web = repo.latest_enrichment(biz.id, "website", fresh_only=False)
+                web = webs.get(biz.id)
                 opp = score_business(biz, today=today, website_reasons=(web.payload or {}).get("reasons") if web else None,
-                                     lead_status=repo.lead_status(biz.id), weights=weights, rules=rules)
+                                     lead_status=statuses.get(biz.id), weights=weights, rules=rules)
                 biz.opportunity_score, biz.lead_label, biz.lead_reason = opp.score, opp.label, opp.reason
                 biz.scored_at = utcnow()
                 out.append({"id": biz.id, "name": biz.name, "score": opp.score, "label": opp.label,

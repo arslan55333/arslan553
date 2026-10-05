@@ -75,6 +75,19 @@ def cancel(sf: sessionmaker[Session], job_id: int) -> None:
             s.commit()
 
 
+def requeue(sf: sessionmaker[Session], job_id: int) -> str | None:
+    """Put an interrupted/failed job back in the queue (finished steps are kept). Returns its old status."""
+    with sf() as s:
+        job = s.get(Job, job_id)
+        if job is None:
+            return None
+        old = job.status
+        if old in ("running", "failed", "cancelled"):
+            job.status, job.error, job.attempts = "queued", None, 0
+            s.commit()
+        return old
+
+
 def recover_stale(sf: sessionmaker[Session], stale_after: timedelta = timedelta(minutes=10)) -> list[int]:
     """Requeue jobs that were running when the process died."""
     cutoff = utcnow() - stale_after
@@ -102,9 +115,12 @@ class JobRunner:
     def stop(self) -> None:
         self._stop.set()
 
-    def _claim(self) -> tuple[int, str, dict] | None:
+    def _claim(self, job_id: int | None = None) -> tuple[int, str, dict] | None:
         with self._sf() as s:
-            job = s.scalar(select(Job).where(Job.status == "queued").order_by(Job.created_at, Job.id).limit(1))
+            stmt = select(Job).where(Job.status == "queued")
+            if job_id is not None:
+                stmt = stmt.where(Job.id == job_id)
+            job = s.scalar(stmt.order_by(Job.created_at, Job.id).limit(1))
             if job is None:
                 return None
             job.status = "running"
@@ -114,9 +130,9 @@ class JobRunner:
             s.commit()
             return job.id, job.kind, dict(job.params or {})
 
-    async def run_once(self) -> bool:
-        """Run the next queued job. Returns False when the queue is empty."""
-        claimed = self._claim()
+    async def run_once(self, job_id: int | None = None) -> bool:
+        """Run the next queued job (or only ``job_id``). Returns False when there is nothing to run."""
+        claimed = self._claim(job_id)
         if claimed is None:
             return False
         job_id, kind, params = claimed

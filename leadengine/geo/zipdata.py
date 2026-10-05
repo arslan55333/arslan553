@@ -100,6 +100,13 @@ class ZipDirectory:
                 out.append((z, d))
         return sorted(out, key=lambda t: t[1])
 
+    def by_city(self, city: str, state: str | None = None) -> list[ZipInfo]:
+        """ZIPs whose primary city matches (case-insensitive), most populated first."""
+        c = city.strip().lower()
+        st = (state or "").strip().upper()
+        rows = [z for z in self._rows.values() if z.city.lower() == c and (not st or z.state == st)]
+        return sorted(rows, key=lambda z: -(z.population or 0))
+
     def towns(self, zip_code: str, extra_km: float = 0.0) -> list[str]:
         """Town/city names covering a ZIP: its own city first, then cities of ZIPs centred inside it.
 

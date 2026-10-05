@@ -133,6 +133,8 @@ def test_pages_filters_and_exports(client):
     no_ads = client.get("/leads?ads=None").text
     assert "Cold Co" in no_ads and "Hot Septic" not in no_ads
     assert "Hot Septic" in client.get("/leads?q=hotseptic").text
+    found = client.get("/leads?q=555-0002").text                 # phone digits, searched in SQL (not just the first page)
+    assert "Cold Co" in found and "Hot Septic" not in found
     assert "copyright 2011" in client.get(f"/leads/{hot_id}").text
     csv_text = client.get("/export.csv?label=Hot").text
     assert csv_text.startswith("﻿Label,Opportunity,Why,Business")

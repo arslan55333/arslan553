@@ -8,7 +8,6 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from leadengine.crm import current_status
 from leadengine.db.models import Business
 from leadengine.db.repo import Repository
 
@@ -25,12 +24,15 @@ COLUMNS = [
 
 def lead_rows(session: Session, businesses: list[Business]) -> list[dict[str, Any]]:
     repo = Repository(session)
+    ids = [b.id for b in businesses]
+    webs = repo.latest_enrichments(ids, "website")
+    statuses = repo.lead_statuses(ids if len(ids) <= 900 else None)
     rows = []
     for b in businesses:
-        web = repo.latest_enrichment(b.id, "website", fresh_only=False)
+        web = webs.get(b.id)
         rows.append({
             "label": b.lead_label, "opportunity": b.opportunity_score, "reason": b.lead_reason, "name": b.name,
-            "status": current_status(session, b.id), "rating": b.rating, "reviews": b.review_count,
+            "status": statuses.get(b.id, "New"), "rating": b.rating, "reviews": b.review_count,
             "last_review": b.last_review_at.date().isoformat() if b.last_review_at else None,
             "ads": b.ads_status, "lsa": "yes" if b.lsa else ("no" if b.lsa is False else None),
             "site_score": b.website_score, "site_grade": b.website_grade,
@@ -54,30 +56,40 @@ def to_csv(rows: list[dict[str, Any]]) -> str:
 
 
 def to_xlsx(rows: list[dict[str, Any]]) -> bytes:
+    """Styled Excel file. Write-only mode keeps it fast for tens of thousands of rows."""
     from openpyxl import Workbook
+    from openpyxl.cell import WriteOnlyCell
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Leads"
-    ws.append([title for _, title in COLUMNS])
-    for cell in ws[1]:
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = PatternFill("solid", fgColor="1F2937")
-        cell.alignment = Alignment(vertical="center")
-    fills = {"Hot": "FDE2E1", "Warm": "FEF3C7", "Cold": "E0F2FE", "Skip": "F3F4F6"}
-    for r in rows:
-        ws.append([r.get(k) for k, _ in COLUMNS])
-        if r.get("label") in fills:
-            for cell in ws[ws.max_row]:
-                cell.fill = PatternFill("solid", fgColor=fills[r["label"]])
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet("Leads")
     widths = {"reason": 60, "name": 32, "site_reasons": 50, "address": 36, "website": 30, "email": 30,
               "maps_url": 30, "categories": 28}
     for i, (key, _) in enumerate(COLUMNS, 1):
         ws.column_dimensions[get_column_letter(i)].width = widths.get(key, 14)
     ws.freeze_panes = "E2"
-    ws.auto_filter.ref = ws.dimensions
+    ws.auto_filter.ref = f"A1:{get_column_letter(len(COLUMNS))}{len(rows) + 1}"
+    head_font, head_fill = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="1F2937")
+    header = []
+    for _, title in COLUMNS:
+        cell = WriteOnlyCell(ws, value=title)
+        cell.font, cell.fill, cell.alignment = head_font, head_fill, Alignment(vertical="center")
+        header.append(cell)
+    ws.append(header)
+    fills = {k: PatternFill("solid", fgColor=v) for k, v in
+             {"Hot": "FDE2E1", "Warm": "FEF3C7", "Cold": "E0F2FE", "Skip": "F3F4F6"}.items()}
+    for r in rows:
+        fill = fills.get(r.get("label"))
+        if fill is None:
+            ws.append([r.get(k) for k, _ in COLUMNS])
+            continue
+        line = []
+        for k, _ in COLUMNS:
+            cell = WriteOnlyCell(ws, value=r.get(k))
+            cell.fill = fill
+            line.append(cell)
+        ws.append(line)
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()

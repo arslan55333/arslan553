@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any, Iterable
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from leadengine.db.models import (
@@ -151,6 +151,7 @@ class Repository:
         max_site_score: int | None = None,
         email: str | None = None,              # "verified" | "any"
         min_opportunity: int | None = None,
+        text: str | None = None,               # free text: name / email / website / phone / city
         order: str = "reviews",                # reviews | opportunity
         limit: int | None = None,
     ) -> list[Business]:
@@ -185,6 +186,14 @@ class Repository:
             stmt = stmt.where(Business.best_email.is_not(None))
         if min_opportunity is not None:
             stmt = stmt.where(Business.opportunity_score >= min_opportunity)
+        if text and text.strip():
+            needle = f"%{text.strip().lower()}%"
+            conds = [func.lower(col).like(needle) for col in
+                     (Business.name, Business.best_email, Business.website, Business.phone, Business.city)]
+            digits = "".join(ch for ch in text if ch.isdigit())
+            if len(digits) >= 3:
+                conds.append(Business.phone_norm.like(f"%{digits}%"))
+            stmt = stmt.where(or_(*conds))
         if order == "opportunity":
             stmt = stmt.order_by(Business.opportunity_score.desc().nulls_last(), Business.review_count.desc().nulls_last())
         else:
@@ -297,6 +306,26 @@ class Repository:
         if row and fresh_only and row.expires_at is not None and row.expires_at <= utcnow():
             return None
         return row
+
+    def latest_enrichments(self, business_ids: list[int], kind: str) -> dict[int, Enrichment]:
+        """Newest enrichment of ``kind`` for many businesses in a few queries (no per-row lookups)."""
+        out: dict[int, Enrichment] = {}
+        ids = list(dict.fromkeys(business_ids))
+        for i in range(0, len(ids), 900):
+            chunk = ids[i:i + 900]
+            newest = (select(Enrichment.business_id, func.max(Enrichment.id).label("mid"))
+                      .where(Enrichment.business_id.in_(chunk), Enrichment.kind == kind)
+                      .group_by(Enrichment.business_id).subquery())
+            for row in self.session.scalars(select(Enrichment).join(newest, Enrichment.id == newest.c.mid)):
+                out[row.business_id] = row
+        return out
+
+    def lead_statuses(self, business_ids: list[int] | None = None) -> dict[int, str]:
+        from leadengine.db.models import LeadStatus
+        stmt = select(LeadStatus.business_id, LeadStatus.status)
+        if business_ids is not None and len(business_ids) <= 900:
+            stmt = stmt.where(LeadStatus.business_id.in_(business_ids))
+        return dict(self.session.execute(stmt).all())
 
     # ── Geocode cache ────────────────────────────────────────────────
     def get_geo(self, key: str, ttl_days: float) -> GeoCache | None:

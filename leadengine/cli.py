@@ -771,6 +771,285 @@ def outreach_unsubscribe(value: str = typer.Argument(..., help="email address or
     console.print(f"[green]{value} added to do-not-contact[/]" if added else f"{value} was already listed")
 
 
+def _scan_zips(zips: list[str] | None, zips_file: Path | None, city: str | None, near: str | None,
+               radius: float, max_zips: int) -> list[str]:
+    out: list[str] = []
+    for z in zips or []:
+        out += [p for p in z.replace(",", " ").split()]
+    if zips_file:
+        out += zips_file.read_text(encoding="utf-8").replace(",", " ").split()
+    if city:
+        name, _, state = city.partition(",")
+        found = zip_directory().by_city(name, state.strip() or None)
+        if not found:
+            _fail(f"no ZIPs found for city '{city}' (try 'Dallas, TX')")
+        out += [z.zip for z in found]
+    if near:
+        center = zip_directory().get(normalize_zip(near))
+        if center is None:
+            _fail(f"unknown ZIP {near}")
+        out += [z.zip for z, _ in zip_directory().nearby(center.lat, center.lng, radius)]
+    clean = []
+    for z in out:
+        try:
+            clean.append(normalize_zip(z))
+        except ValueError:
+            console.print(f"[yellow]skipping invalid ZIP {z!r}[/]")
+    return list(dict.fromkeys(clean))[:max_zips]
+
+
+@app.command()
+def scan(
+    keyword: Optional[str] = typer.Argument(None, help='What to search, e.g. "septic service"'),
+    zips: list[str] = typer.Option(None, "--zip", "-z", help="ZIP code(s); repeat or comma-separate"),
+    zips_file: Optional[Path] = typer.Option(None, "--zips-file", help="Text/CSV file with ZIP codes"),
+    city: Optional[str] = typer.Option(None, "--city", help='Every ZIP of a city, e.g. "Dallas, TX"'),
+    near: Optional[str] = typer.Option(None, "--near", help="ZIPs around this ZIP (use with --radius)"),
+    radius: float = typer.Option(15.0, "--radius", help="km around --near"),
+    max_zips: int = typer.Option(100, "--max-zips"),
+    provider: Optional[str] = typer.Option(None, "--provider", "-p"),
+    emails: Optional[bool] = typer.Option(None, "--emails/--no-emails"),
+    website: Optional[bool] = typer.Option(None, "--website/--no-website"),
+    ads: Optional[bool] = typer.Option(None, "--ads/--no-ads"),
+    activity: Optional[bool] = typer.Option(None, "--activity/--no-activity"),
+    fill: Optional[bool] = typer.Option(None, "--fill/--no-fill"),
+    towns: Optional[bool] = typer.Option(None, "--towns/--no-towns"),
+    resume: Optional[int] = typer.Option(None, "--resume", help="Continue an interrupted scan job (id from `jobs`)"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Don't ask before spending paid credits"),
+) -> None:
+    """Big runs: many ZIPs / a whole city as one resumable job. Ctrl+C is safe - resume later."""
+    from leadengine import jobs as jobq
+    from leadengine.db import Job
+    from leadengine.workers import make_handlers
+
+    settings, sf = _bootstrap()
+    if resume is not None:
+        old = jobq.requeue(sf, resume)
+        if old is None:
+            _fail(f"no job {resume}")
+        if old == "done":
+            console.print(f"job {resume} already finished")
+            raise typer.Exit()
+        job_id = resume
+    else:
+        if not keyword:
+            _fail("give a keyword, e.g. scan \"septic service\" --city \"Dallas, TX\"")
+        zip_list = _scan_zips(zips, zips_file, city, near, radius, max_zips)
+        if not zip_list:
+            _fail("no ZIPs: use --zip, --zips-file, --city or --near")
+        chosen = provider or settings.section("discovery").get("provider", "playwright")
+        if chosen in PROVIDERS and PROVIDERS[chosen].paid and not yes:
+            if not typer.confirm(f"{chosen} is a paid API and this scans {len(zip_list)} ZIPs. Continue?", default=False):
+                raise typer.Exit()
+        options = {"provider_name": provider, "emails": emails, "website": website, "ads": ads,
+                   "activity": activity, "fill": fill, "towns": towns}
+        job_id = jobq.enqueue(sf, "discover", {"keyword": keyword, "zips": zip_list,
+                                               "options": {k: v for k, v in options.items() if v is not None}})
+        console.print(f"Job #{job_id}: '{keyword}' in {len(zip_list)} ZIP(s): {', '.join(zip_list[:12])}"
+                      + (" ..." if len(zip_list) > 12 else ""))
+    runner = jobq.JobRunner(sf, make_handlers(settings, sf))
+    printed = {"n": 0}
+
+    async def _run():
+        task = asyncio.create_task(runner.run_once(job_id))
+        while not task.done():
+            await asyncio.sleep(1)
+            _print_new_log(sf, job_id, printed)
+        await task
+        while True:                         # retries are re-queued by the runner: keep going until final
+            with sf() as s:
+                st = s.get(Job, job_id).status
+            if st != "queued":
+                break
+            await runner.run_once(job_id)
+        _print_new_log(sf, job_id, printed)
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        console.print(f"\n[yellow]Interrupted.[/] Finished ZIPs and grid cells are saved. "
+                      f"Resume with: [bold]python -m leadengine scan --resume {job_id}[/]")
+        raise typer.Exit(130)
+    with sf() as s:
+        job = s.get(Job, job_id)
+        status, result, error = job.status, job.result or [], job.error
+    if status != "done":
+        _fail(f"job {job_id} {status}: {error}. Resume with: python -m leadengine scan --resume {job_id}")
+    t = Table(title=f"Job #{job_id} done")
+    for c in ("ZIP", "Businesses", "Hot", "Warm", "Sponsored", "Cached"):
+        t.add_column(c)
+    for r in result:
+        t.add_row(r["zip"], str(r["businesses"]), str(r["hot"]), str(r["warm"]), str(r["sponsored"]),
+                  "yes" if r["from_cache"] else "")
+    console.print(t)
+    console.print("Next: [bold]python -m leadengine leads --label hot[/] or open the dashboard (`ui`).")
+
+
+def _print_new_log(sf, job_id: int, printed: dict) -> None:
+    from leadengine.db import Job
+
+    with sf() as s:
+        lines = list(s.get(Job, job_id).progress or [])
+    for line in lines[printed["n"]:] if len(lines) >= printed["n"] else lines:
+        console.print(f"[dim]{escape(line)}[/]")
+    printed["n"] = len(lines)
+
+
+@app.command(name="jobs")
+def jobs_cmd(limit: int = typer.Option(20, "--limit")) -> None:
+    """Recent background jobs (scans, previews, drafts, sends) and how far they got."""
+    from sqlalchemy import select
+
+    from leadengine.db import Job
+
+    _, sf = _bootstrap()
+    t = Table(title="Jobs")
+    for c in ("#", "Kind", "Status", "Progress", "Created", "Error"):
+        t.add_column(c)
+    with sf() as s:
+        for j in s.scalars(select(Job).order_by(Job.id.desc()).limit(limit)):
+            total = len((j.params or {}).get("zips") or (j.params or {}).get("ids") or [])
+            done = len(j.done_steps or [])
+            t.add_row(str(j.id), j.kind, j.status, f"{done}/{total}" if total else "-",
+                      j.created_at.strftime("%Y-%m-%d %H:%M"), (j.error or "")[:60])
+    console.print(t)
+
+
+@app.command()
+def doctor(network: bool = typer.Option(False, "--network", help="Also test internet access to the services")) -> None:
+    """Check your setup: Python, browser, database, keys, config. Run this first on a new PC."""
+    import platform
+    import shutil
+    import sys
+
+    results: list[tuple[str, str, str]] = []      # (status, check, detail)
+
+    def add(ok: bool | None, check: str, detail: str) -> None:
+        results.append(({True: "[green]OK[/]", False: "[red]FIX[/]", None: "[yellow]tip[/]"}[ok], check, detail))
+
+    add(sys.version_info >= (3, 11), "Python", f"{platform.python_version()} (need 3.11+)")
+    settings, sf = _bootstrap()
+    add((settings.root / "config.toml").exists(), "config.toml", str(settings.root / "config.toml"))
+    add(True if (settings.root / ".env").exists() else None, ".env",
+        "found" if (settings.root / ".env").exists() else "missing - copy .env.example to .env for API keys")
+    try:
+        with sf() as s:
+            from sqlalchemy import func, select
+
+            from leadengine.db import Business
+            n = s.scalar(select(func.count()).select_from(Business))
+        add(True, "Database", f"{settings.database_url.split('///')[-1]} ({n} businesses)")
+    except Exception as exc:
+        add(False, "Database", str(exc)[:120])
+    add(len(zip_directory()) > 30000, "ZIP data", f"{len(zip_directory())} US ZIP codes bundled")
+
+    async def _browser() -> str:
+        from playwright.async_api import async_playwright
+        async with async_playwright() as p:
+            b = await p.chromium.launch()
+            v = b.version
+            await b.close()
+            return v
+    try:
+        add(True, "Browser (Playwright)", f"Chromium {asyncio.run(_browser())}")
+    except Exception as exc:
+        add(False, "Browser (Playwright)", f"{type(exc).__name__} - run: python -m playwright install chromium")
+
+    add(True if settings.serpapi_api_key else None, "SerpAPI key",
+        "set" if settings.serpapi_api_key else "not set (optional: only fills gaps for shortlisted leads)")
+    add(True if settings.pagespeed_api_key else None, "PageSpeed key",
+        "set" if settings.pagespeed_api_key else "not set (free key recommended for Website Score speed checks)")
+    llm_cfg = settings.section("llm")
+    prov = str(llm_cfg.get("provider", "claude"))
+    key_name = {"claude": "anthropic", "gemini": "gemini", "groq": "groq"}.get(prov)
+    has_ai = prov == "ollama" or bool(settings.llm_keys.get(key_name or "", ""))
+    add(True if has_ai else None, f"AI ({prov})", "key set" if has_ai else
+        "no key - previews and drafts use safe templates (add a key in .env for AI copy)")
+    pv = settings.section("preview")
+    add(True if pv.get("brand_name") else None, "Preview brand", pv.get("brand_name") or "set brand_name in [preview]")
+    oc = settings.section("outreach")
+    add(True if oc.get("physical_address") else None, "Outreach address",
+        "set" if oc.get("physical_address") else "set physical_address in [outreach] (CAN-SPAM) before emailing")
+    send = oc.get("sending") or {}
+    add(None if not send.get("enabled") else True, "Sending", "on (approved emails only)" if send.get("enabled")
+        else "off - drafts only (that's the safe default)")
+    proxies = ProxyPool.from_env(settings.proxy_list, settings.proxy_file)
+    add(True if len(proxies) else None, "Proxies", f"{len(proxies)} configured" if len(proxies) else
+        "none - fine for small runs; add PROXIES for big ones")
+    free = shutil.disk_usage(settings.root).free / 1e9
+    add(free > 2, "Disk space", f"{free:.1f} GB free")
+
+    if network:
+        import httpx
+        for name, url in (("Google Maps", "https://www.google.com/maps"), ("SerpAPI", "https://serpapi.com"),
+                          ("Anthropic API", "https://api.anthropic.com"), ("PyPI", "https://pypi.org")):
+            try:
+                r = httpx.get(url, timeout=8, follow_redirects=True)
+                add(r.status_code < 500, f"Internet: {name}", f"HTTP {r.status_code}")
+            except Exception as exc:
+                add(False, f"Internet: {name}", type(exc).__name__)
+
+    t = Table(title="LeadEngine doctor")
+    for c in ("", "Check", "Detail"):
+        t.add_column(c)
+    for row in results:
+        t.add_row(row[0], row[1], escape(row[2]))
+    console.print(t)
+    if any("FIX" in r[0] for r in results):
+        raise typer.Exit(1)
+
+
+@app.command()
+def backup(keep: int = typer.Option(10, "--keep", help="How many backups to keep")) -> None:
+    """Safe copy of the SQLite database (works while the dashboard is running)."""
+    import sqlite3
+    from datetime import datetime
+
+    settings, _ = _bootstrap()
+    if not settings.database_url.startswith("sqlite"):
+        _fail("backups here are for SQLite; for Postgres use pg_dump")
+    src = Path(settings.database_url.split("///", 1)[-1])
+    folder = src.parent / "backups"
+    folder.mkdir(parents=True, exist_ok=True)
+    dest = folder / f"leadengine-{datetime.now():%Y%m%d-%H%M%S}.db"
+    with sqlite3.connect(src) as a, sqlite3.connect(dest) as b:
+        a.backup(b)
+    old = sorted(folder.glob("leadengine-*.db"))[:-keep] if keep > 0 else []
+    for f in old:
+        f.unlink()
+    console.print(f"[green]backup ->[/] {dest} ({dest.stat().st_size / 1e6:.1f} MB)" +
+                  (f", removed {len(old)} old" if old else ""))
+
+
+@app.command()
+def prune(keep_days: int = typer.Option(60, "--keep-days", help="Keep older versions of cached data this long"),
+          vacuum: bool = typer.Option(True, "--vacuum/--no-vacuum")) -> None:
+    """Shrink the database: drop superseded cache versions and old grid checkpoints (latest data is kept)."""
+    from datetime import timedelta
+
+    from sqlalchemy import delete, func, select, text
+
+    from leadengine.db import Enrichment, GridCellCache, utcnow
+
+    settings, sf = _bootstrap()
+    cutoff = utcnow() - timedelta(days=keep_days)
+    with sf() as s:
+        newest = select(func.max(Enrichment.id)).group_by(Enrichment.business_id, Enrichment.kind)
+        n1 = s.execute(delete(Enrichment).where(Enrichment.fetched_at < cutoff, Enrichment.id.not_in(newest))).rowcount
+        grid_cut = utcnow() - timedelta(days=settings.ttl("search"))
+        n2 = s.execute(delete(GridCellCache).where(GridCellCache.fetched_at < grid_cut)).rowcount
+        s.commit()
+    if vacuum and settings.database_url.startswith("sqlite"):
+        from sqlalchemy import create_engine
+
+        eng = create_engine(settings.database_url, isolation_level="AUTOCOMMIT")
+        with eng.connect() as c:
+            c.execute(text("VACUUM"))
+        eng.dispose()
+    console.print(f"[green]removed[/] {n1} old cache versions, {n2} expired grid checkpoints"
+                  + (" and compacted the file" if vacuum else ""))
+
+
 @app.command(name="update-fingerprints")
 def update_fingerprints() -> None:
     """Download the open-source webappanalyzer fingerprints (GPL-3.0) for wider tech detection."""

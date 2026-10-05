@@ -310,3 +310,14 @@ class OutboundEmail(Base):
     message_id: Mapped[str | None] = mapped_column(String(255))
     attachment: Mapped[str | None] = mapped_column(Text)
     error: Mapped[str | None] = mapped_column(Text)
+
+
+class GridCellCache(Base):
+    """Results of one grid cell, so an interrupted ZIP scan resumes without re-running finished cells."""
+
+    __tablename__ = "grid_cell_cache"
+
+    key: Mapped[str] = mapped_column(String(300), primary_key=True)   # provider|keyword|cell
+    records: Mapped[Any] = mapped_column(JSON, nullable=True)
+    exhausted: Mapped[bool] = mapped_column(Boolean, default=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
