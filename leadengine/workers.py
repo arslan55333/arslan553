@@ -75,7 +75,7 @@ def make_handlers(settings: Settings, sf: sessionmaker[Session]) -> dict[str, Ha
     async def enrich(ctx: JobContext) -> dict[str, Any]:
         """Deep-check chosen leads: emails, website score, Google Ads (each step resumable)."""
         ids = [int(i) for i in ctx.params["ids"]]
-        kinds = ctx.params.get("kinds") or ["emails", "website", "ads"]
+        kinds = ctx.params.get("kinds") or ["emails", "website", "ads", "seo"]
         out: dict[str, Any] = {"leads": len(ids)}
         async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
             service = LeadService(settings, sf, http, CreditTracker(sf, settings))
@@ -93,6 +93,9 @@ def make_handlers(settings: Settings, sf: sessionmaker[Session]) -> dict[str, Ha
                     elif kind == "website":
                         rows = await service.score_websites(ids, refresh=bool(ctx.params.get("refresh")), on_progress=ctx.log)
                         out["websites_scored"] = len(rows)
+                    elif kind == "seo":
+                        rows = await service.seo_audits(ids, refresh=bool(ctx.params.get("refresh")), on_progress=ctx.log)
+                        out["seo_scored"] = len(rows)
                     elif kind == "ads":
                         rows = await service.detect_ads(ids, refresh=bool(ctx.params.get("refresh")), on_progress=ctx.log)
                         out["ads_active"] = sum(1 for r in rows if r.get("status") in ("Active", "Likely"))

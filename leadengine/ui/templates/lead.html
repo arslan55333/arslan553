@@ -35,6 +35,11 @@
  <div><p><b>Top 3 at {{ rk.top3 }} of {{ rk.points }} points</b> — share of local voice <b>{{ rk.solv }}%</b></p>
   <p class="small">Shows up somewhere in the top 20 at {{ rk.found }} points · average position {{ rk.avg_rank }}</p>
   <p class="small muted">Green = in the map pack (top 3) at that spot, red = not in the top 20. This is what customers see when they search from each part of the area.</p></div></div></div>{% endif %}
+{% if enr.seo %}{% set seo = enr.seo %}
+<div class="card" style="margin-top:16px"><h2>Local SEO {% if seo.score is not none %}score {{ seo.score }}/100{% endif %}
+ <span class="small muted">{% if seo.onpage is not none %}website {{ seo.onpage }} · {% endif %}{% if seo.gbp is not none %}Google profile {{ seo.gbp }}{% endif %}{% if seo.authority is not none %} · authority {{ seo.authority }}/10{% endif %}</span></h2>
+ <div class="grid g2"><div>{% if seo.issues %}<b class="small">What's holding it back</b><ul class="clean small">{% for i in seo.issues[:8] %}<li>{{ i }}</li>{% endfor %}</ul>{% endif %}</div>
+ <div>{% if seo.positives %}<b class="small">Already good</b><ul class="clean small muted">{% for p in seo.positives[:8] %}<li>{{ p }}</li>{% endfor %}</ul>{% endif %}</div></div></div>{% endif %}
 {% set land = enr.landing %}{% if land %}
 <div class="card" style="margin-top:16px"><h2>Ad landing page {% if land.score is not none %}score {{ land.score }}/100{% endif %}</h2>
  <div class="grid g2"><div>

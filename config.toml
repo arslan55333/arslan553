@@ -42,6 +42,7 @@ fill_provider = "serpapi"
 max_fill = 25             # max paid lookups per run
 emails = true             # crawl shortlisted websites for emails (see [emails])
 website = true            # score shortlisted websites 0-100 (see [website])
+seo = true                # local SEO score for shortlisted leads (on-page + Google profile)
 ads = true                # detect Google Ads / LSA for shortlisted leads (see [ads])
 
 # Email finding (Phase 3)
@@ -99,6 +100,7 @@ activity = 15             # review recency/velocity + owner replies
 ads = 25                  # spends on Google Ads / LSA
 website = 25              # weak, old or missing website
 reachability = 10         # verified email / phone
+seo = 10                  # weak local SEO (on-page + Google profile)
 
 # Preview landing pages (Phase 8)
 [preview]

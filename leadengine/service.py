@@ -312,6 +312,9 @@ class LeadService:
         if website and shortlist_ids:
             say(f"Scoring {len(shortlist_ids)} shortlisted websites...")
             outcome.websites = await self.score_websites(shortlist_ids, on_progress=say)
+            if cfg.get("seo", True):
+                say("Local SEO checks...")
+                await self.seo_audits(shortlist_ids, on_progress=say)
         if ads and shortlist_ids:
             say(f"Checking Google Ads for {len(shortlist_ids)} shortlisted businesses...")
             outcome.ads = await self.detect_ads(shortlist_ids, keyword=keyword, on_progress=say)
@@ -898,6 +901,7 @@ class LeadService:
         if (cfg.get("sweep_deep", True) if deep is None else deep) and ids:
             say(f"Scoring {len(ids)} advertiser websites and finding emails...")
             await self.score_websites(ids, on_progress=say)
+            await self.seo_audits(ids, on_progress=say)
             await self.find_emails(ids)
         labels = {r["id"]: r["label"] for r in self.rescore(ids)} if ids else {}
         new = sum(1 for r in rows if r["new"])
@@ -939,6 +943,49 @@ class LeadService:
         finally:
             await renderer.aclose()
         return done
+
+    # ── local SEO score ──────────────────────────────────────────────
+    async def seo_audits(self, business_ids: list[int], *, refresh: bool = False,
+                         on_progress: Callable[[str], None] | None = None) -> list[dict]:
+        """Local SEO score (on-page + Google profile + optional authority) per business, cached."""
+        from sqlalchemy import select
+
+        from leadengine.db.models import SearchResult
+        from leadengine.enrich.seo import seo_audit
+
+        say = on_progress or (lambda _m: None)
+        key = self.settings.openpagerank_api_key
+        rows = []
+        for bid in business_ids:
+            with self._sf() as session:
+                repo = Repository(session)
+                biz = repo.get_business(bid)
+                if biz is None:
+                    continue
+                cached = None if refresh else repo.latest_enrichment(bid, "seo")
+                if cached is not None:
+                    rows.append({"id": bid, "name": biz.name, **cached.payload})
+                    continue
+                # competitors: businesses ranked above it in the same searches
+                comps = []
+                for sid, rank in session.execute(select(SearchResult.search_id, SearchResult.rank)
+                                                 .where(SearchResult.business_id == bid)):
+                    for other, orank in repo.search_results(sid, limit=10):
+                        if other.id != bid and (rank is None or orank < rank):
+                            comps.append({"name": other.name, "review_count": other.review_count})
+                kw = next(iter(repo.keywords_for(bid)), None) or (biz.categories or [None])[0]
+                towns = [t.split(",")[0] for t in zip_directory().towns(biz.zip_code)] if biz.zip_code else []
+                session.expunge(biz)
+            say(f"  local SEO: {biz.name}")
+            out = await seo_audit(self.http, biz, service=kw, competitors=comps[:5], towns=towns, opr_key=key)
+            with self._sf() as session:
+                repo = Repository(session)
+                repo.set_enrichment(bid, "seo", out, ttl_days=self.settings.ttl("website"), source="seo")
+                b = repo.get_business(bid)
+                b.seo_score = out["score"]
+                session.commit()
+            rows.append({"id": bid, "name": biz.name, **out})
+        return rows
 
     # ── geo-grid rank heatmap ────────────────────────────────────────
     async def rank_grid(self, keyword: str, *, zip_code: str | None = None, business_id: int | None = None,

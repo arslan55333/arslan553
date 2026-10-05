@@ -85,8 +85,8 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
         n_ids = len(p.get("ids") or [])
         info = {
             "discover": (f"Scan: {p.get('keyword', '')}", ", ".join(p.get("zips") or []), len(p.get("zips") or []), "ZIPs"),
-            "enrich": ("Deep check", f"{n_ids} lead(s): " + ", ".join(p.get("kinds") or ["emails", "website", "ads"]),
-                       len(p.get("kinds") or [1, 2, 3]), "steps"),
+            "enrich": ("Deep check", f"{n_ids} lead(s): " + ", ".join(p.get("kinds") or ["emails", "website", "ads", "seo"]),
+                       len(p.get("kinds") or [1, 2, 3, 4]), "steps"),
             "preview": ("Preview sites", f"{n_ids} lead(s)", 0, ""),
             "outreach": ("Email drafts", f"{n_ids} lead(s)", 0, ""),
             "send": ("Send approved emails", "", 0, ""),
@@ -342,7 +342,7 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
                 raise HTTPException(404)
             repo = Repository(s)
             enr = {k: (e.payload if (e := repo.latest_enrichment(business_id, k, fresh_only=False)) else None)
-                   for k in ("website", "ads", "emails", "maps_activity", "landing", "rank")}
+                   for k in ("website", "ads", "emails", "maps_activity", "landing", "rank", "seo")}
             emails = list(s.scalars(select(Email).where(Email.business_id == business_id)
                                     .order_by(Email.is_guess, Email.confidence.desc().nulls_last())))
             status = crm.current_status(s, business_id)

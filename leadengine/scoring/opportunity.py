@@ -13,7 +13,7 @@ from typing import Any
 
 from leadengine.db.models import Business
 
-DEFAULT_WEIGHTS = {"reputation": 25, "activity": 15, "ads": 25, "website": 25, "reachability": 10}
+DEFAULT_WEIGHTS = {"reputation": 25, "activity": 15, "ads": 25, "website": 25, "reachability": 10, "seo": 10}
 DEFAULT_RULES = {
     "hot": 70, "warm": 50,
     "min_rating": 3.5,           # below this -> Skip (reputation problem, not a website problem)
@@ -90,6 +90,13 @@ def _website(b: Business) -> tuple[float | None, str | None, str | None]:
     return (100 - b.website_score) / 100, f"website score {b.website_score}", None
 
 
+def _seo(b: Business) -> tuple[float | None, str | None]:
+    score = getattr(b, "seo_score", None)
+    if score is None:
+        return None, None
+    return (100 - score) / 100, (f"weak local SEO ({score})" if score < 50 else None)
+
+
 def _reachability(b: Business, emails_checked: bool = True) -> tuple[float, str | None]:
     frac = 0.0
     if b.best_email and b.email_status == "valid":
@@ -119,7 +126,9 @@ def score_business(b: Business, *, today: date, website_reasons: list[str] | Non
     ads, ads_note = _ads(b)
     web, web_note, _ = _website(b)
     reach, reach_note = _reachability(b, checked is None or "emails" in checked)
-    for name, frac in (("reputation", rep), ("activity", act), ("ads", ads), ("website", web), ("reachability", reach)):
+    seo, seo_note = _seo(b)
+    for name, frac in (("reputation", rep), ("activity", act), ("ads", ads), ("website", web), ("reachability", reach),
+                       ("seo", seo)):
         if frac is not None:
             parts[name] = {"points": round(frac * weights[name], 1), "max": weights[name]}
     available = sum(p["max"] for p in parts.values())
@@ -128,11 +137,11 @@ def score_business(b: Business, *, today: date, website_reasons: list[str] | Non
     if ads is None:
         score = min(score, 85)
 
-    for n in (rep_note, act_note, ads_note, web_note):
+    if web_note and website_reasons and web is not None and web < 1.0:
+        web_note += " — " + ", ".join(r.split(" (")[0] for r in website_reasons[:2])
+    for n in (rep_note, act_note, ads_note, web_note, seo_note):
         if n:
             notes.append(n)
-    if website_reasons and web is not None and web < 1.0:
-        notes[-1] += " — " + ", ".join(r.split(" (")[0] for r in website_reasons[:2])
     if reach_note in ("no email found", "email not checked yet"):
         notes.append(reach_note)
     unchecked = [] if checked is None else [k for k in ("ads", "website") if k not in checked]
