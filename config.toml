@@ -1,0 +1,42 @@
+# LeadEngine settings (no secrets here; secrets live in .env)
+
+[general]
+default_provider = "serpapi"
+
+# How long cached data stays "fresh" before we pay for it again (days)
+[cache]
+search = 14        # same keyword + ZIP + provider
+website = 30       # website checks (Phase 4)
+emails = 30        # email extraction (Phase 3)
+ads = 7            # ads detection (Phase 5)
+geocode = 365      # ZIP -> coordinates
+default = 30
+
+[http]
+timeout_seconds = 20
+max_retries = 3
+backoff_base_seconds = 1.0   # waits 1s, 2s, 4s ... between retries
+concurrency = 5              # max parallel requests
+delay_seconds = 0.0          # extra pause after every request
+
+# cost_per_call_usd is a list-price estimate used for the credits panel.
+# Check current pricing before relying on it.
+[providers.serpapi]
+cost_per_call_usd = 0.015    # paid plans ~ $75 / 5,000 searches
+monthly_free_calls = 250     # SerpAPI free plan
+
+[providers.google_places]
+cost_per_call_usd = 0.035    # Text Search Enterprise SKU (phone/website/rating fields)
+monthly_free_calls = 1000
+
+[providers.osm]
+cost_per_call_usd = 0.0
+endpoint = "https://overpass-api.de/api/interpreter"
+
+[providers.nominatim]
+cost_per_call_usd = 0.0
+endpoint = "https://nominatim.openstreetmap.org/search"
+
+[providers.selenium]
+cost_per_call_usd = 0.0
+headless = true

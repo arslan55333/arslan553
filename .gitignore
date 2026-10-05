@@ -1,0 +1,20 @@
+# Secrets
+.env
+leadhunter_settings.json
+
+# Runtime data
+data/*.db
+data/*.db-*
+logs/
+*.log
+*.jsonl
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+build/
+dist/
