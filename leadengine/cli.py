@@ -385,7 +385,7 @@ def website(
     all_leads: bool = typer.Option(False, "--all", help="Ignore the shortlist thresholds"),
     limit: int = typer.Option(50, "--limit"),
     screenshots: Optional[bool] = typer.Option(None, "--screenshots/--no-screenshots"),
-    vision: Optional[bool] = typer.Option(None, "--vision/--no-vision", help="AI design review (uses [llm])"),
+    vision: Optional[bool] = typer.Option(None, "--vision/--no-vision", help=r"AI design review (uses the \[llm] settings in config.toml)"),
     refresh: bool = typer.Option(False, "--refresh"),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ) -> None:
@@ -516,7 +516,7 @@ def preview(
     limit: int = typer.Option(10, "--limit"),
     style: Optional[str] = typer.Option(None, "--style", help="clean | bold | warm (default: rotate)"),
     deploy: Optional[bool] = typer.Option(None, "--deploy/--no-deploy", help="Publish to Netlify/Cloudflare"),
-    ai: Optional[bool] = typer.Option(None, "--ai/--no-ai", help="AI-written copy (uses [llm])"),
+    ai: Optional[bool] = typer.Option(None, "--ai/--no-ai", help=r"AI-written copy (uses the \[llm] settings in config.toml)"),
     screenshots: bool = typer.Option(True, "--screenshots/--no-screenshots"),
 ) -> None:
     """Build a modern one-page preview site for leads (clearly marked as a concept, noindex)."""
@@ -557,7 +557,7 @@ def draft(
     ids: list[int] = typer.Argument(None, help="Business ids (see `leads`)"),
     label: list[str] = typer.Option(None, "--label", "-L", help="Or: all leads with this label, e.g. hot"),
     limit: int = typer.Option(20, "--limit"),
-    ai: Optional[bool] = typer.Option(None, "--ai/--no-ai", help="AI-written drafts (uses [llm])"),
+    ai: Optional[bool] = typer.Option(None, "--ai/--no-ai", help=r"AI-written drafts (uses the \[llm] settings in config.toml)"),
     show: bool = typer.Option(False, "--show", help="Print the drafts"),
     force: bool = typer.Option(False, "--force", help="Also draft for leads already contacted"),
 ) -> None:
@@ -622,7 +622,7 @@ def outreach_export(
     if path.suffix.lower() == ".csv":
         path.parent.mkdir(parents=True, exist_ok=True)
         rows = ox.merge_rows(items, cfg, angle)
-        path.write_text(ox.to_merge_csv(rows), encoding="utf-8")
+        path.write_text(ox.to_merge_csv(rows), encoding="utf-8", newline="")  # csv already has \r\n
         console.print(f"[green]{len(rows)} drafts ->[/] {path}")
     else:
         files = ox.write_eml(items, cfg, angle, path)
@@ -814,6 +814,7 @@ def scan(
     activity: Optional[bool] = typer.Option(None, "--activity/--no-activity"),
     fill: Optional[bool] = typer.Option(None, "--fill/--no-fill"),
     towns: Optional[bool] = typer.Option(None, "--towns/--no-towns"),
+    refresh: bool = typer.Option(False, "--refresh", help="Re-scan even if cached"),
     resume: Optional[int] = typer.Option(None, "--resume", help="Continue an interrupted scan job (id from `jobs`)"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Don't ask before spending paid credits"),
 ) -> None:
@@ -842,7 +843,7 @@ def scan(
             if not typer.confirm(f"{chosen} is a paid API and this scans {len(zip_list)} ZIPs. Continue?", default=False):
                 raise typer.Exit()
         options = {"provider_name": provider, "emails": emails, "website": website, "ads": ads,
-                   "activity": activity, "fill": fill, "towns": towns}
+                   "activity": activity, "fill": fill, "towns": towns, "refresh": refresh or None}
         job_id = jobq.enqueue(sf, "discover", {"keyword": keyword, "zips": zip_list,
                                                "options": {k: v for k, v in options.items() if v is not None}})
         console.print(f"Job #{job_id}: '{keyword}' in {len(zip_list)} ZIP(s): {', '.join(zip_list[:12])}"
@@ -1268,7 +1269,7 @@ def export(
     if path.suffix.lower() == ".xlsx":
         path.write_bytes(to_xlsx(rows))
     else:
-        path.write_text(to_csv(rows), encoding="utf-8")
+        path.write_text(to_csv(rows), encoding="utf-8", newline="")  # csv already has \r\n
     console.print(f"[green]{len(rows)} leads ->[/] {path}")
 
 

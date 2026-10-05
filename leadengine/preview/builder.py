@@ -75,9 +75,9 @@ class PreviewBuilder:
         folder = self.out_dir / slug
         site = folder / "site"
         site.mkdir(parents=True, exist_ok=True)
-        (site / "index.html").write_text(render_page(facts, copy, style, self.brand), encoding="utf-8")
-        (site / "robots.txt").write_text(ROBOTS, encoding="utf-8")
-        (site / "_headers").write_text(HEADERS, encoding="utf-8")
+        (site / "index.html").write_text(render_page(facts, copy, style, self.brand), encoding="utf-8", newline="\n")
+        (site / "robots.txt").write_text(ROBOTS, encoding="utf-8", newline="\n")
+        (site / "_headers").write_text(HEADERS, encoding="utf-8", newline="\n")
         payload: dict[str, Any] = {"slug": slug, "style": style, "path": str(site / "index.html"),
                                    "copy_source": copy.source, "url": None, "provider": None,
                                    "headline": copy.headline}

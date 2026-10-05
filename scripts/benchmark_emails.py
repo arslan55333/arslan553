@@ -70,7 +70,7 @@ def main() -> None:
 
     if args.live:
         import requests
-        sites = [l.strip() for l in Path(args.live).read_text().splitlines() if l.strip() and not l.startswith("#")]
+        sites = [l.strip() for l in Path(args.live).read_text(encoding="utf-8").splitlines() if l.strip() and not l.startswith("#")]
         v3 = load_v3(requests)
         new = asyncio.run(run_new(sites, verify="mx"))
         expected = None

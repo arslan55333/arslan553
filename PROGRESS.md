@@ -1,9 +1,23 @@
 # PROGRESS
 
 ## Current Status
-- Current phase: Phase 10 — Hardening & polish (next). Owner asked Claude to self-test and keep building all remaining phases without waiting.
-- Last completed step: Phase 9 outreach drafts built + self-tested (190 tests passing)
-- Waiting on: nothing for building; owner's live runs of Phases 2–4 still outstanding
+- Current phase: **all phases (0–10) built and self-tested**. Remaining: owner's live runs on a real PC/network (see "Next Steps").
+- Last completed step: Phase 10 hardening & polish (194 tests passing locally; CI on Linux + Windows added)
+- Waiting on: owner — live runs (Google Maps scraping, real websites, AI key, Netlify, mailbox) which the build machine cannot reach
+
+### Final summary (what you have now)
+| Area | What it does | Command / place |
+|---|---|---|
+| Discovery | Free Google Maps scraping of a whole ZIP with an adaptive grid; many ZIPs / whole city as one resumable job; paid APIs only fill gaps for top leads | `discover`, `scan`, dashboard "New scan" |
+| Storage | One SQLite database (Postgres-ready), every result cached with expiry, credits tracked | `credits`, `backup`, `prune` |
+| Emails | mailto / Cloudflare-protected / JSON-LD / obfuscated / JS emails, owner names, pattern guesses, MX/SMTP verification, confidence 0–100 | `emails`, `find-email` |
+| Website Score | 0–100 + plain reasons: mobile, speed, HTTPS, age, tech, conversion basics, screenshots, optional AI design review | `website` |
+| Google Ads | live search ads, Local Services Ads, Maps sponsored, site tags, Ads Transparency → Active / Likely / Past / None | `ads` |
+| Opportunity | weighted score, Hot / Warm / Cold / Skip + one-line reason, ZIP ranking | `score`, `leads`, `zips` |
+| Dashboard + CRM | filters, lead pages, pipeline, notes, never-contact-twice, CSV/Excel/Sheets export, background jobs | `ui` |
+| Previews | modern one-page concept site per lead (3 styles), noindex + clear banner, Netlify/Cloudflare publish | `preview` |
+| Outreach | 3 personalised angles + follow-ups from real findings, CAN-SPAM footer; export / IMAP drafts / webhook; opt-in approved+throttled sending, reply/unsubscribe/bounce handling | `draft`, `outreach …`, Outbox page |
+| Health | setup check, backups, cleanup, CI | `doctor`, `backup`, `prune` |
 
 ## Phase Checklist
 - [x] Phase 0 — Audit & plan (approved: Path B)
@@ -16,9 +30,21 @@
 - [x] Phase 7 — Dashboard & mini CRM — built + self-tested (rendered and checked in a real browser)
 - [ ] Phase 8 — Preview landing page generator — built + self-tested; live AI copy + live deploy need owner keys
 - [ ] Phase 9 — AI personalised outreach drafts — built + self-tested; live AI drafts, IMAP and SMTP need owner keys
-- [ ] Phase 10 — Hardening & polish
+- [x] Phase 10 — Hardening & polish (self-tested; CI on Linux + Windows)
 
 ## Phase Log (newest first)
+### Phase 10 — Hardening & polish (2026-10-05)
+- What was done:
+  - Big runs: `scan` runs many ZIPs (`--zip`, `--zips-file`, `--city "Dallas, TX"`, `--near ZIP --radius km`) as one queued job with a live log; Ctrl+C / crash / captcha stop is safe and `scan --resume <id>` continues; `jobs` lists them. New **grid-cell checkpoints** (`grid_cell_cache`): inside a ZIP, finished cells are reused on resume (0 extra requests); `--refresh` ignores them.
+  - Performance (measured with 5,000 leads): bulk enrichment/status lookups instead of one query per lead — re-score 4.4 s → 0.7 s, CSV export 2.6 s → 0.4 s; Excel export rewritten in write-only mode 34 s → 3.1 s; leads page ~0.03 s.
+  - Bug fixed: dashboard search only looked inside the first 200 leads — now searched in the database (name, email, website, phone digits, city).
+  - `doctor` (Python, Chromium, DB, ZIP data, keys, brand/address, sending state, proxies, disk; `--network` tests Google/SerpAPI/Anthropic/PyPI), `backup` (SQLite online backup, keeps last 10), `prune` (drops superseded cache versions + expired checkpoints, VACUUM).
+  - CLI polish: rich markup no longer swallows `[llm]` / `[outreach.sending]` in help and errors; preview template now included in package data.
+  - GitHub Actions: tests on Ubuntu + Windows, Python 3.11 + 3.12, with Chromium. The first Windows run caught a real Windows bug: CSV exports were written with doubled line endings (blank rows in Excel) — fixed (`newline=""`), preview files now always use `\n`, tests read files as UTF-8.
+  - Docs: `USER_GUIDE.md` (step by step, simple English + Roman Urdu), README overview + maintenance section.
+- Test result: Claude self-test — new tests for grid checkpoint resume, CLI help for every command, basic commands on an empty DB, `scan` interrupted then resumed (only unfinished ZIPs re-run), city/radius ZIP expansion, SQL search. End-to-end `scan` over 2 ZIPs with real headless Chromium against the local fake Maps server. 194 tests pass locally.
+- Known issues: live Google Maps behaviour (layout changes, captchas, proxy quality) can only be confirmed on your network; the fake-Maps tests guard the parser but Google can change its page at any time — if `discover` suddenly finds 0 results, run `doctor --network` and report it.
+
 ### Phase 9 — AI outreach drafts (2026-10-05)
 - What was done:
   - `leadengine/outreach/facts.py`: per-lead facts from real findings only — owner first name, Website Score reasons rewritten in plain English (mobile, PageSpeed, HTTPS, years without updates, missing click-to-call/form), Facebook-only = "no website", ads status + evidence, strongest competitor from the same Maps searches (better website / Google Ads / LSA; anonymous unless `name_competitors = true`), preview link or preview screenshot.
@@ -297,10 +323,13 @@ tests/
 - (2026-10-05) LLM layer pluggable; Claude uses the official Anthropic SDK with server-side refusal fallback by default.
 - (2026-10-05) Dashboard: FastAPI + htmx (background jobs with live log) rather than Streamlit; local-only by default.
 - (2026-10-05) Per-context proxies; captcha -> immediate proxy ban; without proxies a captcha stops the run with a clear message.
+- (2026-10-05) Phase 10: resume works at two levels (finished ZIPs in the job + finished grid cells in a ZIP); CI covers Windows because the owner likely runs Windows.
 - (2026-10-05) Outreach = drafts only by default. Sending is opt-in, per-email approval, throttled, CAN-SPAM footer + List-Unsubscribe, separate outreach domain enforced via `allowed_from_domains`; unsubscribe handled by reply ("unsubscribe") + IMAP check rather than a hosted link.
 
 ## Next Steps
-- Building Phase 10 — hardening & polish (job queue checks, full test pass, performance, README + user guide, final summary).
+- Owner: follow USER_GUIDE.md on your PC — `doctor`, then `scan "<keyword>" --zip <your ZIP>` and check the leads in `ui`. Report anything odd (0 results, captcha loops, wrong emails/scores) with the job log.
+- Owner: add keys you want (PageSpeed free key recommended; AI key for AI copy/drafts; Netlify for preview links).
+- Later ideas (not built): hosted one-click unsubscribe page, multi-user login for the dashboard, scheduled weekly re-scans.
 - Owner (any time): live runs of Phases 2–4 on a real ZIP.
 - (Done) Phase 4 — Website Score (0–100): copyright year, HTTPS/SSL validity & expiry (crawler already flags broken SSL), mobile viewport, tech stack via webappanalyzer fingerprints (old jQuery/WordPress/Flash/tables/builders), PageSpeed Insights (free key), Wayback CDX + sitemap lastmod age, conversion basics (click-to-call, forms, reviews widget, CTA), Playwright screenshot, optional AI vision rating, flags for no/broken/parked/Facebook-only sites.
 

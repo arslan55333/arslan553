@@ -3,8 +3,13 @@
 Lead intelligence for US local service businesses: find businesses by **keyword + ZIP**,
 store them once, never pay for the same data twice.
 
-> Work in progress — built phase by phase. See `PROGRESS.md` for status.
-> The original desktop tool is kept unchanged in `legacy/LeadHunterPro_v3.py`.
+> **New here? Read [USER_GUIDE.md](USER_GUIDE.md)** (simple English + Roman Urdu, step by step).
+> Build history and status: `PROGRESS.md`. The original desktop tool is kept unchanged in `legacy/LeadHunterPro_v3.py`.
+
+What it does: free Google Maps scraping over a whole ZIP (adaptive grid) → emails (found + verified) →
+Website Score 0–100 with reasons and screenshots → Google Ads / LSA detection → Opportunity Score with
+Hot / Warm / Cold labels → dashboard + mini CRM → modern preview site per lead → personalised cold email
+drafts (drafts only unless you opt in to sending). Everything is cached so you never pay twice.
 
 ## Quick start (Windows / macOS / Linux, Python 3.11+)
 
@@ -16,9 +21,11 @@ python -m playwright install chromium   # free browser used by the scraper
 copy .env.example .env                  # macOS/Linux: cp .env.example .env
 # optional: put SERPAPI_API_KEY in .env (only used to fill gaps for shortlisted leads)
 
-python -m leadengine init
+python -m leadengine doctor                                     # checks Python, browser, DB, keys, config
 python -m leadengine zip 75201                                  # offline ZIP facts + planned grid
 python -m leadengine discover "dumpster rental" --zip 75201     # whole-ZIP scan (free)
+python -m leadengine scan "septic service" --city "Dallas, TX"  # many ZIPs as one resumable job
+python -m leadengine ui                                         # dashboard at http://127.0.0.1:8765
 python -m leadengine emails --zip 75201                         # find + verify emails for saved leads
 python -m leadengine find-email acme-roofing.com bestplumber.com  # any domains (old "Bulk Email Finder")
 python -m leadengine leads --min-reviews 50
@@ -171,6 +178,19 @@ is still "Emailed". `outreach replies` reads your inbox: replies stop the sequen
 the address to the do-not-contact list, bounces mark the email invalid.
 
 ![Drafts](docs/img/outreach-drafts.jpg)
+
+## Big runs, backups & maintenance (Phase 10)
+
+* `scan "keyword" --zip 75201,75204` / `--zips-file zips.txt` / `--city "Dallas, TX"` /
+  `--near 75201 --radius 20` runs all ZIPs as one background job. **Ctrl+C, a crash or a captcha stop
+  is safe**: finished ZIPs and even finished grid cells inside a ZIP are saved, and
+  `scan --resume <job id>` continues where it stopped (`jobs` lists them). The dashboard's "New scan"
+  uses the same queue.
+* `doctor` checks your setup; `doctor --network` also tests internet access to the services.
+* `backup` makes a safe copy of the database into `data/backups/` (keeps the last 10) - also while the
+  dashboard is running. `prune` removes superseded cache versions and compacts the file.
+* Speed (5,000 leads, laptop-class CPU): leads page ~0.03 s, re-score all 0.7 s, CSV export 0.4 s,
+  Excel export 3 s.
 
 ## AI providers
 

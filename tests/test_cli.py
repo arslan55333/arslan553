@@ -46,6 +46,9 @@ def test_basic_commands_on_empty_database(home):
     assert r.exit_code == 0 and list((home / "data" / "backups").glob("leadengine-*.db"))
     assert invoke("prune").exit_code == 0
     assert invoke("export", str(home / "out.xlsx")).exit_code == 0 and (home / "out.xlsx").exists()
+    assert invoke("export", str(home / "out.csv")).exit_code == 0
+    raw = (home / "out.csv").read_bytes()
+    assert raw.count(b"\r\n") == 1 and b"\r\r\n" not in raw          # no blank rows in Excel on Windows
     assert "nothing approved" in invoke("outreach", "outbox").output or invoke("outreach", "outbox").exit_code == 0
     r = invoke("outreach", "send", "--yes")
     assert r.exit_code == 1 and "sending is off" in r.output

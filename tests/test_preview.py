@@ -107,8 +107,8 @@ def test_builder_writes_site_and_marks_crm(settings, session_factory, tmp_path):
         bid = b.id
     rows = run(LeadService(s, session_factory, None).build_previews([bid], style="bold", screenshots=False))
     site = (s.root / "data" / "previews" / rows[0]["slug"] / "site")
-    assert (site / "index.html").read_text().count("Arslan Web Studio") >= 2
-    assert (site / "robots.txt").read_text() == "User-agent: *\nDisallow: /\n" and "noindex" in (site / "_headers").read_text()
+    assert (site / "index.html").read_text(encoding="utf-8").count("Arslan Web Studio") >= 2
+    assert (site / "robots.txt").read_bytes().decode() == "User-agent: *\nDisallow: /\n" and "noindex" in (site / "_headers").read_text(encoding="utf-8")
     assert rows[0]["style"] == "bold" and rows[0]["copy_source"] == "template" and rows[0]["url"] is None
     with session_factory() as db:
         assert crm.current_status(db, bid) == "Preview Built"
@@ -118,8 +118,8 @@ def test_builder_writes_site_and_marks_crm(settings, session_factory, tmp_path):
 def test_netlify_deploy(tmp_path, make_http):
     site = tmp_path / "site"
     site.mkdir()
-    (site / "index.html").write_text("<h1>hi</h1>")
-    (site / "_headers").write_text("/*\n  X-Robots-Tag: noindex\n")
+    (site / "index.html").write_text("<h1>hi</h1>", encoding="utf-8")
+    (site / "_headers").write_text("/*\n  X-Robots-Tag: noindex\n", encoding="utf-8")
     calls = []
 
     def handler(request: httpx.Request):
