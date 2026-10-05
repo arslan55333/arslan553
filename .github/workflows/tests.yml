@@ -32,3 +32,21 @@ jobs:
         if: runner.os == 'Windows'
       - name: Tests
         run: python -m pytest -q
+
+  windows-setup-script:
+    # Proves the double-click setup.bat really works on a clean Windows machine
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Run setup.bat
+        shell: cmd
+        env:
+          LEADENGINE_NO_PAUSE: "1"
+        run: call setup.bat
+      - name: Installed app answers
+        shell: cmd
+        run: .venv\Scripts\python -m leadengine stats

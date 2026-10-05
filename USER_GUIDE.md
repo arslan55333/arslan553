@@ -5,22 +5,36 @@ Har step ke neeche Roman Urdu mein short explanation bhi hai.
 
 ---
 
-## 1. One-time setup (sirf pehli dafa)
+## 1. One-time setup (sirf pehli dafa) — Windows, no typing needed
 
-You need **Python 3.11 or newer**. On Windows, tick "Add Python to PATH" while installing.
+1. **Install Python**: go to python.org → Downloads → Python 3.12 → run it →
+   **tick "Add Python to PATH"** at the bottom → Install Now.
+2. **Download LeadEngine**: github.com/arslan55333/arslan553 → green **Code** button → **Download ZIP**.
+   Right-click the ZIP → **Extract All** → choose `C:\LeadEngine`.
+3. Open the `C:\LeadEngine\...` folder and **double-click `setup.bat`**. Wait 5–10 minutes.
+   At the end it shows a check list (OK / tip / FIX).
+4. **Every day**: double-click **`start.bat`** → the dashboard opens in your browser.
+   Keep the black window open while you work; close it when you're done.
+5. Weekly: double-click **`backup.bat`**.
 
+> **Urdu:** Sirf 2 files yaad rakhni hain: pehli dafa `setup.bat`, roz `start.bat`.
+> Agar Windows "Windows protected your PC" dikhaye to **More info → Run anyway** dabao (ye aap ki apni file hai).
+> Kaali window mein koi error aaye to uska text copy kar ke Claude ko bhej do.
+
+Manual way (Mac/Linux or if you prefer typing):
 ```bash
-cd arslan553                       # the project folder
 python -m venv .venv
-.venv\Scripts\activate             # Windows   (macOS/Linux: source .venv/bin/activate)
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 python -m playwright install chromium
-copy .env.example .env             # macOS/Linux: cp .env.example .env
+cp .env.example .env               # Windows: copy .env.example .env
 python -m leadengine doctor
+python -m leadengine ui
 ```
 
-> **Urdu:** Pehle Python 3.11+ install karo. Phir upar wali commands chalao. `doctor` aap ka setup check
-> karta hai: green **OK** = theek hai, yellow **tip** = optional cheez, red **FIX** = isay theek karna zaroori hai.
+**Updating to a new version later:** download the new ZIP into a *new* folder, then copy these from the
+old folder into the new one: the **`data`** folder (all your leads), **`.env`** and **`config.toml`**.
+Then run `setup.bat` once in the new folder.
 
 ### Keys (`.env` file, Notepad mein kholo)
 Nothing is required to start. The scraper is free. Add keys only when you need them:

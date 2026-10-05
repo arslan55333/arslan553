@@ -1,0 +1,2 @@
+# Windows double-click scripts: keep CRLF exactly as committed
+*.bat -text
