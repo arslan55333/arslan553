@@ -6,10 +6,15 @@ store them once, never pay for the same data twice.
 > **New here? Read [USER_GUIDE.md](USER_GUIDE.md)** (simple English + Roman Urdu, step by step).
 > Build history and status: `PROGRESS.md`. The original desktop tool is kept unchanged in `legacy/LeadHunterPro_v3.py`.
 
-What it does: free Google Maps scraping over a whole ZIP (adaptive grid) → emails (found + verified) →
-Website Score 0–100 with reasons and screenshots → Google Ads / LSA detection → Opportunity Score with
-Hot / Warm / Cold labels → dashboard + mini CRM → modern preview site per lead → personalised cold email
-drafts (drafts only unless you opt in to sending). Everything is cached so you never pay twice.
+What it does: free Google Maps scraping over a whole ZIP (adaptive grid) → **Ads finder** (everyone paying
+Google in your area + their ad landing pages) → emails (found + verified) → Website Score and **Local SEO
+score** with reasons and screenshots → Google Ads / LSA detection → **Rank map** (Local-Falcon-style
+Google Maps heatmap) → Opportunity Score with Hot / Warm / Cold labels → dashboard + mini CRM → preview
+site + **audit report** per lead → personalised cold email drafts (drafts only unless you opt in) →
+**weekly watch** that alerts you when a business starts advertising. Everything is cached so you never pay twice.
+
+Windows, no typing: install Python, download the ZIP, double-click **`setup.bat`** once, then
+**`start.bat`** every day (see USER_GUIDE.md).
 
 ## Quick start (Windows / macOS / Linux, Python 3.11+)
 
@@ -178,6 +183,66 @@ is still "Emailed". `outreach replies` reads your inbox: replies stop the sequen
 the address to the do-not-contact list, bounces mark the email invalid.
 
 ![Drafts](docs/img/outreach-drafts.jpg)
+
+## Ads finder — who is paying Google right now
+
+Dashboard → **Ads finder** (or `python -m leadengine sweep "dumpster rental" --city "New York, NY"`).
+For each place it searches several real phrases (the keyword, "near me", "emergency …", Google's own
+autocomplete ideas) from that location, with pauses so Google doesn't block you, and collects every
+**search ad, Local Services Ad and sponsored map listing**. Each advertiser is merged across searches
+("seen in 9 of 14 searches"), matched to businesses you already have (domain / phone / name) or added.
+Then the **page each ad sends people to** is audited: homepage instead of a landing page, headline that
+doesn't match the ad, no tap-to-call, no form, not built for phones, slow PageSpeed, no HTTPS, no trust
+signals → a 0–100 landing score with plain-English reasons and screenshots. Advertisers also get a
+website score, local SEO score and emails. A Google check that fails (captcha / offline) is shown as
+"check failed", never as "no ads".
+
+![Ads finder](docs/img/ads-finder.jpg)
+
+## Rank map — where a business shows up on Google Maps
+
+Dashboard → **Rank map** (or "Rank map around this business" on a lead, or `rankgrid "septic service"
+--zip 75201`). Searches Google Maps from every point of a 5×5 / 7×7 / 9×9 grid and records every
+business's position at every point: top-3 share ("share of local voice"), average position, and a
+coloured heatmap over an OpenStreetMap background. One run ranks every business in the area — like paid
+geo-grid tools, free.
+
+![Rank map](docs/img/rank-map.jpg)
+
+## Local SEO score
+
+On-page (city + service in title/H1, LocalBusiness schema, phone matches the Google listing, service
+pages, area pages, map link, reviews, content depth, noindex, sitemap) + Google profile (claimed, photos,
+reviews vs the businesses ranking above, review velocity, owner replies, categories, hours) + optional
+authority (free `OPENPAGERANK_API_KEY`). Runs in scans, deep checks and the Ads finder.
+
+## Audit report
+
+On a lead: **Build audit report** → one branded, printable page (Print → Save as PDF) with score cards,
+the biggest problems, the rank heatmap, ads evidence + landing page issues, website screenshots, local
+SEO fixes, a competitor table and your preview concept. Optionally published (Netlify / Cloudflare) —
+email drafts then include the link. Facts only, noindex, with a "not affiliated with Google" note.
+
+![Audit report](docs/img/audit-report.jpg)
+
+## Weekly watch & alerts
+
+Dashboard → **Alerts**: save a keyword + places; every N days the Ads finder runs again and every
+business that **starts** advertising becomes an alert (also POSTed to `ALERT_WEBHOOK_URL` for
+n8n / Make / Zapier / Slack). Runs by itself while the dashboard is open; `schedule.bat` adds a daily
+Windows task (`monitor.bat`). CLI: `watch add`, `watch list`, `monitor`, `alerts`.
+
+## Smarter scans
+
+* The scan page suggests keywords like the Google Maps search bar (your past keywords, niches, Google
+  autocomplete) and places (ZIPs, cities, neighbourhoods); a ZIP shows the **towns and neighbourhoods in
+  and around it** — click to add their ZIPs.
+* Dense cities: Google returns businesses from the whole area, so every qualifying business found is
+  deep-checked (not only those inside your ZIP; `check_scope`, `max_checks`). Missing city/ZIP is filled
+  from the map position.
+* Leads show **"not checked"** (with the reason) instead of a blank; tick leads → **Deep-check selected**,
+  or **Check this lead** on a lead page. Hot requires proof of ad spend (`require_ads_for_hot`).
+* Dashboard cards and pipeline tiles are clickable; leads filter by CRM status.
 
 ## Big runs, backups & maintenance (Phase 10)
 

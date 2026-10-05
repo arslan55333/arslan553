@@ -27,7 +27,7 @@
  <td class="num score">{{ b.opportunity_score if b.opportunity_score is not none else '–' }}</td>
  <td><a href="/leads/{{ b.id }}"><b>{{ b.name }}</b></a><div class="small muted">{{ b.city or '' }} {{ b.zip_code or '' }}</div></td>
  <td class="num">{{ '%.1f'|format(b.rating) if b.rating is not none else '–' }}<div class="small muted">{{ b.review_count or 0 }} rev.</div></td>
- <td>{% if b.ads_status %}<span class="badge {{ b.ads_status }}">{{ b.ads_status }}{{ ' +LSA' if b.lsa }}</span>{% elif b.id in checked.ads %}<span class="small muted">None</span>{% else %}<span class="nc" title="{{ nc_title }}">not checked</span>{% endif %}</td>
+ <td>{% if b.ads_status %}<span class="badge {{ b.ads_status }}">{{ b.ads_status }}{{ ' +LSA' if b.lsa }}</span>{% elif b.id in checked.ads %}<span class="small muted">None</span>{% elif b.id in checked.ads_failed %}<span class="nc" title="Google could not be checked (captcha / offline) - tick it and Deep-check again">check failed</span>{% else %}<span class="nc" title="{{ nc_title }}">not checked</span>{% endif %}</td>
  <td>{% if b.website_flags and ('no_website' in b.website_flags or 'facebook_only' in b.website_flags) %}<span class="badge Hot">{{ b.website_flags[0]|replace('_',' ') }}</span>
      {% elif b.website_score is not none %}<b>{{ b.website_score }}</b> <span class="small muted">{{ b.website_grade }}</span>
      {% elif not b.website %}<span class="badge Hot">no website</span>{% elif b.id in checked.website %}<span class="small muted">n/a</span>{% else %}<span class="nc" title="{{ nc_title }}">not checked</span>{% endif %}</td>

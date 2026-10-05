@@ -6,6 +6,8 @@
  <a class="card stat link" href="/leads?ads=Active"><div class="l">Running Google Ads</div><div class="n">{{ ads_active }}</div><div class="small muted">{{ ads_likely }} likely · open →</div></a>
  <a class="card stat link" href="/leads?email=any"><div class="l">With email</div><div class="n">{{ with_email }}</div><div class="small muted">open →</div></a>
 </div>
+{% set na = unseen_alerts() %}{% if na %}<a class="card link" href="/alerts" style="margin-top:16px;border-color:#f59e0b;background:#fffbeb">
+ <b>{{ na }} new alert{{ 's' if na > 1 }}</b> — businesses that just started advertising in your watched areas →</a>{% endif %}
 <div class="card" style="margin-top:16px"><h2>Pipeline</h2><div class="pipeline">
  {% for st in STATUSES %}<a class="link" href="/leads?status={{ st|urlencode }}"><b>{{ pipeline[st] }}</b><span class="small muted">{{ st }}</span></a>{% endfor %}</div></div>
 <div class="grid g2" style="margin-top:16px">

@@ -72,6 +72,7 @@ class Settings:
     llm_keys: dict[str, str] = field(default_factory=dict)
     pagespeed_api_key: str = ""
     openpagerank_api_key: str = ""
+    alert_webhook_url: str = ""
     deploy_keys: dict[str, str] = field(default_factory=dict)
     outreach_keys: dict[str, str] = field(default_factory=dict)
 
@@ -142,6 +143,7 @@ class Settings:
                       "groq": env.get("GROQ_API_KEY", ""), "ollama_url": env.get("OLLAMA_URL", "")},
             pagespeed_api_key=env.get("PAGESPEED_API_KEY", ""),
             openpagerank_api_key=env.get("OPENPAGERANK_API_KEY", ""),
+            alert_webhook_url=env.get("ALERT_WEBHOOK_URL", ""),
             deploy_keys={"netlify": env.get("NETLIFY_TOKEN", ""), "cloudflare_token": env.get("CLOUDFLARE_API_TOKEN", ""),
                          "cloudflare_account": env.get("CLOUDFLARE_ACCOUNT_ID", "")},
             outreach_keys={"smtp_user": env.get("OUTREACH_SMTP_USER", ""),

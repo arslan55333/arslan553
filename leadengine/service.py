@@ -637,6 +637,17 @@ class LeadService:
                     payload = {**verdict.as_dict(), "keyword": plan[0] if plan else None,
                                "serp_error": snap.error if snap else None,
                                "serp_ads_seen": len(snap.ads) if snap else None}
+                    unverified = verdict.status == "None" and (snap is None or bool(snap.error))
+                    if unverified:
+                        # Google could not be checked (captcha / offline / no city): "unknown", never "no ads"
+                        why = (snap.error if snap else "no keyword or city to search") or "search failed"
+                        payload.update(status="Unknown", evidence=[f"live Google check failed: {why}"])
+                        repo.set_enrichment(biz.id, "ads", payload, ttl_days=1, source="ads")
+                        biz.ads_status, biz.lsa = None, verdict.lsa
+                        biz.ads_confidence, biz.meta_ads = 0, verdict.meta_ads
+                        session.commit()
+                        rows.append({"name": biz.name, **payload})
+                        continue
                     repo.set_enrichment(biz.id, "ads", payload, ttl_days=ttl, source="ads")
                     biz.ads_status, biz.lsa = verdict.status, verdict.lsa
                     biz.ads_confidence, biz.meta_ads = verdict.confidence, verdict.meta_ads
@@ -669,7 +680,9 @@ class LeadService:
                 businesses = [b for b in (repo.get_business(i) for i in business_ids) if b]
             ids = [b.id for b in businesses]
             webs = repo.latest_enrichments(ids, "website")
-            done = {k: set(repo.latest_enrichments(ids, k)) for k in ("emails", "ads")}
+            done = {"emails": set(repo.latest_enrichments(ids, "emails")),
+                    "ads": {i for i, e in repo.latest_enrichments(ids, "ads").items()
+                            if (e.payload or {}).get("status") != "Unknown"}}
             statuses = repo.lead_statuses(ids if len(ids) <= 900 else None)
             for biz in businesses:
                 fill_location(biz)
@@ -863,8 +876,9 @@ class LeadService:
         ids: list[int] = []
         with self._sf() as session:
             repo = Repository(session)
-            prev = session.scalar(select(AdSweep).where(AdSweep.keyword == keyword.strip().lower())
-                                  .order_by(AdSweep.id.desc()).limit(1))
+            prev_q = select(AdSweep).where(AdSweep.watch_id == watch_id) if watch_id is not None else \
+                select(AdSweep).where(AdSweep.keyword == keyword.strip().lower())
+            prev = session.scalar(prev_q.order_by(AdSweep.id.desc()).limit(1))
             seen_before = {a.get("business_id") for a in (prev.advertisers or [])} if prev else set()
             for adv in advertisers:
                 biz = match_advertiser(session, adv)
@@ -1019,6 +1033,61 @@ class LeadService:
                 session.commit()
             rows.append({"id": bid, "name": name, **out})
         return rows
+
+    # ── weekly watch / alerts ────────────────────────────────────────
+    def due_watches(self, now=None) -> list[int]:
+        from datetime import timedelta
+
+        from sqlalchemy import select
+
+        from leadengine.db.models import Watch
+
+        now = now or utcnow()
+        with self._sf() as session:
+            return [w.id for w in session.scalars(select(Watch).where(Watch.active.is_(True)))
+                    if w.last_run_at is None or w.last_run_at <= now - timedelta(days=w.every_days or 7)]
+
+    async def run_watches(self, watch_ids: list[int] | None = None, *,
+                          on_progress: Callable[[str], None] | None = None) -> dict:
+        """Run due (or given) watches; every business that newly appears as an advertiser becomes an Alert."""
+        from leadengine.db.models import AdSweep, Alert, Watch
+
+        say = on_progress or (lambda _m: None)
+        ids = watch_ids if watch_ids is not None else self.due_watches()
+        created: list[dict] = []
+        for wid in ids:
+            with self._sf() as session:
+                w = session.get(Watch, wid)
+                if w is None:
+                    continue
+                keyword, locations, variations = w.keyword, list(w.locations or []), w.variations
+            say(f"Watch #{wid}: '{keyword}' in {', '.join(locations)}")
+            try:
+                out = await self.ads_sweep(keyword, locations, variations=variations, watch_id=wid, on_progress=say)
+            except LeadEngineError as exc:
+                say(f"  watch #{wid} failed: {exc}")
+                continue
+            with self._sf() as session:
+                w = session.get(Watch, wid)
+                w.last_run_at = utcnow()
+                sweep = session.get(AdSweep, out["sweep_id"])
+                for a in sweep.advertisers or []:
+                    if not a.get("new"):
+                        continue
+                    kinds = ", ".join({"search": "search ads", "lsa": "Local Services Ads", "places": "map ads"}.get(k, k)
+                                      for k in a.get("kinds") or [])
+                    msg = (f"{a['name']} started advertising for '{keyword}' ({kinds}; seen in {a['hits']} searches)")
+                    session.add(Alert(kind="new_advertiser", business_id=a["business_id"], watch_id=wid, message=msg))
+                    created.append({"business_id": a["business_id"], "message": msg})
+                session.commit()
+            say(f"  {sum(1 for c in created)} new advertiser alert(s) so far")
+        if created and self.settings.alert_webhook_url and self.http is not None:
+            try:
+                await self.http.request("POST", self.settings.alert_webhook_url, retries=1,
+                                        json={"type": "leadengine.alerts", "alerts": created})
+            except Exception as exc:
+                say(f"  alert webhook failed: {exc}")
+        return {"watches": len(ids), "alerts": len(created), "link": "/alerts"}
 
     # ── geo-grid rank heatmap ────────────────────────────────────────
     async def rank_grid(self, keyword: str, *, zip_code: str | None = None, business_id: int | None = None,

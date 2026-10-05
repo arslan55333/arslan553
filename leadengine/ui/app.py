@@ -46,19 +46,43 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
     templates = Jinja2Templates(directory=str(HERE / "templates"))
     templates.env.globals.update(LABELS=LABELS, ADS=ADS, STATUSES=crm.STATUSES)
 
+    def enqueue_due_watches() -> int | None:
+        """Queue one 'monitor' job when a saved watch is due and none is waiting/running."""
+        from leadengine.service import LeadService
+
+        if not LeadService(settings, sf, None).due_watches():
+            return None
+        with sf() as s:
+            busy = s.scalar(select(func.count()).select_from(Job).where(Job.kind == "monitor",
+                                                                        Job.status.in_(("queued", "running"))))
+        return None if busy else jobs.enqueue(sf, "monitor", {})
+
+    async def watch_loop() -> None:
+        minutes = float(settings.section("alerts").get("check_every_minutes", 30))
+        while True:
+            try:
+                enqueue_due_watches()
+            except Exception:   # never let the scheduler kill the dashboard
+                pass
+            await asyncio.sleep(max(1.0, minutes) * 60)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        task = None
+        tasks = []
         if start_runner:
             from leadengine.workers import make_handlers
 
             runner = jobs.JobRunner(sf, handlers or make_handlers(settings, sf))
             app.state.runner = runner
-            task = asyncio.create_task(runner.run_forever())
+            tasks.append(asyncio.create_task(runner.run_forever()))
+            if settings.section("alerts").get("auto", True):
+                tasks.append(asyncio.create_task(watch_loop()))
         yield
-        if task:
+        if tasks:
             app.state.runner.stop()
-            await asyncio.wait([task], timeout=5)
+            for t in tasks[1:]:
+                t.cancel()
+            await asyncio.wait(tasks, timeout=5)
 
     app = FastAPI(title="LeadEngine", lifespan=lifespan)
     app.state.sf = sf
@@ -94,13 +118,21 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
                       len(p.get("locations") or p.get("zips") or []), "places"),
             "rankgrid": (f"Rank heatmap: {p.get('keyword', '')}", f"{p.get('size', 7)}x{p.get('size', 7)} grid around "
                          f"{p.get('zip', '')}", 0, ""),
-            "monitor": ("Weekly watch", f"{len(p.get('watch_ids') or [])} watch(es)", 0, ""),
+            "monitor": ("Weekly watch", f"{len(p['watch_ids'])} watch(es)" if p.get("watch_ids") else "all due watches",
+                        0, ""),
             "audit": ("Audit reports", f"{n_ids} lead(s)", 0, ""),
         }.get(job.kind, (job.kind, "", 0, ""))
         return {"title": info[0], "detail": info[1], "total": info[2], "unit": info[3],
                 "done": len(job.done_steps or [])}
 
     templates.env.globals["job_info"] = job_info
+
+    def unseen_alerts() -> int:
+        from leadengine.db.models import Alert
+        with sf() as s:
+            return s.scalar(select(func.count()).select_from(Alert).where(Alert.seen.is_(False))) or 0
+
+    templates.env.globals["unseen_alerts"] = unseen_alerts
 
     def outreach_cfg():
         from leadengine.outreach.mail import outreach_cfg as load
@@ -278,6 +310,65 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
                           tiles=bool(settings.section("rank").get("map_tiles", True)))
         return render(request, "rank_detail.html", grid=grid, focus=focus, row=row, biz=biz, svg=svg)
 
+    # ── weekly watch + alerts ─────────────────────────────────────────
+    @app.get("/alerts", response_class=HTMLResponse)
+    def alerts_page(request: Request):
+        from leadengine.db.models import Alert, Watch
+
+        with sf() as s:
+            watches = list(s.scalars(select(Watch).order_by(Watch.id.desc())))
+            alerts = list(s.execute(select(Alert, Business.name, Business.lead_label, Business.opportunity_score)
+                                    .outerjoin(Business, Business.id == Alert.business_id)
+                                    .order_by(Alert.seen, Alert.id.desc()).limit(200)))
+        return render(request, "alerts.html", watches=watches, alerts=alerts, timedelta=timedelta)
+
+    @app.post("/alerts/watch")
+    def watch_add(keyword: str = Form(...), places: str = Form(...), every_days: int = Form(7),
+                  variations: int = Form(4), run_now: bool = Form(False)):
+        from leadengine.db.models import Watch
+
+        locs = [x.strip() for x in places.replace(";", "\n").splitlines() if x.strip()]
+        locs = [p for x in locs for p in ([x] if "," in x else x.split())]
+        if not keyword.strip() or not locs:
+            raise HTTPException(400, "Enter a keyword and at least one place")
+        with sf() as s:
+            w = Watch(keyword=keyword.strip(), locations=locs[:15], every_days=max(1, every_days),
+                      variations=max(1, min(10, variations)))
+            s.add(w)
+            s.commit()
+            wid = w.id
+        if run_now:
+            return RedirectResponse(f"/jobs/{jobs.enqueue(sf, 'monitor', {'watch_ids': [wid]})}", status_code=303)
+        return RedirectResponse("/alerts", status_code=303)
+
+    @app.post("/alerts/watch/{watch_id}/{action}")
+    def watch_action(watch_id: int, action: str):
+        from leadengine.db.models import Watch
+
+        with sf() as s:
+            w = s.get(Watch, watch_id)
+            if w is None:
+                raise HTTPException(404)
+            if action == "run":
+                s.commit()
+                return RedirectResponse(f"/jobs/{jobs.enqueue(sf, 'monitor', {'watch_ids': [watch_id]})}", status_code=303)
+            if action == "toggle":
+                w.active = not w.active
+            elif action == "delete":
+                s.delete(w)
+            s.commit()
+        return RedirectResponse("/alerts", status_code=303)
+
+    @app.post("/alerts/seen")
+    def alerts_seen():
+        from sqlalchemy import update
+
+        from leadengine.db.models import Alert
+        with sf() as s:
+            s.execute(update(Alert).where(Alert.seen.is_(False)).values(seen=True))
+            s.commit()
+        return RedirectResponse("/alerts", status_code=303)
+
     @app.get("/jobs", response_class=HTMLResponse)
     def jobs_page(request: Request):
         with sf() as s:
@@ -314,7 +405,10 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             ids = [b.id for b in rows]
             known = repo.lead_statuses(ids)
             statuses = {b.id: known.get(b.id, "New") for b in rows}
-            checked = {k: set(repo.latest_enrichments(ids, k)) for k in ("emails", "website", "ads")}
+            checked = {k: set(repo.latest_enrichments(ids, k)) for k in ("emails", "website")}
+            ads_rows = repo.latest_enrichments(ids, "ads")
+            checked["ads"] = {i for i, e in ads_rows.items() if (e.payload or {}).get("status") != "Unknown"}
+            checked["ads_failed"] = {i for i, e in ads_rows.items() if (e.payload or {}).get("status") == "Unknown"}
         disc = settings.section("discovery")
         return render(request, "leads.html", rows=rows, q=q, statuses=statuses, checked=checked,
                       min_reviews=int(disc.get("shortlist_min_reviews", 20)),

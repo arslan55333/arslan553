@@ -59,3 +59,4 @@ button.area{display:flex;flex-direction:column;align-items:flex-start;gap:2px;te
 button.area:hover{border-color:var(--brand)}
 button.area.added{background:#ecfdf5;border-color:#10b981}
 .heat svg{width:100%;height:auto;border-radius:10px}
+.nbadge{background:#ef4444;color:#fff;border-radius:999px;padding:0 7px;font-size:11px;font-weight:700;margin-left:2px}

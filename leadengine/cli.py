@@ -983,6 +983,104 @@ def rankgrid(
     console.print(f"Heatmap: dashboard -> Rank map -> #{out['grid_id']}")
 
 
+watch_app = typer.Typer(help="Weekly watch: alert when a business starts advertising.", no_args_is_help=True)
+app.add_typer(watch_app, name="watch")
+
+
+@watch_app.command("add")
+def watch_add(keyword: str = typer.Argument(...),
+              zips: list[str] = typer.Option(None, "--zip", "-z"),
+              city: list[str] = typer.Option(None, "--city"),
+              every: int = typer.Option(7, "--every", help="Days between checks"),
+              variations: int = typer.Option(4, "--variations", "-n")) -> None:
+    """Save a keyword + places to re-check every week."""
+    from leadengine.db.models import Watch
+
+    _, sf = _bootstrap()
+    places = [p for z in (zips or []) for p in z.replace(",", " ").split()] + list(city or [])
+    if not places:
+        _fail('give --zip and/or --city "City, ST"')
+    with sf() as s:
+        w = Watch(keyword=keyword, locations=places, every_days=every, variations=variations)
+        s.add(w)
+        s.commit()
+        console.print(f"[green]watch #{w.id} saved[/] - run `monitor` (or keep the dashboard open) to check it")
+
+
+@watch_app.command("list")
+def watch_list() -> None:
+    from sqlalchemy import select
+
+    from leadengine.db.models import Watch
+
+    _, sf = _bootstrap()
+    t = Table(title="Watches")
+    for c in ("#", "Keyword", "Places", "Every", "Last run", "Active"):
+        t.add_column(c)
+    with sf() as s:
+        for w in s.scalars(select(Watch)):
+            t.add_row(str(w.id), w.keyword, ", ".join(w.locations or []), f"{w.every_days}d",
+                      w.last_run_at.strftime("%Y-%m-%d") if w.last_run_at else "never", "yes" if w.active else "no")
+    console.print(t)
+
+
+@watch_app.command("remove")
+def watch_remove(watch_id: int) -> None:
+    from leadengine.db.models import Watch
+
+    _, sf = _bootstrap()
+    with sf() as s:
+        w = s.get(Watch, watch_id)
+        if w is None:
+            _fail(f"no watch {watch_id}")
+        s.delete(w)
+        s.commit()
+    console.print(f"watch #{watch_id} removed")
+
+
+@app.command()
+def monitor(all_watches: bool = typer.Option(False, "--all", help="Run every watch now, not only due ones")) -> None:
+    """Run due watches (for Windows Task Scheduler / cron). New advertisers become alerts."""
+    from sqlalchemy import select
+
+    from leadengine.db.models import Watch
+
+    settings, sf = _bootstrap()
+
+    async def _run():
+        async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
+            service = LeadService(settings, sf, http, CreditTracker(sf, settings))
+            try:
+                ids = None
+                if all_watches:
+                    with sf() as s:
+                        ids = [w.id for w in s.scalars(select(Watch).where(Watch.active.is_(True)))]
+                return await service.run_watches(ids, on_progress=lambda m: console.print(f"[dim]{escape(m)}[/]"))
+            finally:
+                await service.aclose()
+    out = asyncio.run(_run())
+    console.print(f"[green]{out['watches']} watch(es) checked, {out['alerts']} new alert(s)[/]")
+
+
+@app.command()
+def alerts(mark_seen: bool = typer.Option(False, "--seen", help="Mark all as seen")) -> None:
+    """New-advertiser alerts."""
+    from sqlalchemy import select, update
+
+    from leadengine.db.models import Alert
+
+    _, sf = _bootstrap()
+    with sf() as s:
+        rows = list(s.scalars(select(Alert).where(Alert.seen.is_(False)).order_by(Alert.id.desc())))
+        for a in rows:
+            console.print(f"{a.created_at:%Y-%m-%d}  {a.message}  (lead #{a.business_id})")
+        if not rows:
+            console.print("no new alerts")
+        if mark_seen:
+            s.execute(update(Alert).values(seen=True))
+            s.commit()
+
+
 @app.command(name="jobs")
 def jobs_cmd(limit: int = typer.Option(20, "--limit")) -> None:
     """Recent background jobs (scans, previews, drafts, sends) and how far they got."""

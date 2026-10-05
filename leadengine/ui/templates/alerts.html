@@ -1,0 +1,31 @@
+{% extends "base.html" %}{% block title %}Alerts{% endblock %}{% block body %}
+<h1>Weekly watch &amp; alerts</h1>
+<p class="sub">Save a keyword + places. Every week LeadEngine re-runs the Ads finder for it and alerts you when a business <b>starts</b> advertising —
+the freshest buyers there are. While the dashboard is open it runs by itself; you can also schedule it with <code>schedule.bat</code>.</p>
+<div class="grid g2">
+<form method="post" action="/alerts/watch" class="card">
+ <h2>New watch</h2>
+ <label>Keyword</label><input name="keyword" required placeholder="dumpster rental" style="width:100%">
+ <label style="margin-top:8px">Places — ZIPs or "City, ST", one per line</label><textarea name="places" required placeholder="New York, NY&#10;Jersey City, NJ"></textarea>
+ <div class="row" style="margin-top:8px"><div><label>Every (days)</label><input name="every_days" type="number" value="7" min="1" style="width:80px"></div>
+ <div><label>Phrases per place</label><input name="variations" type="number" value="4" min="1" max="10" style="width:80px"></div></div>
+ <label style="font-weight:500;margin-top:8px"><input type="checkbox" name="run_now" value="true" checked>Run the first check now (baseline)</label>
+ <div style="margin-top:10px"><button class="btn">Save watch</button></div></form>
+<div class="card"><h2>Your watches</h2>
+ {% if watches %}<table class="small"><tr><th>Keyword</th><th>Places</th><th>Last run</th><th>Next</th><th></th></tr>
+ {% for w in watches %}<tr><td><b>{{ w.keyword }}</b>{% if not w.active %} <span class="muted">(paused)</span>{% endif %}</td><td>{{ (w.locations or [])|join(' · ') }}</td>
+  <td>{{ w.last_run_at.strftime('%Y-%m-%d') if w.last_run_at else 'never' }}</td>
+  <td>{{ (w.last_run_at + timedelta(days=w.every_days or 7)).strftime('%Y-%m-%d') if w.last_run_at else 'now' }}</td>
+  <td class="row" style="gap:4px;flex-wrap:nowrap"><form method="post" action="/alerts/watch/{{ w.id }}/run"><button class="btn ghost">Run</button></form>
+   <form method="post" action="/alerts/watch/{{ w.id }}/toggle"><button class="btn ghost">{{ 'Pause' if w.active else 'Resume' }}</button></form>
+   <form method="post" action="/alerts/watch/{{ w.id }}/delete" onsubmit="return confirm('Delete this watch?')"><button class="btn ghost">×</button></form></td></tr>{% endfor %}</table>
+ {% else %}<p class="muted small">No watches yet.</p>{% endif %}</div>
+</div>
+<div class="row" style="justify-content:space-between;margin-top:20px"><h2 style="margin:0">Alerts</h2>
+<form method="post" action="/alerts/seen"><button class="btn ghost">Mark all as seen</button></form></div>
+<div class="scroll"><table class="card" style="margin-top:10px"><tr><th>When</th><th>What happened</th><th>Lead</th></tr>
+{% for a, name, label, score in alerts %}<tr {% if not a.seen %}style="background:#fffbeb"{% endif %}><td class="small muted">{{ a.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+<td>{% if not a.seen %}<span class="badge Hot">new</span> {% endif %}{{ a.message }}</td>
+<td>{% if a.business_id %}<a href="/leads/{{ a.business_id }}">{{ name }}</a>{% if label %} <span class="badge {{ label }}">{{ label }} · {{ score }}</span>{% endif %}{% endif %}</td></tr>
+{% else %}<tr><td colspan="3" class="muted">No alerts yet. The first run of a watch is the baseline; alerts start from the second run.</td></tr>{% endfor %}</table></div>
+{% endblock %}

@@ -140,5 +140,13 @@ def make_handlers(settings: Settings, sf: sessionmaker[Session]) -> dict[str, Ha
             ctx.log(f"{r['name']}: {r.get('url') or r.get('path')}" + (f" ({r['error']})" if r.get("error") else ""))
         return [{k: r.get(k) for k in ("id", "name", "url", "path", "error")} for r in rows]
 
+    async def monitor(ctx: JobContext) -> dict[str, Any]:
+        async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
+            service = LeadService(settings, sf, http, CreditTracker(sf, settings))
+            try:
+                return await service.run_watches(ctx.params.get("watch_ids"), on_progress=ctx.log)
+            finally:
+                await service.aclose()
+
     return {"discover": discover, "preview": preview, "outreach": outreach, "send": send, "enrich": enrich,
-            "sweep": sweep, "rankgrid": rankgrid, "audit": audit}
+            "sweep": sweep, "rankgrid": rankgrid, "audit": audit, "monitor": monitor}

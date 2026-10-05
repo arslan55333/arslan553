@@ -147,6 +147,11 @@ depth = 20                # positions tracked per point
 concurrency = 2           # parallel map searches
 map_tiles = true          # OpenStreetMap background on the heatmap
 
+# Weekly watch: re-run saved Ads-finder searches and alert on businesses that START advertising
+[alerts]
+auto = true               # while the dashboard (start.bat) is open, run due watches automatically
+check_every_minutes = 30
+
 # Dashboard
 [ui]
 online_suggestions = true # keyword ideas from Google autocomplete + neighbourhoods from OpenStreetMap (free)

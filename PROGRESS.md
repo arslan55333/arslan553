@@ -2,7 +2,8 @@
 
 ## Current Status
 - Current phase: **all phases (0–10) built and self-tested**. Remaining: owner's live runs on a real PC/network (see "Next Steps").
-- Last completed step: Phase 10 hardening & polish (194 tests passing locally; CI on Linux + Windows added)
+- Last completed step: Round 2 (owner feedback + 6 advancements) built and self-tested — 224 tests passing locally
+- Owner tested on Windows: dashboard runs; found "–" (unchecked) shown for Google Ads on Prime Dumpster -> fixed (see Round 2)
 - Waiting on: owner — live runs (Google Maps scraping, real websites, AI key, Netlify, mailbox) which the build machine cannot reach
 
 ### Final summary (what you have now)
@@ -18,6 +19,12 @@
 | Previews | modern one-page concept site per lead (3 styles), noindex + clear banner, Netlify/Cloudflare publish | `preview` |
 | Outreach | 3 personalised angles + follow-ups from real findings, CAN-SPAM footer; export / IMAP drafts / webhook; opt-in approved+throttled sending, reply/unsubscribe/bounce handling | `draft`, `outreach …`, Outbox page |
 | Health | setup check, backups, cleanup, CI | `doctor`, `backup`, `prune` |
+| Ads finder | everyone paying Google (search ads, LSA, map ads) across phrase variations x places + ad landing-page audit | `sweep`, dashboard "Ads finder" |
+| Rank map | Local-Falcon-style geo-grid Google Maps heatmap, share of top 3 per business | `rankgrid`, dashboard "Rank map" |
+| Local SEO | on-page + Google profile + optional authority score with fixes | in scans / deep check |
+| Audit report | one shareable page per lead with every finding | lead page "Build audit report" |
+| Weekly watch | alerts when a business starts advertising | dashboard "Alerts", `watch`, `monitor`, `schedule.bat` |
+| Windows | double-click setup / start / backup / schedule | `setup.bat`, `start.bat`, `backup.bat`, `schedule.bat` |
 
 ## Phase Checklist
 - [x] Phase 0 — Audit & plan (approved: Path B)
@@ -33,6 +40,38 @@
 - [x] Phase 10 — Hardening & polish (self-tested; CI on Linux + Windows)
 
 ## Phase Log (newest first)
+### Round 2 — owner feedback + 6 advancements (2026-10-06)
+- Owner feedback fixed:
+  - Prime Dumpster showed "–" for ads. The deep checks ran only for businesses *inside* the scanned ZIP. Manhattan ZIPs are ~1 km and Google returns the whole city, so most leads were never checked. Now every qualifying business found is deep-checked (`check_scope = "all"`, `max_checks`), with an "only inside my ZIPs" option.
+  - Businesses without city/ZIP get them from their map position.
+  - A failed Google check (captcha / offline) is stored as "Unknown / check failed", never "no ads".
+  - The leads table says "not checked" (with the reason) instead of "–". Leads can be ticked → "Deep-check selected"; lead page has "Check this lead".
+  - Hot now requires proof of ad spend (`require_ads_for_hot`). Reasons say "not checked yet" instead of "no email found" when nothing was checked.
+  - Dashboard cards and pipeline tiles are clickable; CRM status filter; every job kind has a proper job page.
+- Search suggestions:
+  - keyword box: your history + niches + Google autocomplete;
+  - place box: ZIP / city / neighbourhood via ZIP data + OpenStreetMap Photon;
+  - "areas" around a ZIP: towns and neighbourhoods via ZIP data + OSM Overpass, cached; click to add ZIPs.
+- Ads finder (ads-first discovery):
+  - phrase variations x places, throttled and cached;
+  - collects search ads, LSA and sponsored map-pack listings (new SERP parsing, landing URLs);
+  - merges advertisers across searches; matches or adds businesses; "new since last sweep";
+  - optional free Ads Transparency Center read (experimental).
+- Ad landing-page audit: homepage vs landing page, ad-to-headline message match, tap-to-call, form, CTA, mobile, PageSpeed, HTTPS, trust → `landing_score` (feeds Opportunity Score and email drafts).
+- Rank map: N×N Google Maps grid from every point, share of local voice, average position, SVG heatmap with OSM background, leaderboard; lead panel.
+- Local SEO score: on-page + Google profile + optional Open PageRank (`OPENPAGERANK_API_KEY`) → `seo_score` (new Opportunity weight `seo`).
+- Audit report: branded printable page per lead (scores, top problems, heatmap, ads + landing, website, SEO, competitors, concept). Optional publish. Drafts add the measured map visibility + audit link.
+- Weekly watch & alerts:
+  - Watch/Alert tables; `monitor` job;
+  - runs by itself while the dashboard is open; `schedule.bat` / `monitor.bat` for Windows Task Scheduler;
+  - `ALERT_WEBHOOK_URL` webhook; Alerts page with badge; CLI `watch`, `monitor`, `alerts`.
+- Windows: `setup.bat` (verified on a clean Windows runner in CI), `start.bat`, `backup.bat`, `schedule.bat`.
+- Test result: 224 tests pass locally. New: scope / location / unknown-ads fixes, suggestions (mocked Google/Photon/Overpass), sweep end-to-end in real Chromium vs fake Google, landing scoring, transparency parsing, rank grid end-to-end, SEO checks, report content, watches/alerts, all new pages. All pages smoke-tested and screenshotted in Chromium.
+- Known limits:
+  - Google's real pages (ads layout, map-pack "Sponsored" markup, Transparency Center) can't be reached from the build machine. The parsers follow today's structure, and fake pages guard them. Please run a real Ads finder sweep and send me anything that looks wrong.
+  - Google suggestions and neighbourhoods need internet on your PC.
+  - Map tiles come from OpenStreetMap (attribution shown).
+
 ### Phase 10 — Hardening & polish (2026-10-05)
 - What was done:
   - Big runs: `scan` runs many ZIPs (`--zip`, `--zips-file`, `--city "Dallas, TX"`, `--near ZIP --radius km`) as one queued job with a live log; Ctrl+C / crash / captcha stop is safe and `scan --resume <id>` continues; `jobs` lists them. New **grid-cell checkpoints** (`grid_cell_cache`): inside a ZIP, finished cells are reused on resume (0 extra requests); `--refresh` ignores them.
@@ -327,6 +366,7 @@ tests/
 - (2026-10-05) Outreach = drafts only by default. Sending is opt-in, per-email approval, throttled, CAN-SPAM footer + List-Unsubscribe, separate outreach domain enforced via `allowed_from_domains`; unsubscribe handled by reply ("unsubscribe") + IMAP check rather than a hosted link.
 
 ## Next Steps
+- Owner: test Round 2 on your PC: Ads finder (e.g. "dumpster rental" in "New York, NY"), Rank map on one lead, Build audit report, add a Watch. Send screenshots of anything wrong.
 - Owner: follow USER_GUIDE.md on your PC — `doctor`, then `scan "<keyword>" --zip <your ZIP>` and check the leads in `ui`. Report anything odd (0 results, captcha loops, wrong emails/scores) with the job log.
 - Owner: add keys you want (PageSpeed free key recommended; AI key for AI copy/drafts; Netlify for preview links).
 - Later ideas (not built): hosted one-click unsubscribe page, multi-user login for the dashboard, scheduled weekly re-scans.
@@ -353,5 +393,7 @@ tests/
 - `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` / `GROQ_API_KEY` / `OLLAMA_URL` — AI provider chosen in `[llm]`.
 - `OUTREACH_SMTP_USER` / `OUTREACH_SMTP_PASSWORD` — outreach mailbox login (app password) for IMAP drafts, reply checks and opt-in sending (Phase 9).
 - `OUTREACH_WEBHOOK_URL` — optional n8n / Make / Zapier webhook for drafts.
+- `OPENPAGERANK_API_KEY` — optional, free: domain authority in the Local SEO score.
+- `ALERT_WEBHOOK_URL` — optional: new-advertiser alerts to n8n / Make / Zapier / Slack.
 Non-secret settings (cache days, retries, concurrency, price estimates) live in `config.toml`.
 The legacy v3 tool still keeps its own keys in `leadhunter_settings.json` (ignored by git).

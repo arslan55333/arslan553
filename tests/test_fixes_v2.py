@@ -155,3 +155,35 @@ def test_scan_scope_all_checks_out_of_zip_businesses(settings, session_factory, 
     out = asyncio.run(svc.discover("dumpster rental", "10001", provider_name="fake", activity=False, fill=False,
                                    emails=False, website=False, ads=True, refresh=True, scope="area"))
     assert out.shortlisted == 1
+
+
+def test_failed_google_check_is_unknown_not_no_ads(settings, session_factory, make_http):
+    """Captcha / offline must never be reported as 'no ads' (owner saw Prime Dumpster marked wrongly)."""
+    from dataclasses import replace
+
+    import httpx
+
+    from leadengine.config import ProviderSettings
+
+    st = replace(settings, providers={**settings.providers, "playwright": ProviderSettings(
+        extra={"base_url": "http://127.0.0.1:9", "max_attempts": 1, "timeout_ms": 3000})},
+        sections={**settings.sections, "ads": {"serp_provider": "playwright", "gtm": False}})
+    with session_factory() as s:
+        b = add(s, "Prime Dumpster LLC", rating=4.6, review_count=31, city="New York", state="NY", zip_code="11418")
+        bid = b.id
+
+    async def go():
+        async with make_http(lambda r: httpx.Response(404)) as http:
+            svc = LeadService(st, session_factory, http)
+            try:
+                return await svc.detect_ads([bid], keyword="dumpster rental")
+            finally:
+                await svc.aclose()
+    rows = asyncio.run(go())
+    assert rows[0]["status"] == "Unknown" and "live Google check failed" in rows[0]["evidence"][0]
+    with session_factory() as s:
+        assert s.get(Business, bid).ads_status is None
+    from leadengine.ui.app import create_app
+    app = create_app(st, start_runner=False)
+    with TestClient(app) as c:
+        assert "check failed" in c.get("/leads").text

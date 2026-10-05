@@ -82,6 +82,38 @@ population/income and marks what you already scanned.
 
 ---
 
+## 2b. Your best leads: Ads finder (sab se behtar tareeqa)
+
+Your target is businesses that **pay for Google Ads but have a weak website**. The fastest way to find them:
+
+1. Dashboard → **Ads finder**.
+2. Keyword: e.g. `dumpster rental`. Places: one per line, e.g. `New York, NY` and `Jersey City, NJ`.
+3. Click **Find advertisers** and wait. It does many Google searches with pauses, so it takes a few minutes.
+4. The result list shows:
+   - every business paying Google: search ads, Local Services Ads and map ads;
+   - how often they showed up;
+   - their **landing page score**: the page their ad sends people to. A low score is an easy sell;
+   - website score and label.
+
+> **Urdu:** Ye tool khud Google par "dumpster rental", "dumpster rental near me", "emergency …" jaisi
+> kai searches har area se karta hai. Jo bhi ad chala raha hai (paisa de raha hai) wo list mein aata hai.
+> Phir dekhta hai ke ad jis page par bhejta hai wo kitna kharab hai: call button nahi, form nahi,
+> phone par theek nahi khulta, slow hai. Yahi aap ke sab se ache clients hain.
+> Agar Google captcha dikhaye to tool ruk jata hai aur "check failed" likhta hai, "no ads" nahi.
+
+## 2c. Rank map: Google Maps par kahan dikhta hai
+
+On a lead page click **Rank map around this business**, or go to **Rank map** and enter a keyword + ZIP.
+
+The tool searches Google Maps from 49 spots (7×7) around the area and draws a map:
+- green = the business is in the top 3 there;
+- red = it is not in the top 20.
+
+You also get a list of **who owns the area** (share of top-3 spots).
+
+> **Urdu:** Ye wahi cheez hai jiske liye log Local Falcon jaise tools ko har mahine paise dete hain.
+> Client ko ye map dikhao: "aap sirf 5 jagah top 3 mein ho, competitor 40 jagah". Ye bohat convincing hota hai.
+
 ## 3. Look at the leads (dashboard)
 
 ```bash
@@ -110,6 +142,34 @@ The labels mean:
 | Skip | closed, modern site already, or already contacted |
 
 ---
+
+**Not checked?** In the leads list, "not checked" means the tool hasn't looked yet. It does **not** mean "no".
+To check those leads:
+- tick the leads and click **Deep-check selected**, or
+- open a lead and click **Check this lead**.
+
+Either way you get emails, website score, Google Ads and local SEO.
+
+**Clickable dashboard:** the cards (Hot leads, Running Google Ads, With email) and the pipeline boxes open the
+matching leads.
+
+## 3b. Audit report (client ko bhejne wali report)
+
+On a lead page click **Build audit report**. You get one good-looking page with:
+- scores;
+- the biggest problems;
+- the map heatmap;
+- the ads and landing-page problems;
+- website screenshots;
+- local SEO fixes;
+- competitors;
+- your preview concept.
+
+Tick **Publish** to get an online link (needs `NETLIFY_TOKEN`). The email drafts will then include it.
+To make a PDF: open the report → Ctrl+P → "Save as PDF".
+
+> **Urdu:** Ye report email mein link ki tarah bhejo ya PDF bana kar attach karo. Isme sirf asli,
+> measure ki hui cheezen hain. Koi jhoota claim nahi.
 
 ## 4. Build a preview website for a lead
 
@@ -188,6 +248,22 @@ python -m leadengine outreach replies
 
 ---
 
+## 6b. Weekly watch: naye advertisers ka alert
+
+Dashboard → **Alerts** → enter a keyword and places → **Save watch**.
+
+Every week the tool runs the Ads finder again, and every business that **started** advertising becomes an
+alert. You see a red number next to "Alerts" and a yellow box on the dashboard.
+
+- It runs by itself while `start.bat` is open.
+- To run it even when the dashboard is closed, double-click **`schedule.bat`** once. It checks every
+  morning at 9.
+- Optional: put a webhook URL in `.env` as `ALERT_WEBHOOK_URL` (n8n / Make / Zapier → WhatsApp, Slack or
+  email) to get alerts on your phone.
+
+> **Urdu:** Jo business is hafte naya naya ads chalana shuru karta hai, wo abhi abhi paisa kharch karne
+> ko tayyar hai. Ye sab se garam (hot) khareedar hote hain. Inhein sab se pehle contact karo.
+
 ## 7. Keep it healthy (maintenance)
 
 | Command | What it does |
@@ -212,3 +288,6 @@ python -m leadengine outreach replies
 | Drafts say "[ADD YOUR MAILING ADDRESS…]" | fill `physical_address` in `[outreach]`, then click "Regenerate drafts" |
 | Preview has no link in the email | publish it (`NETLIFY_TOKEN` + "Publish"); otherwise the screenshot is attached |
 | Want to start over for one ZIP | add `--refresh` to `discover` / `scan` |
+| Leads show "not checked" | tick them → **Deep-check selected** (big cities: Google shows businesses from the whole area) |
+| Ads say "check failed" | Google showed a captcha or the internet dropped — wait, then **Check this lead** again |
+| Rank map has no map background | the map pictures come from OpenStreetMap over the internet; the dots are still correct |
