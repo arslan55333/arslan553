@@ -105,6 +105,21 @@ Weights and thresholds live in `[opportunity]` in config.toml. Labels: **Hot / W
 reason. Filters: `python -m leadengine leads --label hot --ads active --max-site-score 40 --email verified`.
 Which ZIPs next: `python -m leadengine zips --near 75201 --radius-km 30 -k "dumpster rental"`.
 
+## Dashboard & mini CRM (Phase 7)
+
+`python -m leadengine ui` opens a local web dashboard (http://127.0.0.1:8765):
+start scans (keyword + many ZIPs + options) that run in the background with a live log, browse and
+filter leads (label, ads, website score, rating, reviews, verified email, search), open a lead to see
+ads evidence, website weaknesses with desktop + phone screenshots, emails with confidence/source, and
+move it through **New → Preview Built → Emailed → Replied → Won / Lost** with notes. The same business is
+never marked Emailed twice (also across duplicate records sharing a domain, email or phone).
+Export CSV / Excel from the leads page or `python -m leadengine export leads.xlsx`; Google Sheets with a
+service account (`[export] google_credentials_file`, `pip install gspread`). Jobs survive crashes and
+resume where they stopped; `python -m leadengine worker` runs the queue without the UI.
+
+![Leads](docs/img/dashboard-leads.jpg)
+![Lead detail](docs/img/dashboard-lead1.jpg)
+
 ## AI providers
 
 `[llm]` in config.toml: `claude` (default, `claude-opus-5-5`, official Anthropic SDK, refusal fallback on),

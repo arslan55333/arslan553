@@ -7,6 +7,8 @@ from leadengine.db.models import (
     Email,
     Enrichment,
     GeoCache,
+    Job,
+    LeadEvent,
     LeadStatus,
     Search,
     SearchResult,
@@ -17,6 +19,6 @@ from leadengine.db.session import init_db, make_engine, make_session_factory
 
 __all__ = [
     "ApiUsage", "Base", "Business", "BusinessSource", "DomainCheck", "Email", "Enrichment", "GeoCache",
-    "LeadStatus", "Search", "SearchResult", "Repository", "init_db", "make_engine",
+    "Job", "LeadEvent", "LeadStatus", "Search", "SearchResult", "Repository", "init_db", "make_engine",
     "make_session_factory", "utcnow",
 ]

@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block title %}Jobs{% endblock %}{% block body %}
+<h1>Jobs</h1><p class="sub">Scans run one at a time in the background and resume after a crash.</p>
+<table class="card"><tr><th>#</th><th>Keyword</th><th>ZIPs</th><th>Status</th><th>Progress</th><th>Created</th></tr>
+{% for j in jobs %}<tr><td><a href="/jobs/{{ j.id }}">{{ j.id }}</a></td><td>{{ j.params.keyword }}</td><td class="small">{{ j.params.zips|join(', ') }}</td>
+<td class="status-pill">{{ j.status }}</td><td class="small">{{ (j.done_steps or [])|length }}/{{ j.params.zips|length }} ZIPs</td><td class="small muted">{{ j.created_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>
+{% else %}<tr><td colspan="6" class="muted">No jobs yet.</td></tr>{% endfor %}</table>{% endblock %}

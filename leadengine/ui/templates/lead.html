@@ -1,0 +1,41 @@
+{% extends "base.html" %}{% block title %}{{ b.name }}{% endblock %}{% block body %}
+{% set web = enr.website or {} %}{% set ads = enr.ads or {} %}
+<div class="row" style="justify-content:space-between"><div><h1>{{ b.name }} {% if b.lead_label %}<span class="badge {{ b.lead_label }}">{{ b.lead_label }} · {{ b.opportunity_score }}</span>{% endif %}</h1>
+<p class="sub">{{ b.lead_reason or '' }}</p></div><a class="btn ghost" href="/leads">← All leads</a></div>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<div class="grid g3">
+ <div class="card"><h2>Business</h2><div class="kv small">
+  <div>Rating</div><div>{{ b.rating or '–' }} ★ · {{ b.review_count or 0 }} reviews</div>
+  <div>Last review</div><div>{{ b.last_review_at.strftime('%Y-%m-%d') if b.last_review_at else '–' }}</div>
+  <div>Owner replies</div><div>{{ (b.owner_response_rate * 100)|round|int ~ '%' if b.owner_response_rate is not none else '–' }}</div>
+  <div>Claimed</div><div>{{ {True:'yes', False:'NO'}.get(b.claimed, '–') }}</div>
+  <div>Phone</div><div>{{ b.phone or '–' }}</div><div>Website</div><div>{% if b.website %}<a href="{{ b.website }}" target="_blank" rel="noopener">{{ b.website }}</a>{% else %}–{% endif %}</div>
+  <div>Address</div><div>{{ b.address or '–' }}</div><div>Categories</div><div>{{ (b.categories or [])|join(', ') }}</div>
+  <div>Owner</div><div>{{ b.owner_name or '–' }}</div>
+  <div>Maps</div><div>{% if b.google_maps_url %}<a href="{{ b.google_maps_url }}" target="_blank" rel="noopener">Open in Google Maps</a>{% else %}–{% endif %}</div></div></div>
+ <div class="card"><h2>Google Ads {% if b.ads_status %}<span class="badge {{ b.ads_status }}">{{ b.ads_status }}</span>{% endif %}</h2>
+  {% if ads.evidence %}<ul class="clean small">{% for e in ads.evidence %}<li>{{ e }}</li>{% endfor %}</ul>{% else %}<p class="muted small">Not checked yet.</p>{% endif %}
+  {% if b.lsa %}<p class="small"><b>Local Services Ads:</b> yes</p>{% endif %}{% if b.meta_ads %}<p class="small">Meta Pixel found (likely runs Facebook/Instagram ads)</p>{% endif %}</div>
+ <div class="card"><h2>CRM</h2><form method="post" action="/leads/{{ b.id }}/status" class="grid" style="gap:8px">
+  <div><label>Status</label><select name="status">{% for st in STATUSES %}<option {{ 'selected' if st == status }}>{{ st }}</option>{% endfor %}</select></div>
+  <div><label>Note</label><textarea name="note" placeholder="optional"></textarea></div>
+  <label style="font-weight:500"><input type="checkbox" name="force" value="true">Allow even if already contacted</label>
+  <button class="btn">Save</button></form>
+  {% if events %}<ul class="clean small" style="margin-top:12px">{% for e in events %}<li><span class="muted">{{ e.at.strftime('%Y-%m-%d %H:%M') }}</span> {% if e.status %}<b>{{ e.status }}</b>{% endif %} {{ e.note or '' }}</li>{% endfor %}</ul>{% endif %}</div>
+</div>
+<div class="card" style="margin-top:16px"><h2>Website {% if b.website_score is not none %}score {{ b.website_score }}/100 · {{ b.website_grade }}{% endif %}</h2>
+ {% if web.flags %}<p>{% for f in web.flags %}<span class="badge Skip">{{ f|replace('_',' ') }}</span> {% endfor %}</p>{% endif %}
+ <div class="grid g2"><div>{% if web.reasons %}<b class="small">Weaknesses</b><ul class="clean small">{% for r in web.reasons %}<li>{{ r }}</li>{% endfor %}</ul>{% endif %}
+  {% if web.signals %}<table class="small" style="margin-top:10px">{% for k, v in web.signals.items() %}<tr><td>{{ k }}</td><td class="num">{{ v.points }}/{{ v.max }}</td><td class="muted">{{ v.detail }}</td></tr>{% endfor %}</table>{% endif %}
+  {% if web.tech %}<p class="small"><b>Tech:</b> {% for t in web.tech %}{{ t.name }}{{ ' ' ~ t.version if t.version }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}</div>
+ <div class="shots">{% if media_url(web.screenshot) %}<a href="{{ media_url(web.screenshot) }}" target="_blank"><img src="{{ media_url(web.screenshot) }}" alt="desktop screenshot"></a>{% endif %}
+  {% if media_url(web.mobile_screenshot) %}<a href="{{ media_url(web.mobile_screenshot) }}" target="_blank"><img src="{{ media_url(web.mobile_screenshot) }}" alt="mobile screenshot"></a>{% endif %}</div></div></div>
+<div class="grid g2" style="margin-top:16px">
+ <div class="card"><h2>Emails</h2>{% if emails %}<table class="small"><tr><th>Email</th><th class="num">Conf.</th><th>Verified</th><th>Source</th></tr>
+  {% for e in emails %}<tr><td>{{ e.email }}{% if e.is_guess %} <span class="badge Skip">guess</span>{% endif %}</td><td class="num">{{ e.confidence }}</td><td>{{ e.verification or '–' }}</td><td class="muted">{{ e.source }}</td></tr>{% endfor %}</table>
+  {% else %}<p class="muted small">No emails yet.</p>{% endif %}</div>
+ <div class="card"><h2>Preview & outreach</h2>
+  {% if preview %}<p class="small">Preview: <a href="{{ preview.url or media_url(preview.path) }}" target="_blank">{{ preview.url or 'local preview' }}</a></p>{% else %}<p class="muted small">No preview page yet (Phase 8: <code>python -m leadengine preview {{ b.id }}</code>).</p>{% endif %}
+  {% if drafts %}{% for d in drafts.variants %}<details class="small"><summary><b>{{ d.angle }}</b>: {{ d.subject }}</summary><pre style="white-space:pre-wrap">{{ d.body }}</pre></details>{% endfor %}
+  {% else %}<p class="muted small">No email drafts yet (Phase 9: <code>python -m leadengine draft {{ b.id }}</code>).</p>{% endif %}</div>
+</div>{% endblock %}

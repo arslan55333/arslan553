@@ -1,0 +1,24 @@
+{% extends "base.html" %}{% block title %}Dashboard{% endblock %}{% block body %}
+<h1>Dashboard</h1><p class="sub">Your pipeline at a glance.</p>
+<div class="grid g4">
+ <div class="card stat"><div class="l">Businesses</div><div class="n">{{ total }}</div></div>
+ <div class="card stat"><div class="l">Hot leads</div><div class="n" style="color:var(--hot)">{{ by_label.get('Hot', 0) }}</div><div class="small muted">{{ by_label.get('Warm', 0) }} warm</div></div>
+ <div class="card stat"><div class="l">Running Google Ads</div><div class="n">{{ ads_active }}</div></div>
+ <div class="card stat"><div class="l">With email</div><div class="n">{{ with_email }}</div></div>
+</div>
+<div class="card" style="margin-top:16px"><h2>Pipeline</h2><div class="pipeline">
+ {% for st in STATUSES %}<div><b>{{ pipeline[st] }}</b><span class="small muted">{{ st }}</span></div>{% endfor %}</div></div>
+<div class="grid g2" style="margin-top:16px">
+ <div class="card"><div class="row" style="justify-content:space-between"><h2>Top Hot leads</h2><a href="/leads?label=Hot">All Hot →</a></div>
+  {% if hot %}<table><tr><th>Score</th><th>Business</th><th>Why</th></tr>
+  {% for b in hot %}<tr><td class="score">{{ b.opportunity_score }}</td><td><a href="/leads/{{ b.id }}">{{ b.name }}</a></td><td class="why small">{{ b.lead_reason }}</td></tr>{% endfor %}</table>
+  {% else %}<p class="muted">No Hot leads yet. <a href="/run">Start a scan</a>.</p>{% endif %}</div>
+ <div class="card"><div class="row" style="justify-content:space-between"><h2>Recent jobs</h2><a href="/jobs">All jobs →</a></div>
+  {% if jobs %}<table><tr><th>#</th><th>Job</th><th>Status</th></tr>
+  {% for j in jobs %}<tr><td><a href="/jobs/{{ j.id }}">{{ j.id }}</a></td><td>{{ j.params.keyword }} · {{ j.params.zips|join(', ') }}</td><td class="status-pill">{{ j.status }}</td></tr>{% endfor %}</table>
+  {% else %}<p class="muted">No jobs yet.</p>{% endif %}
+  <h2 style="margin-top:18px">API credits this month</h2>
+  {% for c in credits %}<div class="row small"><b style="width:110px">{{ c.provider }}</b> {{ c.calls_month }} calls
+   {% if c.free_remaining is not none %}· {{ c.free_remaining }} free left{% endif %} · ${{ '%.2f'|format(c.est_cost_month_usd) }}</div>
+  {% else %}<p class="muted small">No API calls yet.</p>{% endfor %}</div>
+</div>{% endblock %}

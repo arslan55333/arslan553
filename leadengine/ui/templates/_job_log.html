@@ -1,0 +1,11 @@
+<div {% if job.status in ['queued','running'] %}hx-get="/jobs/{{ job.id }}/log" hx-trigger="every 2s" hx-target="#log" hx-swap="innerHTML"{% endif %}>
+{% set total = job.params.zips|length %}{% set done = (job.done_steps or [])|length %}
+<div class="card"><div class="row" style="justify-content:space-between"><b class="status-pill">{{ job.status|capitalize }}</b>
+<span class="small muted">{{ done }}/{{ total }} ZIPs done</span></div>
+<div class="bar" style="margin:10px 0"><i style="width:{{ (100 * done / total) if total else 0 }}%"></i></div>
+{% if job.error %}<p class="error">{{ job.error }}</p>{% endif %}
+{% if job.result %}<table><tr><th>ZIP</th><th class="num">Businesses</th><th class="num">Hot</th><th class="num">Warm</th><th class="num">Sponsored</th></tr>
+{% for r in job.result %}<tr><td><a href="/leads?zip={{ r.zip }}">{{ r.zip }}</a></td><td class="num">{{ r.businesses }}</td><td class="num">{{ r.hot }}</td><td class="num">{{ r.warm }}</td><td class="num">{{ r.sponsored }}</td></tr>{% endfor %}</table>
+<p><a class="btn" href="/leads?keyword={{ job.params.keyword|urlencode }}">View leads</a></p>{% endif %}
+<div class="log">{% for line in (job.progress or [])[-120:] %}{{ line }}
+{% endfor %}</div></div></div>

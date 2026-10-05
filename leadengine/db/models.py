@@ -183,7 +183,7 @@ class Email(Base):
 
 
 class LeadStatus(Base):
-    """Mini-CRM pipeline state (used from Phase 7)."""
+    """Mini-CRM pipeline state: New -> Preview Built -> Emailed -> Replied -> Won / Lost."""
 
     __tablename__ = "lead_status"
 
@@ -244,3 +244,35 @@ class SerpSnapshot(Base):
     provider: Mapped[str] = mapped_column(String(30))
     payload: Mapped[Any] = mapped_column(JSON, nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class LeadEvent(Base):
+    """History of status changes and notes (CRM timeline)."""
+
+    __tablename__ = "lead_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str | None] = mapped_column(String(30))
+    note: Mapped[str | None] = mapped_column(Text)
+    at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Job(Base):
+    """Background work (discover runs etc.) with progress log; resumable."""
+
+    __tablename__ = "jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(30))
+    params: Mapped[Any] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="queued", index=True)  # queued|running|done|failed|cancelled
+    progress: Mapped[Any] = mapped_column(JSON, nullable=True)        # list of log lines (last 300)
+    done_steps: Mapped[Any] = mapped_column(JSON, nullable=True)      # e.g. ZIPs finished (for resume)
+    result: Mapped[Any] = mapped_column(JSON, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text)
+    attempts: Mapped[int | None] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime)

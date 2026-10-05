@@ -462,6 +462,52 @@ def ads_cmd(
     console.print(table)
 
 
+@app.command()
+def ui(
+    port: int = typer.Option(8765, "--port"),
+    host: str = typer.Option("127.0.0.1", "--host", help="Keep 127.0.0.1 unless you know you want LAN access"),
+    no_browser: bool = typer.Option(False, "--no-browser"),
+) -> None:
+    """Open the web dashboard (scans run in the background inside this process)."""
+    import threading
+    import webbrowser
+
+    import uvicorn
+
+    from leadengine.ui.app import create_app
+
+    settings = Settings.load()
+    setup_logging(settings.log_level, settings.log_dir)
+    url = f"http://{host}:{port}"
+    console.print(f"[green]LeadEngine dashboard:[/] {url}  (Ctrl+C to stop)")
+    if not no_browser:
+        threading.Timer(1.2, lambda: webbrowser.open(url)).start()
+    uvicorn.run(create_app(settings), host=host, port=port, log_level="warning")
+
+
+@app.command()
+def worker(once: bool = typer.Option(False, "--once", help="Process the queue once and exit")) -> None:
+    """Run queued jobs without the dashboard (e.g. on a server). Resumes interrupted jobs."""
+    from leadengine.jobs import JobRunner, recover_stale
+    from leadengine.workers import make_handlers
+
+    settings, sf = _bootstrap()
+    runner = JobRunner(sf, make_handlers(settings, sf))
+
+    async def _run():
+        if once:
+            recover_stale(sf)
+            while await runner.run_once():
+                pass
+        else:
+            await runner.run_forever()
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        console.print("stopped")
+
+
 @app.command(name="update-fingerprints")
 def update_fingerprints() -> None:
     """Download the open-source webappanalyzer fingerprints (GPL-3.0) for wider tech detection."""
@@ -663,35 +709,46 @@ def stats() -> None:
 
 @app.command()
 def export(
-    path: Path = typer.Argument(..., help="Output CSV file"),
+    path: Path = typer.Argument(..., help="leads.csv or leads.xlsx"),
     keyword: Optional[str] = typer.Option(None, "--keyword", "-k"),
     zip_code: Optional[str] = typer.Option(None, "--zip", "-z"),
+    label: list[str] = typer.Option(None, "--label", "-L"),
 ) -> None:
-    """Export saved businesses to CSV (opens in Excel)."""
+    """Export saved leads to CSV or a formatted Excel file."""
+    from leadengine.exporting import lead_rows, to_csv, to_xlsx
+
     settings, sf = _bootstrap()
     with sf() as s:
-        rows = Repository(s).list_businesses(keyword=keyword, zip_code=zip_code)
-    fields = ["id", "place_id", "data_id", "name", "best_email", "email_confidence", "email_status", "owner_name",
-              "website_score", "website_grade", "website_flags", "screenshot_path", "ads_status", "lsa",
-              "ads_confidence", "meta_ads",
-              "categories", "rating", "review_count", "last_review_at",
-              "recent_review_dates", "owner_response_rate", "claimed", "photo_count", "maps_ad_seen",
-              "phone", "website", "domain", "address", "city", "state", "zip_code", "lat", "lng",
-              "google_maps_url", "first_seen", "last_seen"]
+        rows = lead_rows(s, Repository(s).list_businesses(
+            keyword=keyword, zip_code=zip_code, labels=[l.capitalize() for l in label] if label else None,
+            order="opportunity"))
     path.parent.mkdir(parents=True, exist_ok=True)
-    with sf() as s, path.open("w", newline="", encoding="utf-8-sig") as f:
-        repo = Repository(s)
-        writer = csv.DictWriter(f, fieldnames=fields)
-        writer.writeheader()
-        for b in rows:
-            row = {k: getattr(b, k, None) for k in fields}
-            row["categories"] = ", ".join(b.categories or [])
-            row["recent_review_dates"] = ", ".join(b.recent_review_dates or [])
-            row["maps_ad_seen"] = "yes" if repo.latest_enrichment(b.id, "maps_sponsored") else ""
-            row["website_flags"] = ", ".join(b.website_flags or [])
-            writer.writerow(row)
-    console.print(f"[green]{len(rows)} businesses ->[/] {path}")
+    if path.suffix.lower() == ".xlsx":
+        path.write_bytes(to_xlsx(rows))
+    else:
+        path.write_text(to_csv(rows), encoding="utf-8")
+    console.print(f"[green]{len(rows)} leads ->[/] {path}")
 
+
+@app.command()
+def status(
+    business_id: int = typer.Argument(...),
+    new_status: str = typer.Argument(..., help="New | Preview Built | Emailed | Replied | Won | Lost"),
+    note: Optional[str] = typer.Option(None, "--note"),
+    force: bool = typer.Option(False, "--force", help="Allow even if this business was already contacted"),
+) -> None:
+    """Move a lead through the pipeline (refuses to mark the same business Emailed twice)."""
+    from leadengine import crm
+
+    settings, sf = _bootstrap()
+    match = next((st for st in crm.STATUSES if st.lower() == new_status.lower()), new_status)
+    with sf() as s:
+        try:
+            crm.set_status(s, business_id, match, note, force=force)
+            s.commit()
+        except LeadEngineError as exc:
+            _fail(str(exc))
+    console.print(f"[green]#{business_id} -> {match}[/]")
 
 if __name__ == "__main__":  # pragma: no cover
     app()

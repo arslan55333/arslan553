@@ -1,8 +1,8 @@
 # PROGRESS
 
 ## Current Status
-- Current phase: Phase 7 — Dashboard & mini CRM (next). Owner asked Claude to self-test and keep building all remaining phases without waiting.
-- Last completed step: Phase 6 Opportunity Score built + self-tested (158 tests passing)
+- Current phase: Phase 8 — Preview landing pages (next). Owner asked Claude to self-test and keep building all remaining phases without waiting.
+- Last completed step: Phase 7 Dashboard & mini CRM built + self-tested (166 tests passing)
 - Waiting on: nothing for building; owner's live runs of Phases 2–4 still outstanding
 
 ## Phase Checklist
@@ -13,12 +13,23 @@
 - [ ] Phase 4 — Website Score (0–100) — built + self-tested, awaiting live run
 - [ ] Phase 5 — Google Ads detection — built + self-tested, awaiting live run
 - [x] Phase 6 — Opportunity Score & filtering — built + self-tested (pure scoring, no live dependency)
-- [ ] Phase 7 — Dashboard & mini CRM
+- [x] Phase 7 — Dashboard & mini CRM — built + self-tested (rendered and checked in a real browser)
 - [ ] Phase 8 — Preview landing page generator
 - [ ] Phase 9 — AI personalised outreach drafts
 - [ ] Phase 10 — Hardening & polish
 
 ## Phase Log (newest first)
+### Phase 7 — Dashboard & mini CRM (2026-10-05)
+- Decision: **FastAPI + Jinja2 + htmx** (htmx 2.0.11 vendored, 0BSD) instead of Streamlit — long Playwright jobs run as real background tasks with a live, polling log; pages are plain HTML (fast, testable), no build step. Local only by default (127.0.0.1).
+- What was done:
+  - `leadengine/ui/` app: Dashboard (counts, Hot leads, pipeline, recent jobs, credits), New scan form (keyword + many ZIPs + options), Jobs list + live job page (progress bar, per-ZIP results, cancel), Leads table (filters: search, label, ads, max site score, min rating/reviews, email, ZIP, keyword; re-score; CSV/Excel export of the current filter), Lead page (business facts, ads evidence, CRM status + notes + timeline, website score with signals, tech and desktop/phone screenshots, emails with confidence/source/guess flag, preview/draft placeholders for Phases 8–9), Credits page. Screenshots served via `/media/` confined to the data folder.
+  - `leadengine/crm.py`: statuses New → Preview Built → Emailed → Replied → Won / Lost, notes + `lead_events` timeline; **never contact twice**: refuses Emailed when the lead or another record with the same domain / email / phone was already contacted (override with force). Contacted leads become Skip.
+  - `leadengine/jobs.py` + `workers.py`: DB job queue (`jobs` table) — one job at a time, heartbeat, retries (bad input not retried), cancel, **resume**: stale running jobs are requeued on start and finished ZIPs are skipped (and every step is cached).
+  - `leadengine/exporting.py`: one column set for CSV (Excel-friendly BOM), styled Excel (label colours, frozen header, filters) and Google Sheets (service account, optional gspread).
+  - CLI: `ui`, `worker [--once]`, `status <id> <status>`, `export leads.xlsx|csv --label hot`.
+- Test result: Claude self-test — 8 new tests (CRM flow + duplicate guard + override, job retries/resume/cancel/stale recovery, dashboard pages, filters, CSV/XLSX contents, status change + guard via the UI, scan form -> job, media path traversal blocked, discover job skipping finished ZIPs). Rendered all pages in Chromium with demo data and checked them visually (docs/img). 166 tests pass.
+- Known issues: single-user local app (no login) — keep it on 127.0.0.1; Google Sheets export needs a service account set up once.
+
 ### Phase 6 — Opportunity Score & filtering (2026-10-05)
 - What was done:
   - `leadengine/scoring/opportunity.py`: score 0–100 from reputation 25 (rating + log-scaled reviews), activity 15 (last review recency, reviews in 90 days, owner reply rate), ads 25 (Active/LSA 1.0, Likely 0.7, Past 0.4), website 25 (100 − website score; no site / Facebook-only / broken / parked = full points), reachability 10 (verified email, email confidence, phone). Unknown signals are left out and re-normalised; unknown ads status caps the score at 85.
@@ -260,10 +271,11 @@ tests/
 - (2026-10-05) Owner: "keep testing and build the remaining phases" — Claude continues phase by phase without waiting, self-testing each.
 - (2026-10-05) webappanalyzer is GPL-3.0: not bundled; optional local download command instead, plus our own rule set.
 - (2026-10-05) LLM layer pluggable; Claude uses the official Anthropic SDK with server-side refusal fallback by default.
+- (2026-10-05) Dashboard: FastAPI + htmx (background jobs with live log) rather than Streamlit; local-only by default.
 - (2026-10-05) Per-context proxies; captcha -> immediate proxy ban; without proxies a captcha stops the run with a clear message.
 
 ## Next Steps
-- Building Phase 7 — Dashboard & mini CRM (run scrapes with live progress, leads table with scores/screenshots, pipeline statuses, never contact twice, exports, credits panel) -> Phase 7 dashboard -> 8 previews -> 9 outreach -> 10 hardening.
+- Building Phase 8 — Preview landing page generator (templates, AI copy, preview banner/noindex/demo form, deploy to Netlify/Cloudflare, screenshot) -> Phase 7 dashboard -> 8 previews -> 9 outreach -> 10 hardening.
 - Owner (any time): live runs of Phases 2–4 on a real ZIP.
 - (Done) Phase 4 — Website Score (0–100): copyright year, HTTPS/SSL validity & expiry (crawler already flags broken SSL), mobile viewport, tech stack via webappanalyzer fingerprints (old jQuery/WordPress/Flash/tables/builders), PageSpeed Insights (free key), Wayback CDX + sitemap lastmod age, conversion basics (click-to-call, forms, reviews widget, CTA), Playwright screenshot, optional AI vision rating, flags for no/broken/parked/Facebook-only sites.
 

@@ -18,10 +18,16 @@ dependencies = [
     "dnspython>=2.6",
     "cryptography>=42",
     "anthropic>=1.0",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
+    "openpyxl>=3.1",
 ]
 
 [project.optional-dependencies]
 selenium = ["selenium>=4.20"]
+sheets = ["gspread>=6.0"]
 dev = ["pytest>=8"]
 
 [project.scripts]
@@ -31,7 +37,7 @@ leadengine = "leadengine.cli:app"
 include = ["leadengine*"]
 
 [tool.setuptools.package-data]
-leadengine = ["data/*.csv.gz", "data/*.md"]
+leadengine = ["data/*.csv.gz", "data/*.md", "ui/templates/*.html", "ui/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

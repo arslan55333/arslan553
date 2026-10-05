@@ -89,6 +89,10 @@ ads = 25                  # spends on Google Ads / LSA
 website = 25              # weak, old or missing website
 reachability = 10         # verified email / phone
 
+# Exports
+[export]
+google_credentials_file = ""   # service-account JSON for Google Sheets export (pip install gspread)
+
 # AI provider used by design review, preview copy and outreach drafts
 [llm]
 provider = "claude"       # claude | gemini | groq | ollama

@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block title %}Credits{% endblock %}{% block body %}
+<h1>API credits</h1><p class="sub">List-price estimates; SerpAPI's own count is the source of truth (<code>python -m leadengine credits --live</code>).</p>
+<table class="card"><tr><th>Provider</th><th class="num">Calls this month</th><th class="num">Failed</th><th class="num">Free left</th><th class="num">Est. $ month</th><th class="num">All-time calls</th><th class="num">Est. $ all-time</th></tr>
+{% for c in rows %}<tr><td><b>{{ c.provider }}</b></td><td class="num">{{ c.calls_month }}</td><td class="num">{{ c.failed_month }}</td><td class="num">{{ c.free_remaining if c.free_remaining is not none else '–' }}</td>
+<td class="num">{{ '%.2f'|format(c.est_cost_month_usd) }}</td><td class="num">{{ c.calls_total }}</td><td class="num">{{ '%.2f'|format(c.est_cost_total_usd) }}</td></tr>
+{% else %}<tr><td colspan="7" class="muted">No API calls recorded yet.</td></tr>{% endfor %}</table>{% endblock %}
