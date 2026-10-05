@@ -237,6 +237,47 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             landing = {k: e.payload for k, e in repo.latest_enrichments(ids, "landing").items()}
         return render(request, "ads_detail.html", sw=sw, biz=biz, landing=landing)
 
+    # ── rank heatmap ──────────────────────────────────────────────────
+    @app.get("/rank", response_class=HTMLResponse)
+    def rank_page(request: Request):
+        from leadengine.db.models import RankGrid
+
+        with sf() as s:
+            grids = list(s.scalars(select(RankGrid).order_by(RankGrid.id.desc()).limit(30)))
+        return render(request, "rank.html", grids=grids, cfg=settings.section("rank"))
+
+    @app.post("/rank")
+    def rank_submit(keyword: str = Form(...), zip: str = Form(""), business_id: str = Form(""),
+                    size: int = Form(7), spacing_km: str = Form("")):
+        params: dict[str, Any] = {"keyword": keyword.strip(), "size": max(3, min(11, size))}
+        if business_id.strip().isdigit():
+            params["business_id"] = int(business_id)
+        else:
+            try:
+                params["zip"] = normalize_zip(zip)
+            except ValueError:
+                raise HTTPException(400, "Enter a 5-digit ZIP (or start from a lead page)")
+        if spacing_km.strip():
+            params["spacing_km"] = max(0.2, min(10.0, float(spacing_km)))
+        job_id = jobs.enqueue(sf, "rankgrid", params)
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+    @app.get("/rank/{grid_id}", response_class=HTMLResponse)
+    def rank_detail(request: Request, grid_id: int, b: int | None = None):
+        from leadengine.db.models import RankGrid
+        from leadengine.geo.rankgrid import svg_heatmap
+
+        with sf() as s:
+            grid = s.get(RankGrid, grid_id)
+            if grid is None:
+                raise HTTPException(404)
+            focus = b or grid.focus_business_id or ((grid.summary or [{}])[0].get("business_id"))
+            row = next((x for x in grid.summary or [] if x["business_id"] == focus), None)
+            biz = s.get(Business, focus) if focus else None
+        svg = svg_heatmap(grid.points or [], focus, title=f"{grid.keyword} rank map",
+                          tiles=bool(settings.section("rank").get("map_tiles", True)))
+        return render(request, "rank_detail.html", grid=grid, focus=focus, row=row, biz=biz, svg=svg)
+
     @app.get("/jobs", response_class=HTMLResponse)
     def jobs_page(request: Request):
         with sf() as s:
@@ -301,7 +342,7 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
                 raise HTTPException(404)
             repo = Repository(s)
             enr = {k: (e.payload if (e := repo.latest_enrichment(business_id, k, fresh_only=False)) else None)
-                   for k in ("website", "ads", "emails", "maps_activity", "landing")}
+                   for k in ("website", "ads", "emails", "maps_activity", "landing", "rank")}
             emails = list(s.scalars(select(Email).where(Email.business_id == business_id)
                                     .order_by(Email.is_guess, Email.confidence.desc().nulls_last())))
             status = crm.current_status(s, business_id)
@@ -311,7 +352,19 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             outbox = list(s.scalars(select(OutboundEmail).where(OutboundEmail.business_id == business_id,
                                                                 OutboundEmail.status != "cancelled")
                                     .order_by(OutboundEmail.id.desc()).limit(20)))
+        with sf() as s:
+            keywords = Repository(s).keywords_for(business_id)
+        rank_svg = None
+        if enr.get("rank"):
+            from leadengine.db.models import RankGrid
+            from leadengine.geo.rankgrid import svg_heatmap
+            with sf() as s:
+                g = s.get(RankGrid, enr["rank"].get("grid_id"))
+                if g is not None:
+                    rank_svg = svg_heatmap(g.points or [], business_id, width=360,
+                                           tiles=bool(settings.section("rank").get("map_tiles", True)))
         return render(request, "lead.html", b=biz, enr=enr, emails=emails, status=status, events=events,
+                      keywords=keywords, rank_svg=rank_svg,
                       error=error, preview=previews.payload if previews else None,
                       drafts=drafts.payload if drafts else None, outbox=outbox)
 

@@ -119,5 +119,15 @@ def make_handlers(settings: Settings, sf: sessionmaker[Session]) -> dict[str, Ha
             finally:
                 await service.aclose()
 
+    async def rankgrid(ctx: JobContext) -> dict[str, Any]:
+        p = ctx.params
+        async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
+            service = LeadService(settings, sf, http, CreditTracker(sf, settings))
+            try:
+                return await service.rank_grid(p["keyword"], zip_code=p.get("zip"), business_id=p.get("business_id"),
+                                               size=p.get("size"), spacing_km=p.get("spacing_km"), on_progress=ctx.log)
+            finally:
+                await service.aclose()
+
     return {"discover": discover, "preview": preview, "outreach": outreach, "send": send, "enrich": enrich,
-            "sweep": sweep}
+            "sweep": sweep, "rankgrid": rankgrid}

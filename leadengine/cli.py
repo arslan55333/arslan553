@@ -945,6 +945,44 @@ def sweep(
     console.print("Open the dashboard -> Ads finder for screenshots and details.")
 
 
+@app.command()
+def rankgrid(
+    keyword: str = typer.Argument(...),
+    zip_code: Optional[str] = typer.Option(None, "--zip", "-z", help="Centre ZIP"),
+    business_id: Optional[int] = typer.Option(None, "--business", "-b", help="Centre on a saved business"),
+    size: Optional[int] = typer.Option(None, "--size", help="5, 7 or 9 (points per side)"),
+    spacing_km: Optional[float] = typer.Option(None, "--spacing", help="km between points"),
+) -> None:
+    """Rank heatmap: Google Maps searched from every point of a grid; who owns the map pack where."""
+    settings, sf = _bootstrap()
+    if not (zip_code or business_id):
+        _fail("give --zip 10001 or --business <id>")
+
+    async def _run():
+        async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
+            service = LeadService(settings, sf, http, CreditTracker(sf, settings))
+            try:
+                return await service.rank_grid(keyword, zip_code=zip_code, business_id=business_id, size=size,
+                                               spacing_km=spacing_km, on_progress=lambda m: console.print(f"[dim]{escape(m)}[/]"))
+            finally:
+                await service.aclose()
+    try:
+        out = asyncio.run(_run())
+    except LeadEngineError as exc:
+        _fail(str(exc))
+    from leadengine.db.models import RankGrid
+
+    with sf() as s:
+        grid = s.get(RankGrid, out["grid_id"])
+        t = Table(title=f"Who owns '{keyword}' on Google Maps ({out['points']} points)")
+        for c in ("#", "Business", "Top 3", "Share", "Avg pos."):
+            t.add_column(c)
+        for i, r in enumerate((grid.summary or [])[:20], 1):
+            t.add_row(str(i), r["name"], f"{r['top3']}/{r['points']}", f"{r['solv']}%", str(r["avg_rank"]))
+    console.print(t)
+    console.print(f"Heatmap: dashboard -> Rank map -> #{out['grid_id']}")
+
+
 @app.command(name="jobs")
 def jobs_cmd(limit: int = typer.Option(20, "--limit")) -> None:
     """Recent background jobs (scans, previews, drafts, sends) and how far they got."""

@@ -368,3 +368,22 @@ class Alert(Base):
     message: Mapped[str] = mapped_column(Text)
     seen: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
+class RankGrid(Base):
+    """One geo-grid rank run: Google Maps results searched from every point of an N×N grid."""
+
+    __tablename__ = "rank_grids"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    keyword: Mapped[str] = mapped_column(String(200), index=True)
+    label: Mapped[str | None] = mapped_column(String(200))
+    center_lat: Mapped[float] = mapped_column(Float)
+    center_lng: Mapped[float] = mapped_column(Float)
+    size: Mapped[int] = mapped_column(Integer, default=7)
+    spacing_km: Mapped[float] = mapped_column(Float, default=1.0)
+    zoom: Mapped[int | None] = mapped_column(Integer)
+    focus_business_id: Mapped[int | None] = mapped_column(Integer)
+    points: Mapped[Any] = mapped_column(JSON, nullable=True)     # [{r, c, lat, lng, ranks: [business ids], error}]
+    summary: Mapped[Any] = mapped_column(JSON, nullable=True)    # leaderboard (see geo.rankgrid.summarize)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)

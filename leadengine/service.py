@@ -940,6 +940,82 @@ class LeadService:
             await renderer.aclose()
         return done
 
+    # ── geo-grid rank heatmap ────────────────────────────────────────
+    async def rank_grid(self, keyword: str, *, zip_code: str | None = None, business_id: int | None = None,
+                        lat: float | None = None, lng: float | None = None, size: int | None = None,
+                        spacing_km: float | None = None, on_progress: Callable[[str], None] | None = None) -> dict:
+        """Search Google Maps from every point of an N×N grid; store where each business ranks."""
+        import asyncio
+
+        from leadengine.db.models import RankGrid
+        from leadengine.geo.grid import zoom_for_span
+        from leadengine.geo.rankgrid import grid_points, summarize
+        from leadengine.normalize import normalize_zip
+
+        say = on_progress or (lambda _m: None)
+        cfg = self.settings.section("rank")
+        size = int(size or cfg.get("size", 7))
+        label = None
+        if business_id is not None:
+            with self._sf() as session:
+                biz = Repository(session).get_business(business_id)
+                if biz is None or biz.lat is None:
+                    raise LeadEngineError("that business has no map location yet")
+                lat, lng, label = biz.lat, biz.lng, biz.name
+        elif zip_code:
+            z = zip_directory().get(normalize_zip(zip_code))
+            if z is None:
+                raise LeadEngineError(f"unknown ZIP {zip_code}")
+            lat, lng, label = z.lat, z.lng, f"{z.zip} {z.label}"
+            spacing_km = spacing_km or max(0.5, round(z.radius_km * 2 / max(1, size - 1), 2))
+        if lat is None or lng is None:
+            raise LeadEngineError("give a ZIP, a business or coordinates")
+        spacing = float(spacing_km or cfg.get("spacing_km", 1.0))
+        zoom = int(cfg.get("zoom") or zoom_for_span(lat, spacing * 2.5))
+        pts = grid_points(lat, lng, size, spacing)
+        provider = self._ready(str(cfg.get("provider", "playwright")))
+        say(f"Rank grid: '{keyword}' {size}x{size} = {len(pts)} map searches, {spacing} km apart (zoom {zoom})")
+        sem = asyncio.Semaphore(int(cfg.get("concurrency", 2)))
+        done = 0
+
+        async def one(p: dict) -> None:
+            nonlocal done
+            async with sem:
+                try:
+                    res = await provider.search(SearchQuery(keyword=keyword, lat=p["lat"], lng=p["lng"], zoom=zoom,
+                                                            max_results=int(cfg.get("depth", 20))))
+                    p["records"] = res.records
+                except Exception as exc:
+                    p["error"] = f"{type(exc).__name__}: {str(exc)[:80]}"
+            done += 1
+            if done % max(1, len(pts) // 10) == 0 or done == len(pts):
+                say(f"  {done}/{len(pts)} points searched")
+
+        await asyncio.gather(*(one(p) for p in pts))
+        names: dict[int, str] = {}
+        with self._sf() as session:
+            repo = Repository(session)
+            for p in pts:
+                recs = p.pop("records", None) or []
+                ranked, _ = self._store(session, repo, recs, keyword, None)
+                p["ranks"] = [b.id for b, _ in sorted(ranked, key=lambda t: t[1])]
+                names.update({b.id: b.name for b, _ in ranked})
+            summary = summarize(pts, names)
+            grid = RankGrid(keyword=keyword, label=label, center_lat=lat, center_lng=lng, size=size,
+                            spacing_km=spacing, zoom=zoom, focus_business_id=business_id, points=pts, summary=summary)
+            session.add(grid)
+            session.flush()
+            for row in summary:
+                repo.set_enrichment(row["business_id"], "rank", {**row, "grid_id": grid.id, "keyword": keyword,
+                                                                 "size": size, "spacing_km": spacing},
+                                    ttl_days=self.settings.ttl("search"), source="rankgrid")
+            session.commit()
+            gid = grid.id
+        failed = sum(1 for p in pts if p.get("error"))
+        say(f"Done: {len(summary)} businesses ranked" + (f", {failed} point(s) failed" if failed else ""))
+        return {"grid_id": gid, "points": len(pts), "failed": failed, "businesses": len(summary),
+                "leader": summary[0]["name"] if summary else None, "link": f"/rank/{gid}"}
+
 def resolve_place(text: str) -> tuple[str, str, str] | None:
     """'10001' / 'New York, NY' / 'Astoria' -> (city, state, label) using the bundled ZIP data."""
     from leadengine.normalize import normalize_zip

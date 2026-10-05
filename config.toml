@@ -137,6 +137,14 @@ min_delay_seconds = 120   # pause between sends (+ random jitter)
 attach_screenshot = false
 allowed_from_domains = [] # e.g. ["getacme-web.com"] - refuses to send from any other domain
 
+# Rank heatmap (geo-grid): Google Maps searched from every point of an N x N grid
+[rank]
+size = 7                  # 7 x 7 = 49 map searches (5 = faster, 9 = more detail)
+spacing_km = 1.0          # distance between points (a ZIP scan picks this from the ZIP size)
+depth = 20                # positions tracked per point
+concurrency = 2           # parallel map searches
+map_tiles = true          # OpenStreetMap background on the heatmap
+
 # Dashboard
 [ui]
 online_suggestions = true # keyword ideas from Google autocomplete + neighbourhoods from OpenStreetMap (free)

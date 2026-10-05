@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% block title %}Rank map: {{ grid.keyword }}{% endblock %}{% block body %}
+<div class="row" style="justify-content:space-between"><div><h1>“{{ grid.keyword }}” on Google Maps</h1>
+<p class="sub">{{ grid.label or '' }} · {{ grid.size }}×{{ grid.size }} grid, {{ grid.spacing_km }} km apart · {{ grid.created_at.strftime('%Y-%m-%d') }}</p></div>
+<a class="btn ghost" href="/rank">← Rank maps</a></div>
+<div class="grid g2">
+ <div class="card"><h2>{% if biz %}<a href="/leads/{{ biz.id }}">{{ biz.name }}</a>{% else %}Business{% endif %}</h2>
+  {% if row %}<p class="small"><b>Top 3 at {{ row.top3 }} of {{ row.points }} points</b> (share of local voice {{ row.solv }}%) ·
+   shows up at {{ row.found }} · average position {{ row.avg_rank }}</p>{% else %}<p class="small muted">Not in the top 20 anywhere on this grid.</p>{% endif %}
+  <div class="heat">{{ svg|safe }}</div></div>
+ <div class="card"><h2>Who owns this area</h2><p class="small muted">Click a business to see its map.</p>
+  <div class="scroll"><table class="small"><tr><th>#</th><th>Business</th><th class="num">Top 3</th><th class="num">Share</th><th class="num">Avg pos.</th></tr>
+  {% for r in (grid.summary or [])[:40] %}<tr {% if r.business_id == focus %}style="background:#eef2ff"{% endif %}><td>{{ loop.index }}</td>
+   <td><a href="/rank/{{ grid.id }}?b={{ r.business_id }}">{{ r.name }}</a></td><td class="num">{{ r.top3 }}/{{ r.points }}</td>
+   <td class="num"><b>{{ r.solv }}%</b></td><td class="num">{{ r.avg_rank }}</td></tr>{% endfor %}</table></div></div>
+</div>{% endblock %}

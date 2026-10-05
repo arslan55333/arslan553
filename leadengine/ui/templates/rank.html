@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% block title %}Rank map{% endblock %}{% block body %}
+<h1>Rank map</h1>
+<p class="sub">Where does each business show up on Google Maps across a whole area? We search Maps from every point of a grid
+(like Local Falcon) — one run ranks <b>every</b> business in the area. Green = top 3 (the map pack people see), red = not in the top 20.</p>
+<form method="post" action="/rank" class="card" style="max-width:820px">
+ <div class="grid g3"><div><label>Keyword</label><input name="keyword" required placeholder="dumpster rental" style="width:100%"></div>
+ <div><label>Centre ZIP</label><input name="zip" placeholder="10001" style="width:100%"></div>
+ <div><label>Grid</label><select name="size">{% for n in [5, 7, 9] %}<option value="{{ n }}" {{ 'selected' if n == cfg.get('size', 7) }}>{{ n }} × {{ n }} ({{ n * n }} searches)</option>{% endfor %}</select></div></div>
+ <div style="margin-top:10px"><label>Distance between points (km, optional)</label><input name="spacing_km" placeholder="auto from ZIP size" style="width:180px"></div>
+ <div class="row" style="margin-top:14px"><button class="btn">Build rank map</button><span class="small muted">Tip: open a lead and press “Rank map around this business”.</span></div>
+</form>
+<h2 style="margin-top:22px">Past rank maps</h2>
+<div class="scroll"><table class="card"><tr><th>#</th><th>Keyword</th><th>Centre</th><th>Grid</th><th>Leader (share of top 3)</th><th>When</th></tr>
+{% for g in grids %}<tr><td><a href="/rank/{{ g.id }}">{{ g.id }}</a></td><td><a href="/rank/{{ g.id }}"><b>{{ g.keyword }}</b></a></td><td class="small">{{ g.label or '' }}</td>
+<td class="small">{{ g.size }}×{{ g.size }}, {{ g.spacing_km }} km</td>
+<td class="small">{% if g.summary %}{{ g.summary[0].name }} ({{ g.summary[0].solv }}%){% endif %}</td><td class="small muted">{{ g.created_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>
+{% else %}<tr><td colspan="6" class="muted">No rank maps yet.</td></tr>{% endfor %}</table></div>
+{% endblock %}
