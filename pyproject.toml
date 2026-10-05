@@ -37,7 +37,7 @@ leadengine = "leadengine.cli:app"
 include = ["leadengine*"]
 
 [tool.setuptools.package-data]
-leadengine = ["data/*.csv.gz", "data/*.md", "ui/templates/*.html", "ui/static/*"]
+leadengine = ["data/*.csv.gz", "data/*.md", "ui/templates/*.html", "ui/static/*", "preview/templates/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

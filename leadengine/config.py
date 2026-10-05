@@ -72,6 +72,7 @@ class Settings:
     llm_keys: dict[str, str] = field(default_factory=dict)
     pagespeed_api_key: str = ""
     deploy_keys: dict[str, str] = field(default_factory=dict)
+    outreach_keys: dict[str, str] = field(default_factory=dict)
 
     def ttl(self, kind: str) -> float:
         """Freshness window in days for a cached data kind."""
@@ -141,6 +142,9 @@ class Settings:
             pagespeed_api_key=env.get("PAGESPEED_API_KEY", ""),
             deploy_keys={"netlify": env.get("NETLIFY_TOKEN", ""), "cloudflare_token": env.get("CLOUDFLARE_API_TOKEN", ""),
                          "cloudflare_account": env.get("CLOUDFLARE_ACCOUNT_ID", "")},
+            outreach_keys={"smtp_user": env.get("OUTREACH_SMTP_USER", ""),
+                           "smtp_password": env.get("OUTREACH_SMTP_PASSWORD", ""),
+                           "webhook_url": env.get("OUTREACH_WEBHOOK_URL", "")},
         )
 
 

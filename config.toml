@@ -100,6 +100,32 @@ deploy = "none"           # none | netlify | cloudflare
 base_domain = ""          # e.g. "previews.youragency.com" -> acme-dallas-12.previews.youragency.com
                           # (point a wildcard DNS record *.previews.youragency.com at your host first)
 
+# Cold email drafts (Phase 9). Drafts only - nothing is sent unless you turn on [outreach.sending]
+# AND approve each email yourself.
+[outreach]
+sender_name = ""          # your name, used in the sign-off
+agency = ""               # empty = [preview] brand_name
+sender_email = ""         # e.g. you@getacme-web.com - use a separate outreach domain, not your main one
+reply_to = ""
+physical_address = ""     # REQUIRED by CAN-SPAM before anything can be sent (street or PO box)
+unsubscribe_line = "Not interested? Reply \"unsubscribe\" and I won't email you again."
+offer = ""                # one line about what you do, e.g. "I build fast, mobile-first sites for local trades."
+use_ai = true             # AI-written drafts via [llm]; false = template drafts
+name_competitors = false  # true = mention the stronger competitor by name
+followup_days = [3, 7, 14]
+max_words = 150
+imap_host = ""            # e.g. imap.gmail.com - lets `outreach push --imap` save drafts in your Drafts folder
+imap_drafts_folder = "[Gmail]/Drafts"
+
+[outreach.sending]
+enabled = false           # opt-in. Even when true, only emails you approved are sent
+smtp_host = ""            # e.g. smtp.gmail.com
+smtp_port = 587
+max_per_day = 30          # stay low on a new domain (warm it up)
+min_delay_seconds = 120   # pause between sends (+ random jitter)
+attach_screenshot = false
+allowed_from_domains = [] # e.g. ["getacme-web.com"] - refuses to send from any other domain
+
 # Exports
 [export]
 google_credentials_file = ""   # service-account JSON for Google Sheets export (pip install gspread)

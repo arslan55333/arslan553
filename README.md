@@ -138,6 +138,40 @@ Set your brand in `[preview]` in config.toml.
 
 ![Preview](docs/img/preview-bold.jpg)
 
+## Outreach drafts (Phase 9) - drafts only
+
+`python -m leadengine draft 12 --show` (or `--label hot`, or "Write email drafts" on a lead page) writes
+three first-email angles per lead plus a 3-step follow-up sequence (day 3 / 7 / 14):
+
+* **short** - one real problem + the preview + a soft question
+* **detailed** - up to 3 measured problems as a list, the Google Ads angle (if they run ads), the preview
+* **competitor** - a stronger competitor from the same Maps search (better site / ads / LSA; unnamed unless
+  `name_competitors = true`), and their own review lead if they have more reviews
+
+Everything comes from what LeadEngine measured (Website Score reasons translated into plain English,
+PageSpeed, ads evidence, reviews, preview link or attached preview screenshot). The AI (`[llm]`) only sees
+those facts; a filter drops invented numbers/percentages/guarantees/rankings, foreign links and model
+sign-offs, and fake "Re:" subjects. Without an AI key, good template drafts are used (`--no-ai`).
+Your signature and a **CAN-SPAM footer** (your postal address + an unsubscribe line) are added by code.
+
+Getting drafts out (nothing is sent):
+* `outreach export drafts.csv` - mail-merge CSV for Instantly / Smartlead / lemlist / GMass
+  (columns for each follow-up), or `outreach export eml/` - `.eml` files that open as drafts
+* `outreach push --imap` - saves them into your mailbox's Drafts folder (Gmail/Outlook app password)
+* `outreach push --webhook` - POSTs JSON to n8n / Make / Zapier (`OUTREACH_WEBHOOK_URL`)
+
+**Optional sending (off by default).** Only if you set `[outreach.sending] enabled = true`, fill in
+`sender_email` (use a separate outreach domain; `allowed_from_domains` locks it), `physical_address`,
+`smtp_host` and the mailbox login in `.env`, **and approve each email yourself**
+(`outreach approve 12 --angle short` or the "Approve this one" button). `outreach send` / the Outbox
+page then sends approved emails throttled (`max_per_day`, `min_delay_seconds` + jitter), with a
+`List-Unsubscribe` header, and refuses leads already contacted (never-contact-twice), on the
+do-not-contact list, or with invalid emails. Follow-ups go out in the same thread only while the lead
+is still "Emailed". `outreach replies` reads your inbox: replies stop the sequence, "unsubscribe" adds
+the address to the do-not-contact list, bounces mark the email invalid.
+
+![Drafts](docs/img/outreach-drafts.jpg)
+
 ## AI providers
 
 `[llm]` in config.toml: `claude` (default, `claude-opus-5-5`, official Anthropic SDK, refusal fallback on),

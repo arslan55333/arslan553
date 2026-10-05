@@ -41,6 +41,24 @@
    <select name="style"><option value="auto">Style: auto</option><option>clean</option><option>bold</option><option>warm</option></select>
    <label style="font-weight:500;margin:0"><input type="checkbox" name="deploy" value="true">Publish</label>
    <button class="btn ghost">{{ 'Rebuild preview' if preview else 'Build preview' }}</button></form>
-  {% if drafts %}{% for d in drafts.variants %}<details class="small"><summary><b>{{ d.angle }}</b>: {{ d.subject }}</summary><pre style="white-space:pre-wrap">{{ d.body }}</pre></details>{% endfor %}
-  {% else %}<p class="muted small">No email drafts yet (Phase 9: <code>python -m leadengine draft {{ b.id }}</code>).</p>{% endif %}</div>
+  <p class="small muted">Email drafts are below.</p></div>
+</div>
+<div class="card" style="margin-top:16px" id="drafts"><div class="row" style="justify-content:space-between">
+ <h2>Outreach drafts {% if drafts %}<span class="muted small">({{ drafts.source }}, {{ drafts.generated_at[:10] }})</span>{% endif %}</h2>
+ <form method="post" action="/leads/{{ b.id }}/draft" class="row"><label style="font-weight:500;margin:0"><input type="checkbox" name="ai" value="true" checked>AI</label>
+  <button class="btn ghost">{{ 'Regenerate drafts' if drafts else 'Write email drafts' }}</button></form></div>
+ {% if drafts %}
+  <p class="small">To: <b>{{ drafts.to or 'no email found' }}</b>{% if drafts.to_status %} <span class="muted">({{ drafts.to_status }})</span>{% endif %}
+   · Drafts only: nothing is sent unless you approve it and sending is turned on.</p>
+  {% for w in drafts.warnings %}<p class="small warn">! {{ w }}</p>{% endfor %}
+  <div class="grid g3">{% for d in drafts.variants %}<div class="draft"><div class="small muted">{{ d.angle }}{% if d.source == 'template' and drafts.source == 'ai' %} · template{% endif %}</div>
+   <div class="subject">{{ d.subject }}</div><pre class="mail">{{ final_body(d.body, drafts.preview_url) }}</pre>
+   <form method="post" action="/leads/{{ b.id }}/approve" class="row small"><input type="hidden" name="angle" value="{{ d.angle }}">
+    <label style="font-weight:500;margin:0"><input type="checkbox" name="followups" value="true" checked>+ follow-ups</label>
+    <button class="btn">Approve this one</button></form></div>{% endfor %}</div>
+  <details class="small" style="margin-top:10px"><summary><b>Follow-up sequence</b> ({{ drafts.followups|length }})</summary>
+   {% for f in drafts.followups %}<p class="muted">Day {{ f.day }} · "Re: …"</p><pre class="mail">{{ final_body(f.body, drafts.preview_url) }}</pre>{% endfor %}</details>
+ {% else %}<p class="muted small">No drafts yet. They use this lead's real findings (website issues, mobile/speed, ads, competitor) and the preview link.</p>{% endif %}
+ {% if outbox %}<h2 style="margin-top:14px">Approved / sent</h2><div class="scroll"><table class="small"><tr><th>Step</th><th>To</th><th>Status</th><th>When</th><th>Subject</th></tr>
+  {% for o in outbox %}<tr><td>{{ o.step }}</td><td>{{ o.to_email }}</td><td>{{ o.status }}</td><td>{{ (o.sent_at or o.scheduled_for).strftime('%Y-%m-%d') if (o.sent_at or o.scheduled_for) else '–' }}</td><td>{{ o.error or o.subject }}</td></tr>{% endfor %}</table></div>{% endif %}
 </div>{% endblock %}

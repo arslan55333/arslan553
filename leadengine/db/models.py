@@ -276,3 +276,37 @@ class Job(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime)
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class Suppression(Base):
+    """Do-not-contact list: unsubscribes, bounces, manual blocks. ``value`` is an email or a bare domain."""
+
+    __tablename__ = "suppressions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    value: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    reason: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class OutboundEmail(Base):
+    """One approved email (step 0 = first email, 1.. = follow-ups). Only rows you approved ever get sent."""
+
+    __tablename__ = "outbound_emails"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    to_email: Mapped[str] = mapped_column(String(255), index=True)
+    step: Mapped[int] = mapped_column(Integer, default=0)
+    angle: Mapped[str | None] = mapped_column(String(30))
+    subject: Mapped[str] = mapped_column(String(300))
+    body: Mapped[str] = mapped_column(Text)
+    delay_days: Mapped[int | None] = mapped_column(Integer, default=0)
+    # approved -> sent | failed | cancelled ; follow-ups wait as "scheduled" until step 0 is sent
+    status: Mapped[str] = mapped_column(String(20), default="approved", index=True)
+    approved_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    scheduled_for: Mapped[datetime | None] = mapped_column(DateTime)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime)
+    message_id: Mapped[str | None] = mapped_column(String(255))
+    attachment: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)

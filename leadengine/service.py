@@ -697,6 +697,55 @@ class LeadService:
         return rows
 
 
+    # ── outreach drafts (Phase 9) ────────────────────────────────────
+    async def draft_outreach(self, business_ids: list[int], *, use_ai: bool | None = None, force: bool = False,
+                             on_progress: Callable[[str], None] | None = None) -> list[dict]:
+        """Write email drafts (3 angles + follow-ups) per lead. Nothing is sent."""
+        from leadengine import crm
+        from leadengine.llm import LLMError, build_llm
+        from leadengine.outreach import compose, facts as ofacts
+        from leadengine.outreach.mail import is_suppressed, outreach_cfg
+
+        say = on_progress or (lambda _m: None)
+        cfg = outreach_cfg(self.settings)
+        attach = True        # without a published link, the preview screenshot rides along as an attachment
+        llm = None
+        if (cfg.get("use_ai", True) if use_ai is None else use_ai):
+            try:
+                llm = build_llm(self.settings, "outreach")
+            except (LLMError, ImportError) as exc:
+                say(f"AI drafts unavailable ({exc}); using templates")
+        rows = []
+        with self._sf() as session:
+            repo = Repository(session)
+            for bid in business_ids:
+                biz = repo.get_business(bid)
+                if biz is None:
+                    continue
+                status = crm.current_status(session, bid)
+                twin = crm.find_contacted_twin(session, biz)
+                if not force and (status in crm.CONTACTED or twin is not None):
+                    why = f"already contacted ({status})" if status in crm.CONTACTED else f"same business as {twin.name}"
+                    rows.append({"id": bid, "name": biz.name, "skipped": why})
+                    say(f"  skip {biz.name}: {why}")
+                    continue
+                if not force and (reason := is_suppressed(session, biz.best_email)):
+                    rows.append({"id": bid, "name": biz.name, "skipped": f"do-not-contact ({reason})"})
+                    continue
+                f = ofacts.gather(session, biz, cfg, self.settings.section("preview"))
+                session.commit()                       # no DB lock held while the model writes
+                say(f"  drafting emails for {biz.name}")
+                drafts = await compose.make_drafts(f, cfg, llm, attach=attach)
+                if llm is not None and self.credits is not None:
+                    self.credits.record(f"llm:{llm.name}", "outreach_drafts", success=drafts["source"] == "ai")
+                repo.set_enrichment(bid, "outreach", drafts, source=drafts["source"])
+                session.commit()
+                rows.append({"id": bid, "name": biz.name, "to": drafts["to"], "source": drafts["source"],
+                             "warnings": drafts["warnings"],
+                             "subjects": [v["subject"] for v in drafts["variants"]]})
+        return rows
+
+
 def apply_activity(biz: Business, payload: dict) -> None:
     from datetime import datetime
 

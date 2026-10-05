@@ -9,6 +9,7 @@ from typing import Optional
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from leadengine.config import Settings
@@ -43,7 +44,7 @@ def _bootstrap(verbose: bool = False):
 
 
 def _fail(message: str) -> None:
-    console.print(f"[bold red]Error:[/] {message}")
+    console.print(f"[bold red]Error:[/] {escape(message)}")
     raise typer.Exit(1)
 
 
@@ -540,6 +541,234 @@ def preview(
         where = r.get("url") or r.get("path") or ""
         console.print(f"#{r['id']} {r['name']}: " + (f"[red]{r['error']}[/]" if r.get("error") else
                                                     f"[green]{where}[/] ({r.get('style')}, copy: {r.get('copy_source')})"))
+
+
+def _targets(sf, ids, label, limit) -> list[int]:
+    targets = list(ids or [])
+    if label:
+        with sf() as s:
+            targets += [b.id for b in Repository(s).list_businesses(
+                labels=[l.capitalize() for l in label], order="opportunity", limit=limit)]
+    return list(dict.fromkeys(targets))
+
+
+@app.command()
+def draft(
+    ids: list[int] = typer.Argument(None, help="Business ids (see `leads`)"),
+    label: list[str] = typer.Option(None, "--label", "-L", help="Or: all leads with this label, e.g. hot"),
+    limit: int = typer.Option(20, "--limit"),
+    ai: Optional[bool] = typer.Option(None, "--ai/--no-ai", help="AI-written drafts (uses [llm])"),
+    show: bool = typer.Option(False, "--show", help="Print the drafts"),
+    force: bool = typer.Option(False, "--force", help="Also draft for leads already contacted"),
+) -> None:
+    """Write personalised cold email drafts (short / detailed / competitor + follow-ups). Sends nothing."""
+    from leadengine.outreach.compose import final_body
+    from leadengine.outreach.mail import outreach_cfg
+
+    settings, sf = _bootstrap()
+    targets = _targets(sf, ids, label, limit)
+    if not targets:
+        _fail("give business ids or --label hot")
+    rows = asyncio.run(LeadService(settings, sf, None, CreditTracker(sf, settings)).draft_outreach(
+        targets, use_ai=ai, force=force, on_progress=lambda m: console.print(f"[dim]{m}[/]")))
+    cfg = outreach_cfg(settings)
+    for r in rows:
+        if r.get("skipped"):
+            console.print(f"#{r['id']} {r['name']}: [yellow]skipped[/] ({r['skipped']})")
+            continue
+        console.print(f"#{r['id']} [bold]{r['name']}[/] -> {r['to'] or '[red]no email[/]'} ({r['source']})")
+        for w in r["warnings"]:
+            console.print(f"   [yellow]! {escape(w)}[/]")
+        if show:
+            with sf() as s:
+                d = Repository(s).latest_enrichment(r["id"], "outreach", fresh_only=False).payload
+            for v in d["variants"]:
+                console.rule(f"{v['angle']}: {v['subject']}")
+                console.print(final_body(v["body"], cfg, preview_url=d.get("preview_url")), markup=False)
+            for i, fu in enumerate(d["followups"], 1):
+                console.rule(f"follow-up {i} (day {fu['day']})")
+                console.print(fu["body"], markup=False)
+    console.print("[dim]Drafts only - nothing was sent. Next: `outreach export`, `outreach push`, or "
+                  "`outreach approve <id> --angle short`.[/]")
+
+
+outreach_app = typer.Typer(help="Export / push / approve / (opt-in) send outreach drafts.", no_args_is_help=True)
+app.add_typer(outreach_app, name="outreach")
+
+
+def _draft_items(sf, ids, label, limit):
+    from leadengine.outreach.export import load_draft_items
+
+    targets = _targets(sf, ids, label, limit)
+    with sf() as s:
+        return load_draft_items(s, targets or None)
+
+
+@outreach_app.command("export")
+def outreach_export(
+    path: Path = typer.Argument(..., help="drafts.csv (mail-merge / Instantly / Smartlead) or a folder for .eml files"),
+    ids: list[int] = typer.Option(None, "--id"),
+    label: list[str] = typer.Option(None, "--label", "-L"),
+    angle: str = typer.Option("best", "--angle", help="short | detailed | competitor | best"),
+    limit: int = typer.Option(200, "--limit"),
+) -> None:
+    """Export drafts (not yet contacted leads only). Nothing is sent."""
+    from leadengine.outreach import export as ox
+    from leadengine.outreach.mail import outreach_cfg
+
+    settings, sf = _bootstrap()
+    items, skipped = _draft_items(sf, ids, label, limit)
+    cfg = outreach_cfg(settings)
+    if path.suffix.lower() == ".csv":
+        path.parent.mkdir(parents=True, exist_ok=True)
+        rows = ox.merge_rows(items, cfg, angle)
+        path.write_text(ox.to_merge_csv(rows), encoding="utf-8")
+        console.print(f"[green]{len(rows)} drafts ->[/] {path}")
+    else:
+        files = ox.write_eml(items, cfg, angle, path)
+        console.print(f"[green]{len(files)} .eml drafts ->[/] {path}/ (double-click to open as a draft)")
+    if skipped:
+        console.print(f"[dim]skipped (already contacted / do-not-contact): {', '.join(skipped)}[/]")
+
+
+@outreach_app.command("push")
+def outreach_push(
+    ids: list[int] = typer.Option(None, "--id"),
+    label: list[str] = typer.Option(None, "--label", "-L"),
+    angle: str = typer.Option("best", "--angle"),
+    imap: bool = typer.Option(False, "--imap", help="Save into your mailbox Drafts folder (you press send)"),
+    webhook: bool = typer.Option(False, "--webhook", help="POST to OUTREACH_WEBHOOK_URL (n8n / Make / Zapier)"),
+    limit: int = typer.Option(50, "--limit"),
+) -> None:
+    """Push drafts to your email tool. Still nothing is sent."""
+    from leadengine.outreach import export as ox
+    from leadengine.outreach.mail import imap_connect, outreach_cfg, push_imap_drafts
+
+    settings, sf = _bootstrap()
+    if not (imap or webhook):
+        _fail("choose --imap and/or --webhook")
+    items, _ = _draft_items(sf, ids, label, limit)
+    cfg = outreach_cfg(settings)
+    if imap:
+        try:
+            conn = imap_connect(cfg, settings)
+            n = push_imap_drafts(conn, [m for _, m in ox.draft_messages(items, cfg, angle)],
+                                 cfg.get("imap_drafts_folder", "Drafts"))
+            conn.logout()
+        except LeadEngineError as exc:
+            _fail(str(exc))
+        except Exception as exc:
+            _fail(f"IMAP failed: {exc}")
+        console.print(f"[green]{n} drafts saved to your Drafts folder[/]")
+    if webhook:
+        url = settings.outreach_keys.get("webhook_url")
+        if not url:
+            _fail("set OUTREACH_WEBHOOK_URL in .env")
+
+        async def _push():
+            async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
+                return await ox.push_webhook(http, url, items, cfg, angle)
+        console.print(f"[green]{asyncio.run(_push())} drafts posted to the webhook[/]")
+
+
+@outreach_app.command("approve")
+def outreach_approve(
+    business_id: int = typer.Argument(...),
+    angle: str = typer.Option("short", "--angle", help="short | detailed | competitor"),
+    to: Optional[str] = typer.Option(None, "--to", help="Override the recipient"),
+    followups: bool = typer.Option(True, "--followups/--no-followups"),
+    force: bool = typer.Option(False, "--force"),
+) -> None:
+    """Approve one draft (+ follow-ups) for sending. Sending itself is a separate, opt-in step."""
+    from leadengine.outreach.mail import approve, compliance_problems, outreach_cfg
+
+    settings, sf = _bootstrap()
+    with sf() as s:
+        try:
+            rows = approve(s, business_id, angle, to=to, followups=followups, force=force)
+            s.commit()
+        except LeadEngineError as exc:
+            _fail(str(exc))
+        console.print(f"[green]approved[/] '{rows[0].subject}' -> {rows[0].to_email} (+{len(rows) - 1} follow-ups)")
+    for p in compliance_problems(outreach_cfg(settings)):
+        console.print(f"[yellow]before sending:[/] {escape(p)}")
+
+
+@outreach_app.command("outbox")
+def outreach_outbox(all_rows: bool = typer.Option(False, "--all")) -> None:
+    """Approved / scheduled / sent emails."""
+    from sqlalchemy import select
+
+    from leadengine.db import Business, OutboundEmail
+
+    _, sf = _bootstrap()
+    t = Table(title="Outbox")
+    for c in ("#", "Business", "To", "Step", "Status", "When", "Subject / note"):
+        t.add_column(c)
+    with sf() as s:
+        q = select(OutboundEmail, Business.name).join(Business, Business.id == OutboundEmail.business_id)
+        if not all_rows:
+            q = q.where(OutboundEmail.status.in_(("approved", "scheduled", "failed")))
+        for row, name in s.execute(q.order_by(OutboundEmail.id.desc()).limit(200)):
+            when = row.sent_at or row.scheduled_for
+            t.add_row(str(row.id), name, row.to_email, str(row.step), row.status,
+                      when.strftime("%Y-%m-%d %H:%M") if when else "-", row.error or row.subject)
+    console.print(t)
+
+
+@outreach_app.command("send")
+def outreach_send(limit: Optional[int] = typer.Option(None, "--limit"),
+                  yes: bool = typer.Option(False, "--yes", help="Skip the confirmation question")) -> None:
+    """Send APPROVED emails that are due (opt-in: turn sending on in config.toml first)."""
+    from leadengine.outreach.mail import Sender, compliance_problems, due_rows, outreach_cfg
+
+    settings, sf = _bootstrap()
+    problems = compliance_problems(outreach_cfg(settings))
+    if problems:
+        _fail("not sending:\n - " + "\n - ".join(problems))
+    with sf() as s:
+        n = len(due_rows(s))
+    if not n:
+        console.print("nothing approved and due")
+        raise typer.Exit()
+    if not yes and not typer.confirm(f"Send up to {n} approved email(s) now (throttled)?"):
+        raise typer.Exit()
+    report = asyncio.run(Sender(settings, sf).run(limit=limit, on_progress=lambda m: console.print(f"[dim]{m}[/]")))
+    console.print(f"[green]sent {len(report.sent)}[/], skipped {len(report.skipped)}, failed {len(report.failed)}"
+                  + (f" - stopped: {report.stopped}" if report.stopped else ""))
+    for line in report.skipped + report.failed:
+        console.print(f"  [yellow]{escape(line)}[/]")
+
+
+@outreach_app.command("replies")
+def outreach_replies(days: int = typer.Option(30, "--days")) -> None:
+    """Read your inbox (IMAP): replies stop follow-ups, 'unsubscribe' and bounces go on the do-not-contact list."""
+    from leadengine.outreach.mail import check_replies, imap_connect, outreach_cfg
+
+    settings, sf = _bootstrap()
+    try:
+        conn = imap_connect(outreach_cfg(settings), settings)
+    except LeadEngineError as exc:
+        _fail(str(exc))
+    with sf() as s:
+        out = check_replies(s, conn, days=days)
+        s.commit()
+    conn.logout()
+    for k, v in out.items():
+        console.print(f"{k:>13}: {len(v)} {', '.join(v)}")
+
+
+@outreach_app.command("unsubscribe")
+def outreach_unsubscribe(value: str = typer.Argument(..., help="email address or whole domain"),
+                         reason: str = typer.Option("manual", "--reason")) -> None:
+    """Add an address/domain to the do-not-contact list."""
+    from leadengine.outreach.mail import suppress
+
+    _, sf = _bootstrap()
+    with sf() as s:
+        added = suppress(s, value, reason)
+        s.commit()
+    console.print(f"[green]{value} added to do-not-contact[/]" if added else f"{value} was already listed")
 
 
 @app.command(name="update-fingerprints")

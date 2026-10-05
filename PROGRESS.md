@@ -1,8 +1,8 @@
 # PROGRESS
 
 ## Current Status
-- Current phase: Phase 9 — AI outreach drafts (next). Owner asked Claude to self-test and keep building all remaining phases without waiting.
-- Last completed step: Phase 8 Preview landing pages built + self-tested (177 tests passing)
+- Current phase: Phase 10 — Hardening & polish (next). Owner asked Claude to self-test and keep building all remaining phases without waiting.
+- Last completed step: Phase 9 outreach drafts built + self-tested (190 tests passing)
 - Waiting on: nothing for building; owner's live runs of Phases 2–4 still outstanding
 
 ## Phase Checklist
@@ -15,10 +15,22 @@
 - [x] Phase 6 — Opportunity Score & filtering — built + self-tested (pure scoring, no live dependency)
 - [x] Phase 7 — Dashboard & mini CRM — built + self-tested (rendered and checked in a real browser)
 - [ ] Phase 8 — Preview landing page generator — built + self-tested; live AI copy + live deploy need owner keys
-- [ ] Phase 9 — AI personalised outreach drafts
+- [ ] Phase 9 — AI personalised outreach drafts — built + self-tested; live AI drafts, IMAP and SMTP need owner keys
 - [ ] Phase 10 — Hardening & polish
 
 ## Phase Log (newest first)
+### Phase 9 — AI outreach drafts (2026-10-05)
+- What was done:
+  - `leadengine/outreach/facts.py`: per-lead facts from real findings only — owner first name, Website Score reasons rewritten in plain English (mobile, PageSpeed, HTTPS, years without updates, missing click-to-call/form), Facebook-only = "no website", ads status + evidence, strongest competitor from the same Maps searches (better website / Google Ads / LSA; anonymous unless `name_competitors = true`), preview link or preview screenshot.
+  - `compose.py`: 3 angles (short / detailed / competitor; "reviews vs website" when there is no competitor) + follow-ups (bump, a genuinely useful free tip matched to their main problem, polite last note) on `followup_days`. AI drafts via `[llm]` with a strict facts-only prompt (recipient address never sent to the model); post-filter removes invented numbers/percentages/guarantees/rankings, foreign links, model sign-offs and fake "Re:"; per-variant template fallback. Signature + CAN-SPAM footer (postal address + unsubscribe line) added by code; placeholder shown until `physical_address` is set.
+  - Export / push without sending: mail-merge CSV (Instantly / Smartlead / lemlist / GMass, follow-up columns), `.eml` drafts (X-Unsent, screenshot attached when the text says so), IMAP "save to Drafts" folder, webhook JSON (n8n / Make / Zapier). Contacted and do-not-contact leads are skipped.
+  - Opt-in sending (`mail.py`): disabled by default; needs `[outreach.sending] enabled`, sender on an allowed outreach domain, postal address, unsubscribe line, SMTP host + `.env` login, and **your approval per email** (`outreach approve` / "Approve this one"). Sender re-checks every email (do-not-contact, invalid email, never-contact-twice, follow-ups only while still "Emailed"), daily cap + delay with jitter, List-Unsubscribe header, follow-ups threaded (In-Reply-To). First send moves CRM to Emailed and schedules follow-ups. `outreach replies` (IMAP): reply -> Replied, "unsubscribe" -> do-not-contact + Lost, bounce -> invalid + do-not-contact; pending follow-ups cancelled.
+  - DB: `outbound_emails`, `suppressions`. Dashboard: drafts on the lead page with approve buttons, new Outbox page (due/sent today, readiness checklist, send with confirmation, cancel, do-not-contact list, drafts CSV). Jobs `outreach` and `send`. AI draft calls recorded in Credits as `llm:<provider>`.
+- Self-test found and fixed: my own template said "Google Guaranteed" / "top of Google" (caught by the claim filter — reworded); Facebook-only businesses were addressed as having a website; awkward competitor sentence; "jpe" attachment name; rich markup ate `[outreach.sending]` in CLI messages; outbox tables overflowed on phones.
+- How to test: fill `[outreach]` (sender_name, agency, physical_address, offer); `python -m leadengine draft --label hot --show` (add `--no-ai` without an AI key); `python -m leadengine outreach export drafts.csv`; open the lead page -> Outreach drafts. Sending only after you enable it and approve emails.
+- Test result: Claude self-test — 13 new tests (facts, plain-English issues, competitor, template safety, AI filtering + fallback, footer, service skip/credits, approval guards, opt-in refusal, throttled send + threaded follow-up + stop on reply, daily cap + SMTP failure, IMAP replies/unsubscribe/bounce, CSV/eml/IMAP/webhook exports, dashboard flow). Drafts reviewed by reading real output on demo leads; pages checked in Chromium (desktop + phone). 190 tests pass.
+- Known issues: real AI drafts, IMAP and SMTP not exercised from the build machine (no keys, port 25/587 blocked); deliverability depends on your outreach domain setup (SPF, DKIM, DMARC, warm-up) — outside this tool.
+
 ### Phase 8 — Preview landing page generator (2026-10-05)
 - What was done:
   - `leadengine/preview/`: `content.py` (facts from DB + review quotes + hours + service area; AI copy with strict no-invention prompt and a claim filter; template copy fallback), `templates/page.html` (one self-contained, mobile-first page, 3 styles: clean / bold / warm, sticky "Call" button on phones), `builder.py` (writes `data/previews/<slug>/site/` + screenshots, picks/rotates styles), `deploy.py` (Netlify API zip deploy with optional custom subdomain; Cloudflare Pages via wrangler, creating the project on first use).
@@ -285,9 +297,10 @@ tests/
 - (2026-10-05) LLM layer pluggable; Claude uses the official Anthropic SDK with server-side refusal fallback by default.
 - (2026-10-05) Dashboard: FastAPI + htmx (background jobs with live log) rather than Streamlit; local-only by default.
 - (2026-10-05) Per-context proxies; captcha -> immediate proxy ban; without proxies a captcha stops the run with a clear message.
+- (2026-10-05) Outreach = drafts only by default. Sending is opt-in, per-email approval, throttled, CAN-SPAM footer + List-Unsubscribe, separate outreach domain enforced via `allowed_from_domains`; unsubscribe handled by reply ("unsubscribe") + IMAP check rather than a hosted link.
 
 ## Next Steps
-- Building Phase 9 — AI outreach drafts (personalised from real findings, variants + follow-ups, drafts only, CAN-SPAM footer, export) -> Phase 7 dashboard -> 8 previews -> 9 outreach -> 10 hardening.
+- Building Phase 10 — hardening & polish (job queue checks, full test pass, performance, README + user guide, final summary).
 - Owner (any time): live runs of Phases 2–4 on a real ZIP.
 - (Done) Phase 4 — Website Score (0–100): copyright year, HTTPS/SSL validity & expiry (crawler already flags broken SSL), mobile viewport, tech stack via webappanalyzer fingerprints (old jQuery/WordPress/Flash/tables/builders), PageSpeed Insights (free key), Wayback CDX + sitemap lastmod age, conversion basics (click-to-call, forms, reviews widget, CTA), Playwright screenshot, optional AI vision rating, flags for no/broken/parked/Facebook-only sites.
 
@@ -309,5 +322,7 @@ tests/
 - `PAGESPEED_API_KEY` — Google PageSpeed Insights (free key; needed for volume).
 - `NETLIFY_TOKEN` / `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` — preview hosting (Phase 8).
 - `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` / `GROQ_API_KEY` / `OLLAMA_URL` — AI provider chosen in `[llm]`.
+- `OUTREACH_SMTP_USER` / `OUTREACH_SMTP_PASSWORD` — outreach mailbox login (app password) for IMAP drafts, reply checks and opt-in sending (Phase 9).
+- `OUTREACH_WEBHOOK_URL` — optional n8n / Make / Zapier webhook for drafts.
 Non-secret settings (cache days, retries, concurrency, price estimates) live in `config.toml`.
 The legacy v3 tool still keeps its own keys in `leadhunter_settings.json` (ignored by git).

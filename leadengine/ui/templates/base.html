@@ -6,6 +6,7 @@
 <a href="/" class="{{ 'active' if p == '/' }}">Dashboard</a>
 <a href="/run" class="{{ 'active' if p.startswith('/run') }}">New scan</a>
 <a href="/leads" class="{{ 'active' if p.startswith('/leads') }}">Leads</a>
+<a href="/outbox" class="{{ 'active' if p.startswith('/outbox') }}">Outbox</a>
 <a href="/jobs" class="{{ 'active' if p.startswith('/jobs') }}">Jobs</a>
 <a href="/credits" class="{{ 'active' if p.startswith('/credits') }}">Credits</a></nav></header>
 <main>{% block body %}{% endblock %}</main></body></html>

@@ -54,4 +54,21 @@ def make_handlers(settings: Settings, sf: sessionmaker[Session]) -> dict[str, Ha
             ctx.log(f"{r['name']}: {r.get('url') or r.get('path') or r.get('error')}")
         return [{k: r.get(k) for k in ("id", "name", "url", "path", "error")} for r in rows]
 
-    return {"discover": discover, "preview": preview}
+    async def outreach(ctx: JobContext) -> list[dict[str, Any]]:
+        service = LeadService(settings, sf, None, CreditTracker(sf, settings))
+        rows = await service.draft_outreach(ctx.params["ids"], use_ai=ctx.params.get("ai"),
+                                            force=bool(ctx.params.get("force")), on_progress=ctx.log)
+        for r in rows:
+            ctx.log(f"{r['name']}: " + (f"skipped - {r['skipped']}" if r.get("skipped") else
+                                        f"{len(r['subjects'])} drafts ({r['source']})"))
+        return rows
+
+    async def send(ctx: JobContext) -> dict[str, Any]:
+        from leadengine.outreach.mail import Sender
+
+        report = await Sender(settings, sf).run(limit=ctx.params.get("limit"), on_progress=ctx.log)
+        if report.stopped:
+            ctx.log(f"stopped: {report.stopped}")
+        return {"sent": report.sent, "skipped": report.skipped, "failed": report.failed, "stopped": report.stopped}
+
+    return {"discover": discover, "preview": preview, "outreach": outreach, "send": send}
