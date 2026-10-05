@@ -76,6 +76,12 @@ class Business(Base):
     ads_confidence: Mapped[int | None] = mapped_column(Integer)
     meta_ads: Mapped[bool | None] = mapped_column(Boolean)
 
+    # Opportunity (Phase 6)
+    opportunity_score: Mapped[int | None] = mapped_column(Integer, index=True)
+    lead_label: Mapped[str | None] = mapped_column(String(10), index=True)     # Hot | Warm | Cold | Skip
+    lead_reason: Mapped[str | None] = mapped_column(Text)
+    scored_at: Mapped[datetime | None] = mapped_column(DateTime)
+
     # Activity signals (Phase 2 Maps scraping)
     photo_count: Mapped[int | None] = mapped_column(Integer)
     last_review_at: Mapped[datetime | None] = mapped_column(DateTime)

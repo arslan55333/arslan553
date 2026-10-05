@@ -1,8 +1,8 @@
 # PROGRESS
 
 ## Current Status
-- Current phase: Phase 6 — Opportunity Score (next). Owner asked Claude to self-test and keep building all remaining phases without waiting.
-- Last completed step: Phase 5 Google Ads detection built + self-tested (152 tests passing)
+- Current phase: Phase 7 — Dashboard & mini CRM (next). Owner asked Claude to self-test and keep building all remaining phases without waiting.
+- Last completed step: Phase 6 Opportunity Score built + self-tested (158 tests passing)
 - Waiting on: nothing for building; owner's live runs of Phases 2–4 still outstanding
 
 ## Phase Checklist
@@ -12,13 +12,23 @@
 - [ ] Phase 3 — Email extraction v2 (+ verification, confidence) — built + self-tested, awaiting live run
 - [ ] Phase 4 — Website Score (0–100) — built + self-tested, awaiting live run
 - [ ] Phase 5 — Google Ads detection — built + self-tested, awaiting live run
-- [ ] Phase 6 — Opportunity Score & filtering
+- [x] Phase 6 — Opportunity Score & filtering — built + self-tested (pure scoring, no live dependency)
 - [ ] Phase 7 — Dashboard & mini CRM
 - [ ] Phase 8 — Preview landing page generator
 - [ ] Phase 9 — AI personalised outreach drafts
 - [ ] Phase 10 — Hardening & polish
 
 ## Phase Log (newest first)
+### Phase 6 — Opportunity Score & filtering (2026-10-05)
+- What was done:
+  - `leadengine/scoring/opportunity.py`: score 0–100 from reputation 25 (rating + log-scaled reviews), activity 15 (last review recency, reviews in 90 days, owner reply rate), ads 25 (Active/LSA 1.0, Likely 0.7, Past 0.4), website 25 (100 − website score; no site / Facebook-only / broken / parked = full points), reachability 10 (verified email, email confidence, phone). Unknown signals are left out and re-normalised; unknown ads status caps the score at 85.
+  - Labels: Hot >= 70, Warm >= 50, else Cold; **Skip** when closed, already contacted (Emailed/Replied/Won/Lost), rating < 3.5, website score >= 80, or no phone and no email. All thresholds + weights in `[opportunity]`.
+  - One-line reason, e.g. "4.8★, 210 reviews, 5 reviews in 90 days, running Google Ads, website score 22 — copyright 2014, not mobile friendly".
+  - Columns opportunity_score / lead_label / lead_reason / scored_at; `discover` rescores everything it found; CLI `score`; `leads` filters `--label --ads --max-site-score --email verified|any --min-opp --sort opportunity`.
+  - ZIP prioritisation (`leadengine/scoring/zips.py`, CLI `zips --state TX` or `--near 75201 --radius-km 30 -k keyword`): log population (+ income where known), distance penalty, already-scanned ZIPs pushed down.
+- Test result: Claude self-test — 6 new tests (ideal Hot lead + exact reason text, label ladder, every Skip rule, unknown ads cap, configurable weights, rescore + filters through the DB, ZIP ranking). 158 tests pass.
+- Known issues: weights are a sensible starting point; tune after the first real campaigns (which Hot leads actually replied).
+
 ### Phase 5 — Google Ads detection (2026-10-05)
 - What was done:
   - `leadengine/enrich/ads/`: `site_tags.py` (ad tech in the site's code + Google Tag Manager container), `serp.py` (live Google results: browser or SerpAPI, uule localisation, ad parsing, matching), `status.py` (verdict + Ads Transparency parsing).
@@ -253,7 +263,7 @@ tests/
 - (2026-10-05) Per-context proxies; captcha -> immediate proxy ban; without proxies a captcha stops the run with a clear message.
 
 ## Next Steps
-- Building Phase 6 — Opportunity Score (weights, Hot/Warm/Cold/Skip + reason, filters, ZIP prioritisation) -> Phase 7 dashboard -> 8 previews -> 9 outreach -> 10 hardening.
+- Building Phase 7 — Dashboard & mini CRM (run scrapes with live progress, leads table with scores/screenshots, pipeline statuses, never contact twice, exports, credits panel) -> Phase 7 dashboard -> 8 previews -> 9 outreach -> 10 hardening.
 - Owner (any time): live runs of Phases 2–4 on a real ZIP.
 - (Done) Phase 4 — Website Score (0–100): copyright year, HTTPS/SSL validity & expiry (crawler already flags broken SSL), mobile viewport, tech stack via webappanalyzer fingerprints (old jQuery/WordPress/Flash/tables/builders), PageSpeed Insights (free key), Wayback CDX + sitemap lastmod age, conversion basics (click-to-call, forms, reviews widget, CTA), Playwright screenshot, optional AI vision rating, flags for no/broken/parked/Facebook-only sites.
 

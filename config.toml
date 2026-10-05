@@ -74,6 +74,21 @@ gtm = true                     # read the site's Google Tag Manager container fo
 transparency = false           # Ads Transparency Center via SerpAPI (1 credit per business)
 timeout_seconds = 15
 
+# Opportunity Score (Phase 6): weights are points out of 100 (they are re-normalised if a signal is unknown)
+[opportunity]
+hot = 70                  # score >= hot -> Hot
+warm = 50                 # score >= warm -> Warm, else Cold
+min_rating = 3.5          # below -> Skip
+modern_site = 80          # website score >= this -> Skip (nothing to sell)
+reviews_full = 300        # review count that earns full reputation points
+
+[opportunity.weights]
+reputation = 25           # rating + review count
+activity = 15             # review recency/velocity + owner replies
+ads = 25                  # spends on Google Ads / LSA
+website = 25              # weak, old or missing website
+reachability = 10         # verified email / phone
+
 # AI provider used by design review, preview copy and outreach drafts
 [llm]
 provider = "claude"       # claude | gemini | groq | ollama

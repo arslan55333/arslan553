@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from leadengine.cache import cached_enrichment
 from leadengine.config import Settings
 from leadengine.credits import CreditTracker
-from leadengine.db.models import Business
+from leadengine.db.models import Business, utcnow
 from leadengine.db.repo import Repository
 from leadengine.discovery import GridReport, run_adaptive_grid
 from leadengine.errors import LeadEngineError, ProviderError, ProviderNotConfigured
@@ -299,9 +299,12 @@ class LeadService:
         if ads and shortlist_ids:
             say(f"Checking Google Ads for {len(shortlist_ids)} shortlisted businesses...")
             outcome.ads = await self.detect_ads(shortlist_ids, keyword=keyword, on_progress=say)
-        if (emails or website or ads) and shortlist_ids:
-            with self._sf() as session:
-                outcome.results = Repository(session).search_results(outcome.search_id)
+        # Opportunity score for everything found in this run (cheap, no network)
+        with self._sf() as session:
+            ids = [b.id for b, _ in Repository(session).search_results(outcome.search_id)]
+        self.rescore(ids)
+        with self._sf() as session:
+            outcome.results = Repository(session).search_results(outcome.search_id)
         return outcome
 
     async def enrich_activity(self, repo: Repository, provider: PlaywrightMapsProvider,
@@ -614,6 +617,38 @@ class LeadService:
         finally:
             await crawler.aclose()
         return rows
+
+
+    # ── opportunity score (Phase 6) ──────────────────────────────────
+    def rescore(self, business_ids: list[int] | None = None) -> list[dict]:
+        """Recompute Opportunity Score + label + reason (pure DB work, no network)."""
+        from datetime import date
+
+        from sqlalchemy import select
+
+        from leadengine.scoring.opportunity import score_business
+
+        cfg = self.settings.section("opportunity")
+        weights = cfg.get("weights", {})
+        rules = {k: v for k, v in cfg.items() if k != "weights"}
+        today = date.today()
+        out = []
+        with self._sf() as session:
+            repo = Repository(session)
+            if business_ids is None:
+                businesses = list(session.scalars(select(Business)))
+            else:
+                businesses = [b for b in (repo.get_business(i) for i in business_ids) if b]
+            for biz in businesses:
+                web = repo.latest_enrichment(biz.id, "website", fresh_only=False)
+                opp = score_business(biz, today=today, website_reasons=(web.payload or {}).get("reasons") if web else None,
+                                     lead_status=repo.lead_status(biz.id), weights=weights, rules=rules)
+                biz.opportunity_score, biz.lead_label, biz.lead_reason = opp.score, opp.label, opp.reason
+                biz.scored_at = utcnow()
+                out.append({"id": biz.id, "name": biz.name, "score": opp.score, "label": opp.label,
+                            "reason": opp.reason, "parts": opp.parts})
+            session.commit()
+        return out
 
 
 def apply_activity(biz: Business, payload: dict) -> None:

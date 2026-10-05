@@ -516,31 +516,103 @@ def proxies(check: bool = typer.Option(False, "--check", help="Test each proxy n
     console.print(table)
 
 
+LABEL_STYLE = {"Hot": "bold red", "Warm": "yellow", "Cold": "cyan", "Skip": "dim"}
+
+
+def _leads_table(rows, title: str) -> Table:
+    table = Table(title=title)
+    for col in ("id", "Label", "Opp.", "Name", "Rating", "Reviews", "Ads", "Site", "Email", "Why"):
+        table.add_column(col, no_wrap=col != "Why", overflow="fold" if col == "Why" else "ellipsis")
+    for b in rows:
+        label = b.lead_label or "-"
+        table.add_row(
+            str(b.id), f"[{LABEL_STYLE.get(label, '')}]{label}[/]" if label != "-" else "-",
+            str(b.opportunity_score) if b.opportunity_score is not None else "-", b.name[:32],
+            f"{b.rating:.1f}" if b.rating is not None else "-",
+            str(b.review_count if b.review_count is not None else "-"), _ads_cell(b), _site_cell(b),
+            _email_cell(b), (b.lead_reason or "")[:120],
+        )
+    return table
+
+
 @app.command()
 def leads(
     keyword: Optional[str] = typer.Option(None, "--keyword", "-k"),
     zip_code: Optional[str] = typer.Option(None, "--zip", "-z"),
     min_rating: Optional[float] = typer.Option(None, "--min-rating"),
     min_reviews: Optional[int] = typer.Option(None, "--min-reviews"),
+    label: list[str] = typer.Option(None, "--label", "-L", help="Hot / Warm / Cold / Skip (repeatable)"),
+    ads: list[str] = typer.Option(None, "--ads", help="Active / Likely / Past / None (repeatable)"),
+    max_site_score: Optional[int] = typer.Option(None, "--max-site-score"),
+    email: Optional[str] = typer.Option(None, "--email", help="'verified' or 'any'"),
+    min_opportunity: Optional[int] = typer.Option(None, "--min-opp"),
+    sort: str = typer.Option("opportunity", "--sort", help="opportunity | reviews"),
     limit: int = typer.Option(50, "--limit"),
 ) -> None:
-    """Show businesses already saved in the database (no API calls)."""
+    """Saved leads with filters, best opportunities first (no API calls)."""
     settings, sf = _bootstrap()
     with sf() as s:
         rows = Repository(s).list_businesses(
-            keyword=keyword, zip_code=zip_code, min_rating=min_rating, min_reviews=min_reviews, limit=limit
-        )
-    table = Table(title=f"Saved leads ({len(rows)})")
-    for col in ("id", "Name", "Rating", "Reviews", "Last review", "Claimed", "Phone", "Website", "ZIP"):
-        table.add_column(col, no_wrap=True, overflow="ellipsis")
-    for b in rows:
-        table.add_row(
-            str(b.id), b.name[:40], f"{b.rating:.1f}" if b.rating is not None else "-",
-            str(b.review_count if b.review_count is not None else "-"),
-            f"{b.last_review_at:%Y-%m-%d}" if b.last_review_at else "-",
-            {True: "yes", False: "NO"}.get(b.claimed, "-"), b.phone or "-",
-            _short_url(b.website, 28), b.zip_code or "-",
-        )
+            keyword=keyword, zip_code=zip_code, min_rating=min_rating, min_reviews=min_reviews,
+            labels=[l.capitalize() for l in label] if label else None,
+            ads_statuses=[a.capitalize() for a in ads] if ads else None, max_site_score=max_site_score,
+            email=email, min_opportunity=min_opportunity, order=sort, limit=limit)
+    console.print(_leads_table(rows, f"Leads ({len(rows)})"))
+
+
+@app.command()
+def score(
+    zip_code: Optional[str] = typer.Option(None, "--zip", "-z"),
+    keyword: Optional[str] = typer.Option(None, "--keyword", "-k"),
+    show: int = typer.Option(25, "--show"),
+) -> None:
+    """Recompute the Opportunity Score (Hot / Warm / Cold / Skip) for saved businesses."""
+    settings, sf = _bootstrap()
+    with sf() as s:
+        ids = None
+        if zip_code or keyword:
+            ids = [b.id for b in Repository(s).list_businesses(keyword=keyword, zip_code=zip_code)]
+
+    async def _run():
+        async with HttpClient(settings.http) as http:
+            return LeadService(settings, sf, http).rescore(ids)
+
+    results = asyncio.run(_run())
+    counts = {k: sum(1 for r in results if r["label"] == k) for k in ("Hot", "Warm", "Cold", "Skip")}
+    with sf() as s:
+        rows = Repository(s).list_businesses(keyword=keyword, zip_code=zip_code, order="opportunity", limit=show)
+    console.print(_leads_table(rows, f"Top opportunities ({len(results)} scored)"))
+    console.print("  ".join(f"[{LABEL_STYLE[k]}]{k}: {v}[/]" for k, v in counts.items()))
+
+
+@app.command()
+def zips(
+    state: Optional[str] = typer.Option(None, "--state", "-s", help="Two-letter state, e.g. TX"),
+    near: Optional[str] = typer.Option(None, "--near", help="Centre ZIP"),
+    radius_km: float = typer.Option(40.0, "--radius-km"),
+    keyword: Optional[str] = typer.Option(None, "--keyword", "-k", help="Mark ZIPs already scanned for this keyword"),
+    top: int = typer.Option(20, "--top"),
+    min_population: int = typer.Option(2000, "--min-pop"),
+) -> None:
+    """Which ZIPs to scan first (by population, nearest, not yet scanned)."""
+    from leadengine.scoring.zips import prioritise_zips
+
+    if not state and not near:
+        _fail("give --state or --near")
+    settings, sf = _bootstrap()
+    with sf() as s:
+        scanned = Repository(s).scanned_zips(keyword)
+    try:
+        picks = prioritise_zips(zip_directory(), state=state, near_zip=near, radius_km=radius_km, scanned=scanned,
+                                top=top, min_population=min_population)
+    except ValueError as exc:
+        _fail(str(exc))
+    table = Table(title="ZIPs to scan first")
+    for col in ("ZIP", "Place", "Population", "km", "Notes"):
+        table.add_column(col)
+    for p in picks:
+        table.add_row(p.info.zip, p.info.label, f"{p.info.population or 0:,}",
+                      "-" if p.distance_km is None else str(p.distance_km), p.why)
     console.print(table)
 
 

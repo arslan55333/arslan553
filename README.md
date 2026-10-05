@@ -95,6 +95,16 @@ open-source webappanalyzer set (GPL-3.0, kept local).
 
 Result per business: `ads_status` Active / Likely / Past / None, `lsa` yes/no, confidence and evidence.
 
+## Opportunity Score (Phase 6)
+
+`python -m leadengine score` (runs automatically after `discover`). 0–100 from reputation (rating +
+reviews), activity (review recency/velocity, owner replies), ads (Active/Likely/Past/LSA), website
+weakness (low score, no site, Facebook-only, broken/parked) and reachability (verified email, phone).
+Weights and thresholds live in `[opportunity]` in config.toml. Labels: **Hot / Warm / Cold / Skip**
+(Skip = closed, already contacted, low rating, modern site, or no way to contact), each with a one-line
+reason. Filters: `python -m leadengine leads --label hot --ads active --max-site-score 40 --email verified`.
+Which ZIPs next: `python -m leadengine zips --near 75201 --radius-km 30 -k "dumpster rental"`.
+
 ## AI providers
 
 `[llm]` in config.toml: `claude` (default, `claude-opus-5-5`, official Anthropic SDK, refusal fallback on),

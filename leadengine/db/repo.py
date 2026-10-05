@@ -146,6 +146,12 @@ class Repository:
         min_rating: float | None = None,
         min_reviews: int | None = None,
         has_website: bool | None = None,
+        labels: list[str] | None = None,
+        ads_statuses: list[str] | None = None,
+        max_site_score: int | None = None,
+        email: str | None = None,              # "verified" | "any"
+        min_opportunity: int | None = None,
+        order: str = "reviews",                # reviews | opportunity
         limit: int | None = None,
     ) -> list[Business]:
         stmt = select(Business)
@@ -167,7 +173,22 @@ class Repository:
             stmt = stmt.where(Business.website.is_not(None))
         elif has_website is False:
             stmt = stmt.where(Business.website.is_(None))
-        stmt = stmt.order_by(Business.review_count.desc().nulls_last(), Business.name)
+        if labels:
+            stmt = stmt.where(Business.lead_label.in_(labels))
+        if ads_statuses:
+            stmt = stmt.where(Business.ads_status.in_(ads_statuses))
+        if max_site_score is not None:
+            stmt = stmt.where((Business.website_score <= max_site_score) | Business.website_score.is_(None))
+        if email == "verified":
+            stmt = stmt.where(Business.email_status == "valid")
+        elif email == "any":
+            stmt = stmt.where(Business.best_email.is_not(None))
+        if min_opportunity is not None:
+            stmt = stmt.where(Business.opportunity_score >= min_opportunity)
+        if order == "opportunity":
+            stmt = stmt.order_by(Business.opportunity_score.desc().nulls_last(), Business.review_count.desc().nulls_last())
+        else:
+            stmt = stmt.order_by(Business.review_count.desc().nulls_last(), Business.name)
         if limit:
             stmt = stmt.limit(limit)
         return list(self.session.scalars(stmt))
@@ -323,6 +344,17 @@ class Repository:
             select(Search.keyword).join(SearchResult, SearchResult.search_id == Search.id)
             .where(SearchResult.business_id == business_id).order_by(Search.ran_at.desc())).scalars()
         return list(dict.fromkeys(rows))
+
+    def lead_status(self, business_id: int) -> str | None:
+        from leadengine.db.models import LeadStatus
+        row = self.session.get(LeadStatus, business_id)
+        return row.status if row else None
+
+    def scanned_zips(self, keyword: str | None = None) -> set[str]:
+        stmt = select(Search.zip_code).where(Search.zip_code.is_not(None))
+        if keyword:
+            stmt = stmt.where(Search.keyword_norm == normalize_keyword(keyword))
+        return set(self.session.scalars(stmt))
 
     # ── Emails ───────────────────────────────────────────────────────
     def save_emails(self, business_id: int, rows: list[dict[str, Any]]) -> None:
