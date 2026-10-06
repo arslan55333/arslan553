@@ -127,6 +127,13 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
 
     templates.env.globals["job_info"] = job_info
 
+    def live_rows(job: Job) -> list[dict]:
+        order = {"Hot": 0, "Warm": 1, "Cold": 2, "Skip": 3}
+        return sorted(job.live or [], key=lambda r: (order.get(r.get("label"), 4), -(r.get("hits") or 0),
+                                                     -(r.get("reviews") or 0), str(r.get("name") or "")))
+
+    templates.env.globals["live_rows"] = live_rows
+
     def unseen_alerts() -> int:
         from leadengine.db.models import Alert
         with sf() as s:

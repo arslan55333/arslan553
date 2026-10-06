@@ -42,6 +42,20 @@ class JobContext:
             job.heartbeat_at = utcnow()
             s.commit()
 
+    def add_live(self, rows: list[dict[str, Any]], limit: int = 1500) -> None:
+        """Merge rows (by their "key") into the job's live table, newest values win."""
+        if not rows:
+            return
+        with self._sf() as s:
+            job = s.get(Job, self.job_id)
+            current = {r.get("key"): r for r in (job.live or [])}
+            for r in rows:
+                k = r.get("key")
+                current[k] = {**current.get(k, {}), **{x: y for x, y in r.items() if y is not None}}
+            job.live = list(current.values())[-limit:]
+            job.heartbeat_at = utcnow()
+            s.commit()
+
     def is_done(self, key: str) -> bool:
         with self._sf() as s:
             return key in ((s.get(Job, self.job_id).done_steps) or [])

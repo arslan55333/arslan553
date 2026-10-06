@@ -35,7 +35,7 @@ def make_handlers(settings: Settings, sf: sessionmaker[Session]) -> dict[str, Ha
                         ctx.log(f"ZIP {z}: already finished earlier, skipping")
                         continue
                     ctx.log(f"ZIP {z}: scanning '{keyword}'")
-                    out = await service.discover(keyword, z, on_progress=ctx.log, **opts)
+                    out = await service.discover(keyword, z, on_progress=ctx.log, on_found=ctx.add_live, **opts)
                     labels = [b.lead_label for b, _ in out.results]
                     row = {"zip": z, "businesses": len(out.results), "hot": labels.count("Hot"),
                            "warm": labels.count("Warm"), "sponsored": out.sponsored, "from_cache": out.from_cache}
@@ -118,7 +118,7 @@ def make_handlers(settings: Settings, sf: sessionmaker[Session]) -> dict[str, Ha
                 return await service.ads_sweep(p["keyword"], p["locations"], variations=p.get("variations"),
                                                landing=p.get("landing"), deep=p.get("deep"),
                                                refresh=bool(p.get("refresh")), watch_id=p.get("watch_id"),
-                                               on_progress=ctx.log)
+                                               on_progress=ctx.log, on_found=ctx.add_live)
             finally:
                 await service.aclose()
 

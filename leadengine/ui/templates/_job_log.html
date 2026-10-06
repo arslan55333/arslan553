@@ -12,5 +12,20 @@
 {% elif job.result %}<ul class="clean small">{% for r in job.result[:50] %}<li>{% if r.id %}<a href="/leads/{{ r.id }}">{{ r.name or r.id }}</a>{% else %}{{ r.name or r }}{% endif %} {{ r.url or r.error or r.skipped or '' }}</li>{% endfor %}</ul>{% endif %}
 {% if job.kind == 'enrich' and job.status == 'done' and (job.params.ids|length) == 1 %}<p><a class="btn" href="/leads/{{ job.params.ids[0] }}">Back to the lead</a></p>
 {% elif job.kind == 'enrich' and job.status == 'done' %}<p><a class="btn" href="/leads">Back to leads</a></p>{% endif %}
+{% if job.live %}{% set rows = live_rows(job) %}
+<div class="row" style="justify-content:space-between;margin-top:12px"><b>{{ 'Advertisers found so far' if job.kind == 'sweep' else 'Businesses found so far' }}: {{ job.live|length }}</b>
+ {% if job.status in ['queued','running'] %}<span class="small muted">live — new rows appear as they are found</span>{% endif %}</div>
+<div class="scroll" style="max-height:520px;overflow:auto;margin-top:6px"><table class="small live"><tr><th>Business</th><th class="num">Rating</th><th>Phone</th><th>Website</th>
+ <th>Ads</th><th>Site</th><th>Email</th><th>Label</th></tr>
+{% for r in rows[:400] %}<tr>
+ <td>{% if r.id %}<a href="/leads/{{ r.id }}"><b>{{ r.name }}</b></a>{% else %}<b>{{ r.name }}</b>{% endif %}{% if r.new %} <span class="badge Hot">new</span>{% endif %}
+  {% if r.category %}<div class="muted">{{ r.category }}</div>{% endif %}</td>
+ <td class="num">{{ r.rating or '–' }}{% if r.reviews %} <span class="muted">({{ r.reviews }})</span>{% endif %}</td>
+ <td>{{ r.phone or '–' }}</td><td>{{ r.site or '–' }}</td>
+ <td>{% if r.ads %}<span class="badge {{ r.ads }}">{{ r.ads }}</span>{% elif r.ad %}<span class="badge Active">Ad</span>{% endif %}{% if r.kinds %} <span class="muted">{{ r.kinds }}{% if r.hits %} · {{ r.hits }}×{% endif %}</span>{% endif %}</td>
+ <td>{% if r.get('site_score') is not none %}{{ r.site_score }}{% endif %}{% if r.get('landing') is not none %} <span class="muted">landing {{ r.landing }}</span>{% endif %}</td>
+ <td>{{ r.email or '' }}</td>
+ <td>{% if r.label %}<span class="badge {{ r.label }}">{{ r.label }}{% if r.score is not none %} · {{ r.score }}{% endif %}</span>{% endif %}</td></tr>{% endfor %}
+</table></div>{% endif %}
 <div class="log">{% for line in (job.progress or [])[-120:] %}{{ line }}
 {% endfor %}</div></div></div>

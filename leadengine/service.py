@@ -212,6 +212,7 @@ class LeadService:
         max_cells: int | None = None,
         scope: str | None = None,
         on_progress: Callable[[str], None] | None = None,
+        on_found: Callable[[list[dict]], None] | None = None,
     ) -> DiscoverOutcome:
         cfg = self.settings.section("discovery")
         provider = self._ready(provider_name or cfg.get("provider", "playwright"))
@@ -255,6 +256,7 @@ class LeadService:
                                                   + (" (saturated -> splitting)" if sat else "")),
                     cache=DbCellCache(self._sf, f"{provider.name}|{normalize_keyword(keyword)}",
                                       self.settings.ttl("search"), read=not refresh),
+                    on_records=(lambda recs: on_found([live_row_from_record(r) for r in recs])) if on_found else None,
                 )
                 if report.cells_cached:
                     say(f"  resumed: {report.cells_cached} cell(s) reused from the interrupted run")
@@ -321,12 +323,21 @@ class LeadService:
                 session.commit()
             shortlist_ids = [b.id for b in shortlist]
             outcome.results = repo.search_results(outcome.search_id)
+        def push(ids: list[int]) -> None:
+            if on_found and ids:
+                with self._sf() as s2:
+                    r2 = Repository(s2)
+                    on_found([live_row_from_business(b) for b in (r2.get_business(i) for i in ids) if b])
+
+        push([b.id for b, _ in outcome.results])
         if emails and shortlist_ids:
             say(f"Finding emails for {len(shortlist_ids)} shortlisted websites...")
             outcome.emails = await self.find_emails(shortlist_ids)
+            push(shortlist_ids)
         if website and shortlist_ids:
             say(f"Scoring {len(shortlist_ids)} shortlisted websites...")
             outcome.websites = await self.score_websites(shortlist_ids, on_progress=say)
+            push(shortlist_ids)
             if cfg.get("seo", True):
                 say("Local SEO checks...")
                 await self.seo_audits(shortlist_ids, on_progress=say)
@@ -337,6 +348,7 @@ class LeadService:
         with self._sf() as session:
             ids = [b.id for b, _ in Repository(session).search_results(outcome.search_id)]
         self.rescore(ids)
+        push(ids)
         with self._sf() as session:
             outcome.results = Repository(session).search_results(outcome.search_id)
         return outcome
@@ -885,7 +897,8 @@ class LeadService:
     async def ads_sweep(self, keyword: str, locations: list[str], *, variations: int | None = None,
                         landing: bool | None = None, deep: bool | None = None, refresh: bool = False,
                         watch_id: int | None = None, on_progress: Callable[[str], None] | None = None,
-                        sleep: Callable[[float], Any] | None = None) -> dict:
+                        sleep: Callable[[float], Any] | None = None,
+                        on_found: Callable[[list[dict]], None] | None = None) -> dict:
         """Search many phrases in many places, collect every advertiser, audit their ad landing pages."""
         import asyncio
         import random
@@ -951,6 +964,10 @@ class LeadService:
                     continue
                 say(f"  {tag} @ {label}: {len(snap.ads)} ad(s)")
                 snaps.append(snap)
+                if on_found and snap.ads:
+                    on_found([{"key": "adv:" + a.key, "name": a.name, "site": a.domain, "phone": a.phone,
+                               "kinds": ", ".join(sorted(a.kinds)), "hits": a.hits, "ad": True}
+                              for a in sw.aggregate(snaps)])
 
         advertisers = sw.aggregate(snaps)
         say(f"Found {len(advertisers)} advertiser(s) in {searches - failed} successful searches")
@@ -986,6 +1003,9 @@ class LeadService:
                              "hits": adv.hits, "best_position": adv.best_position, "queries": sorted(adv.queries)[:8],
                              "landing_url": (adv.landing_urls or [None])[0], "ad_title": (adv.titles or [None])[0],
                              "new": bool(prev) and biz.id not in seen_before})
+            if on_found:
+                on_found([{"key": "adv:" + adv.key, "id": r["business_id"], "name": r["name"],
+                           "new": r["new"] or None} for adv, r in zip(advertisers, rows)])
             record = AdSweep(keyword=keyword.strip().lower(), locations=[p[2] for p in places], queries=queries,
                              searches=searches, failed=failed, advertisers=rows, watch_id=watch_id)
             session.add(record)
@@ -1000,6 +1020,11 @@ class LeadService:
             await self.seo_audits(ids, on_progress=say)
             await self.find_emails(ids)
         labels = {r["id"]: r["label"] for r in self.rescore(ids)} if ids else {}
+        if on_found and ids:
+            with self._sf() as s2:
+                r2 = Repository(s2)
+                on_found([{**live_row_from_business(b), "key": "adv:" + adv.key}
+                          for adv, b in zip(advertisers, (r2.get_business(i) for i in ids)) if b])
         new = sum(1 for r in rows if r["new"])
         say(f"Done: {len(rows)} advertisers, {sum(1 for v in labels.values() if v == 'Hot')} Hot"
             + (f", {new} new since the last sweep" if new else ""))
@@ -1246,6 +1271,24 @@ class LeadService:
         say(f"Done: {len(summary)} businesses ranked" + (f", {failed} point(s) failed" if failed else ""))
         return {"grid_id": gid, "points": len(pts), "failed": failed, "businesses": len(summary),
                 "leader": summary[0]["name"] if summary else None, "link": f"/rank/{gid}"}
+
+def _live_key(place_id: str | None, name: str | None, phone: str | None) -> str:
+    from leadengine.normalize import normalize_phone
+    return place_id or f"{(name or '').lower()}|{normalize_phone(phone) or ''}"
+
+
+def live_row_from_record(r: BusinessRecord) -> dict:
+    real, was_ad = unwrap_ad_url(r.website)
+    return {"key": _live_key(r.place_id, r.name, r.phone), "name": r.name, "rating": r.rating, "reviews": r.review_count,
+            "phone": r.phone, "site": normalize_domain(real) if real else None, "category": (r.categories or [None])[0],
+            "ad": True if (r.sponsored or was_ad) else None, "zip": r.zip_code}
+
+
+def live_row_from_business(b: Business) -> dict:
+    return {"key": _live_key(b.place_id, b.name, b.phone), "id": b.id, "name": b.name, "rating": b.rating,
+            "reviews": b.review_count, "phone": b.phone, "site": b.domain, "zip": b.zip_code,
+            "ads": b.ads_status, "ad": True if b.ads_status == "Active" else None, "site_score": b.website_score,
+            "landing": b.landing_score, "email": b.best_email, "label": b.lead_label, "score": b.opportunity_score}
 
 def resolve_place(text: str) -> tuple[str, str, str] | None:
     """'10001' / 'New York, NY' / 'Astoria' -> (city, state, label) using the bundled ZIP data."""

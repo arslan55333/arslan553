@@ -272,6 +272,7 @@ class Job(Base):
     progress: Mapped[Any] = mapped_column(JSON, nullable=True)        # list of log lines (last 300)
     done_steps: Mapped[Any] = mapped_column(JSON, nullable=True)      # e.g. ZIPs finished (for resume)
     result: Mapped[Any] = mapped_column(JSON, nullable=True)
+    live: Mapped[Any] = mapped_column(JSON, nullable=True)            # rows shown while the job runs
     error: Mapped[str | None] = mapped_column(Text)
     attempts: Mapped[int | None] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

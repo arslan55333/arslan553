@@ -66,6 +66,7 @@ async def run_adaptive_grid(
     concurrency: int = 3,
     on_cell: Callable[[Cell, int, bool], None] | None = None,
     cache: CellCache | None = None,
+    on_records: Callable[[list[BusinessRecord]], None] | None = None,
 ) -> GridReport:
     """Breadth-first over cells. A cell whose result is not exhausted (hit the
     provider's cap) is split into 4 children until ``max_depth``."""
@@ -104,6 +105,11 @@ async def run_adaptive_grid(
                 continue
             report.api_calls += result.api_calls
             report.records.extend(result.records)
+            if on_records and result.records:
+                try:
+                    on_records(result.records)
+                except Exception:   # live display must never break the scan
+                    log.debug("on_records callback failed", exc_info=True)
             saturated = not result.exhausted
             if saturated and cell.depth < max_depth:
                 queue.extend(cell.split())

@@ -236,3 +236,29 @@ def test_national_chains_are_skipped(settings, session_factory):
     with session_factory() as s:
         b = s.get(Business, bid)
         assert b.lead_label == "Skip" and "national chain" in b.lead_reason
+
+
+def test_live_results_rows(settings, session_factory):
+    from leadengine import jobs as jq
+    from leadengine.service import live_row_from_record
+
+    job_id = jq.enqueue(session_factory, "discover", {"keyword": "x", "zips": ["10001"]})
+    ctx = jq.JobContext(session_factory, job_id, {})
+    rec = BusinessRecord(name="Ad Co", provider="t", place_id="P1", rating=4.5, review_count=40,
+                         website="https://www.google.com/aclk?sa=L&adurl=https://adco.com/lp")
+    ctx.add_live([live_row_from_record(rec), {"key": "b", "name": "Plain", "reviews": None}])
+    ctx.add_live([{"key": "P1", "id": 7, "label": "Hot", "score": 88, "ads": "Active"}])
+    with session_factory() as s:
+        live = {r["key"]: r for r in s.get(Job, job_id).live}
+    assert live["P1"]["site"] == "adco.com" and live["P1"]["ad"] is True and live["P1"]["label"] == "Hot"
+    assert live["P1"]["name"] == "Ad Co"                           # merged, not replaced
+    from leadengine.ui.app import create_app
+    app = create_app(settings, start_runner=False)
+    with TestClient(app) as c:
+        with app.state.sf() as s:
+            s.add(Job(id=99, kind="discover", params={"keyword": "x", "zips": ["10001"]}, status="running",
+                      live=[{"key": "P1", "id": 7, "name": "Ad Co", "reviews": 40, "label": "Hot", "score": 88},
+                            {"key": "b", "name": "Plain", "reviews": None}]))
+            s.commit()
+        page = c.get("/jobs/99/log").text
+        assert "Businesses found so far: 2" in page and page.index("Ad Co") < page.index("Plain")
