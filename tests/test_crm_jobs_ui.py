@@ -185,7 +185,7 @@ def test_discover_job_handler_skips_finished_zips(settings, session_factory, mon
     seen = []
 
     async def fake_discover(self, keyword, zip_code, **kw):
-        seen.append((zip_code, {k: v for k, v in kw.items() if k != "on_progress"}))
+        seen.append((zip_code, {k: v for k, v in kw.items() if k not in ("on_progress", "on_found")}))
         return DiscoverOutcome(1, "playwright", zip_code, False, [], sponsored=1)
 
     monkeypatch.setattr(LeadService, "discover", fake_discover)
