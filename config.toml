@@ -70,6 +70,13 @@ screenshot = true         # full-page + mobile screenshots with Playwright (data
 vision = false            # AI design review of the screenshot (uses [llm]); costs API credits
 shortlist_only = true
 
+# Firecrawl (firecrawl.dev, key FIRECRAWL_API_KEY): reads JavaScript-only / bot-protected sites, lists every page
+[firecrawl]
+mode = "smart"            # off | fallback (only when a site can't be read) | smart (+ page list for SEO, 1 credit/site)
+                          # | full (+ services, owner, years from the site, ~5 credits/site)
+max_per_run = 300         # most credits one run may spend
+timeout_ms = 30000
+
 # Google Ads detection (Phase 5)
 [ads]
 serp_provider = "auto"         # auto = free browser, SerpAPI only when Google shows a captcha | playwright | serpapi | none
@@ -191,6 +198,10 @@ block_resources = ["image", "media", "font"]
 [providers.serpapi]
 cost_per_call_usd = 0.015    # paid plans ~ $75 / 5,000 searches
 monthly_free_calls = 250     # SerpAPI free plan
+
+[providers.firecrawl]
+cost_per_call_usd = 0.00083  # Hobby plan ~ $16 / 19,000 credits (1 credit = 1 page or 1 page list)
+monthly_free_calls = 0
 
 [providers.google_places]
 cost_per_call_usd = 0.035    # Text Search Enterprise SKU (phone/website/rating fields)

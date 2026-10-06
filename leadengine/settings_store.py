@@ -63,7 +63,7 @@ OPTIONS: list[tuple[str, str, str, str, Any]] = [
     ("discovery", "shortlist_min_reviews", "Deep-check only businesses with at least … reviews", "number", ""),
     ("firecrawl", "mode", "Firecrawl", "choice",
      [("off", "Off"), ("fallback", "Only when a site can't be read normally"), ("smart", "Smart: fallback + site map for SEO (recommended)"),
-      ("full", "Full: also extract services/owner (more credits)")]),
+      ("full", "Full: also read services/owner/years with AI (~5 credits per site)")]),
     ("llm", "provider", "AI provider", "choice", [("claude", "Claude"), ("gemini", "Gemini"), ("groq", "Groq"), ("ollama", "Ollama (local)")]),
     ("preview", "deploy", "Publish previews/reports to", "choice", [("none", "Don't publish"), ("netlify", "Netlify"), ("cloudflare", "Cloudflare Pages")]),
 ]

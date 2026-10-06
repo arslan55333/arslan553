@@ -262,3 +262,34 @@ def test_live_results_rows(settings, session_factory):
             s.commit()
         page = c.get("/jobs/99/log").text
         assert "Businesses found so far: 2" in page and page.index("Ad Co") < page.index("Plain")
+
+
+def test_my_targets_filter(settings):
+    """'My targets' = pays for Google Ads + no real website or a weak one, chains left out."""
+    from leadengine.ui.app import create_app, is_target
+
+    app = create_app(settings, start_runner=False)
+    with TestClient(app) as client:
+        sf = app.state.sf
+        with sf() as s:
+            add(s, "No Site Ads", phone="2145550101")
+            add(s, "Weak Landing", phone="2145550102", website="https://weak.com")
+            add(s, "Good Site Ads", phone="2145550103", website="https://good.com")
+            add(s, "No Ads No Site", phone="2145550104")
+            add(s, "LoadUp Ads", phone="2145550105", website="https://goloadup.com/x")
+            for b in s.query(Business):
+                b.ads_status = {"Weak Landing": "Likely", "No Ads No Site": None}.get(b.name, "Active")
+                if b.name == "Weak Landing":
+                    b.website_score, b.landing_score = 80, 35
+                if b.name == "Good Site Ads":
+                    b.website_score, b.landing_score, b.seo_score = 92, 88, 75
+                if b.name == "LoadUp Ads":
+                    b.website_score = 40
+            s.commit()
+        LeadService(settings, sf, None).rescore()
+        with sf() as s:
+            picked = sorted(b.name for b in s.query(Business) if is_target(b))
+        assert picked == ["No Site Ads", "Weak Landing"]
+        page = client.get("/leads?targets=1").text
+        assert "No Site Ads" in page and "Weak Landing" in page and "Good Site Ads" not in page and "LoadUp" not in page
+        assert "My targets: 2" in client.get("/").text

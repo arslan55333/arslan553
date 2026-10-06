@@ -18,10 +18,12 @@ def build_email_finder(
     *,
     insecure_transport: httpx.AsyncBaseTransport | None = None,
     verifier: EmailVerifier | None = None,
+    firecrawl=None,
 ) -> EmailFinder:
     cfg = settings.section("emails")
     crawler = SiteCrawler(http, max_pages=int(cfg.get("max_pages", 8)),
-                          timeout=float(cfg.get("timeout_seconds", 12)), insecure_transport=insecure_transport)
+                          timeout=float(cfg.get("timeout_seconds", 12)), insecure_transport=insecure_transport,
+                          firecrawl=firecrawl)
     verifier = verifier or EmailVerifier(cfg, http, repo, reacher_secret=settings.reacher_secret,
                                          domain_ttl_days=settings.ttl("domain"))
     return EmailFinder(crawler, verifier, cfg)

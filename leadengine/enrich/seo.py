@@ -57,8 +57,11 @@ def schema_nodes(soup: BeautifulSoup) -> list[dict]:
 
 
 def onpage_checks(html: str, url: str, *, city: str | None, service: str | None, phone: str | None,
-                  towns: list[str] | None = None) -> tuple[float, list[tuple[float, str]], list[str], dict]:
-    """(fraction 0..1, weighted issues, positives, facts) for the homepage."""
+                  towns: list[str] | None = None, site: dict | None = None) -> tuple[float, list[tuple[float, str]], list[str], dict]:
+    """(fraction 0..1, weighted issues, positives, facts) for the homepage.
+
+    ``site`` is the whole-site page count from Firecrawl (:func:`leadengine.enrich.firecrawl.page_stats`), used
+    for the service/area page checks instead of only the links on the homepage."""
     soup = BeautifulSoup(html, "html.parser")
     text = soup.get_text(" ", strip=True)
     low = text.lower()
@@ -81,12 +84,14 @@ def onpage_checks(html: str, url: str, *, city: str | None, service: str | None,
                      and urlparse(h).path not in ("", "/")}
     area_pages = {h for h, t in links if any(tn.lower() in h.replace("-", " ") or tn.lower() in t
                                               for tn in (towns or []) if len(tn) > 3)}
+    n_service = max(len(service_pages), (site or {}).get("service_pages", 0))
+    n_area = max(len(area_pages), (site or {}).get("area_pages", 0))
     page_digits = re.sub(r"\D", "", text)
     phone_n = normalize_phone(phone)
     imgs = soup.find_all("img")
     no_alt = sum(1 for i in imgs if not (i.get("alt") or "").strip())
     facts = {"title": title, "h1": h1s[:3], "meta_description": meta_d[:200], "schema_types": sorted({t for n in nodes for t in _types(n)})[:8],
-             "local_schema": bool(local), "service_pages": len(service_pages), "area_pages": len(area_pages),
+             "local_schema": bool(local), "service_pages": n_service, "area_pages": n_area,
              "words": len(text.split()), "images": len(imgs), "images_no_alt": no_alt}
 
     checks: list[tuple[float, bool, str, str]] = [   # (weight, ok, issue, positive)
@@ -103,9 +108,9 @@ def onpage_checks(html: str, url: str, *, city: str | None, service: str | None,
         (8, bool(phone_n) and phone_n in page_digits, "phone number on the site doesn't match the Google listing"
          if phone_n else "no phone number found on the site", "phone matches the Google listing"),
         (5, bool(city_l) and city_l in low, f"{city or 'your city'} isn't mentioned on the homepage", "city mentioned on the page"),
-        (9, len(service_pages) >= 3, f"only {len(service_pages)} service page(s) — each service needs its own page to rank",
-         f"{len(service_pages)} service pages"),
-        (7, len(area_pages) >= 2 or "service area" in low or "areas we serve" in low,
+        (9, n_service >= 3, f"only {n_service} service page(s) — each service needs its own page to rank",
+         f"{n_service} service pages"),
+        (7, n_area >= 2 or "service area" in low or "areas we serve" in low,
          "no pages or section for the towns you serve", "service-area pages/section"),
         (3, "google.com/maps" in html or "maps.googleapis" in html or "g.page" in html,
          "no Google Map / directions link", "map or directions link"),
@@ -180,31 +185,64 @@ def combine(onpage: float | None, gbp: float | None, authority: float | None) ->
 
 
 async def seo_audit(http: HttpClient, b, *, service: str | None, competitors: list[dict], towns: list[str],
-                    opr_key: str = "") -> dict[str, Any]:
+                    opr_key: str = "", firecrawl=None) -> dict[str, Any]:
+    from leadengine.enrich.firecrawl import needs_js, page_stats
+
     onpage = None
     issues: list[tuple[float, str]] = []
     positives: list[str] = []
     facts: dict[str, Any] = {}
+    svc_words = re.findall(r"[a-z]+", (service or "").lower())
     if b.website:
+        html, final, status, error = None, b.website, None, None
         try:
             r = await http.request("GET", b.website, follow_redirects=True, retries=1)
-            if r.status_code < 400 and "html" in r.headers.get("content-type", "html"):
-                onpage, oi, op, facts = onpage_checks(r.text, str(r.url), city=b.city, service=service,
-                                                      phone=b.phone, towns=towns)
-                issues += oi
-                positives += op
-                base = f"{urlparse(str(r.url)).scheme}://{urlparse(str(r.url)).netloc}"
-                try:
-                    sm = await http.request("GET", base + "/sitemap.xml", retries=0)
-                    facts["sitemap"] = sm.status_code == 200 and ("<urlset" in sm.text or "<sitemapindex" in sm.text)
-                except Exception:
-                    facts["sitemap"] = False
-                if not facts["sitemap"]:
-                    issues.append((3, "no sitemap.xml for Google to find all pages"))
+            if "html" in r.headers.get("content-type", "html"):
+                html, final, status = r.text, str(r.url), r.status_code
             else:
-                issues.append((10, f"website didn't load for the SEO check (HTTP {r.status_code})"))
+                status = r.status_code
         except Exception as exc:
-            issues.append((10, f"website didn't load for the SEO check ({type(exc).__name__})"))
+            error = type(exc).__name__
+        if firecrawl is not None and firecrawl.enabled and (error or (status or 0) >= 400 or needs_js(html or "")):
+            got = await firecrawl.scrape(final)
+            if got and got["status"] < 400 and got["html"]:
+                html, final, status, error = got["html"], got["url"], got["status"], None
+                facts["via_firecrawl"] = True
+        site = None
+        if firecrawl is not None and firecrawl.can_map and not error and (status or 0) < 400:
+            urls = await firecrawl.map(final)
+            if urls:
+                site = page_stats(urls, service_words=svc_words, towns=towns)
+                facts["site"] = site
+        if html is not None and not error and (status or 0) < 400:
+            onpage, oi, op, f2 = onpage_checks(html, final, city=b.city, service=service, phone=b.phone,
+                                               towns=towns, site=site)
+            facts.update(f2)
+            issues += oi
+            positives += op
+            base = f"{urlparse(final).scheme}://{urlparse(final).netloc}"
+            try:
+                sm = await http.request("GET", base + "/sitemap.xml", retries=0)
+                facts["sitemap"] = sm.status_code == 200 and ("<urlset" in sm.text or "<sitemapindex" in sm.text)
+            except Exception:
+                facts["sitemap"] = False
+            if not facts["sitemap"]:
+                issues.append((3, "no sitemap.xml for Google to find all pages"))
+        elif status in (401, 403, 429, 503):
+            issues.append((2, f"the website blocks automatic checks (HTTP {status}), so on-page SEO wasn't measured"))
+        else:
+            issues.append((10, f"website didn't load for the SEO check ({error or f'HTTP {status}'})"))
+        if site:
+            comp = await competitor_pages(firecrawl, competitors, svc_words, towns)
+            if comp:
+                facts["competitor_sites"] = comp
+                avg = statistics.mean(c["pages"] for c in comp)
+                avg_svc = statistics.mean(c["service_pages"] for c in comp)
+                if site["pages"] < 0.5 * avg:
+                    issues.append((7, f"your site has {site['pages']} pages; the competitors above you average "
+                                      f"{round(avg)} ({round(avg_svc)} service pages) — more pages means more searches you can rank for"))
+                else:
+                    positives.append(f"{site['pages']} pages, on par with competitors ({round(avg)})")
     else:
         issues.append((15, "no website, so there is nothing for Google to rank besides the listing"))
         onpage = 0.0
@@ -218,3 +256,24 @@ async def seo_audit(http: HttpClient, b, *, service: str | None, competitors: li
     return {"score": score, "onpage": None if onpage is None else round(onpage * 100),
             "gbp": None if gbp is None else round(gbp * 100), "authority": authority,
             "issues": [t for _, t in sorted(issues, key=lambda x: -x[0])], "positives": positives, "facts": facts}
+
+
+async def competitor_pages(firecrawl, competitors: list[dict], svc_words: list[str], towns: list[str],
+                           limit: int = 3) -> list[dict]:
+    """Page counts of the top competitors' websites (1 Firecrawl credit each, cached per domain for the run)."""
+    from leadengine.enrich.firecrawl import page_stats
+
+    out = []
+    for c in competitors:
+        if len(out) >= limit or firecrawl is None or not firecrawl.can_map:
+            break
+        site = c.get("website")
+        if not site or c.get("chain"):
+            continue
+        urls = await firecrawl.map(site)
+        if urls:
+            st = page_stats(urls, service_words=svc_words, towns=towns)
+            out.append({"name": c.get("name"), "website": site, "pages": st["pages"],
+                        "service_pages": st["service_pages"], "area_pages": st["area_pages"],
+                        "blog_posts": st["blog_posts"]})
+    return out

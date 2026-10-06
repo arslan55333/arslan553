@@ -37,6 +37,22 @@ def _split_zips(raw: str) -> list[str]:
     return list(dict.fromkeys(out))
 
 
+NO_REAL_SITE = {"no_website", "facebook_only", "social_or_directory_only", "broken", "parked", "server_default_page"}
+
+
+def is_target(b: Business, weak: int = 50) -> bool:
+    """'My targets': pays for Google Ads (or LSA) but has no real website, or a weak site / landing page / local SEO,
+    and isn't a national chain."""
+    if b.lead_label == "Skip" and "chain" in (b.lead_reason or ""):
+        return False
+    if not (b.ads_status in ("Active", "Likely") or b.lsa):
+        return False
+    if not b.website or set(b.website_flags or []) & NO_REAL_SITE:
+        return True
+    return any(v is not None and v < weak for v in (b.website_score, getattr(b, "landing_score", None),
+                                                     getattr(b, "seo_score", None)))
+
+
 def create_app(settings: Settings | None = None, *, start_runner: bool = True, handlers=None) -> FastAPI:
     settings = settings or Settings.load()
     engine = make_engine(settings.database_url)
@@ -152,14 +168,18 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
     templates.env.globals["final_body"] = render_final
 
     def filtered(session, q: dict[str, Any], limit: int | None = 200) -> list[Business]:
+        targets = bool(q.get("targets"))
+        ads = ["Active", "Likely"] if targets and not q.get("ads") else ([q["ads"]] if q.get("ads") else None)
         rows = Repository(session).list_businesses(
             keyword=q.get("keyword") or None, zip_code=q.get("zip") or None,
             min_rating=float(q["min_rating"]) if q.get("min_rating") else None,
             min_reviews=int(q["min_reviews"]) if q.get("min_reviews") else None,
-            labels=[q["label"]] if q.get("label") else None, ads_statuses=[q["ads"]] if q.get("ads") else None,
+            labels=[q["label"]] if q.get("label") else None, ads_statuses=ads,
             max_site_score=int(q["max_site"]) if q.get("max_site") else None, email=q.get("email") or None,
             text=q.get("q") or None, status=q.get("status") or None,
-            order=q.get("sort") or "opportunity", limit=limit)
+            order=q.get("sort") or "opportunity", limit=None if targets else limit)
+        if targets:
+            rows = [b for b in rows if is_target(b)][:limit]
         return rows
 
     # ── pages ────────────────────────────────────────────────────────
@@ -172,6 +192,8 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             ads_active = s.scalar(select(func.count()).select_from(Business).where(Business.ads_status == "Active")) or 0
             ads_likely = s.scalar(select(func.count()).select_from(Business).where(Business.ads_status == "Likely")) or 0
             hot = Repository(s).list_businesses(labels=["Hot"], order="opportunity", limit=10)
+            targets = sum(1 for b in Repository(s).list_businesses(ads_statuses=["Active", "Likely"], limit=None)
+                          if is_target(b))
             recent = list(s.scalars(select(Job).order_by(Job.created_at.desc()).limit(6)))
             pipeline = {st: 0 for st in crm.STATUSES}
             from leadengine.db.models import LeadStatus
@@ -180,7 +202,8 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             pipeline["New"] = max(0, total - sum(v for k, v in pipeline.items() if k != "New"))
         credits = CreditTracker(sf, settings).summary()
         return render(request, "dashboard.html", total=total, by_label=by_label, with_email=with_email,
-                      ads_active=ads_active, ads_likely=ads_likely, hot=hot, jobs=recent, credits=credits, pipeline=pipeline)
+                      ads_active=ads_active, ads_likely=ads_likely, hot=hot, jobs=recent, credits=credits, pipeline=pipeline,
+                      targets=targets)
 
     @app.get("/run", response_class=HTMLResponse)
     def run_form(request: Request):
@@ -528,6 +551,13 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
         job_id = jobs.enqueue(sf, "enrich", {"ids": [business_id], "refresh": refresh})
         return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
+    @app.post("/leads/{business_id}/site-facts")
+    def lead_site_facts(business_id: int):
+        if not settings.firecrawl_api_key:
+            return RedirectResponse(f"/leads/{business_id}?error=" + "add a Firecrawl key in Settings first", status_code=303)
+        job_id = jobs.enqueue(sf, "enrich", {"ids": [business_id], "kinds": ["site_info"], "refresh": True})
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
     @app.get("/leads/{business_id}", response_class=HTMLResponse)
     def lead_page(request: Request, business_id: int, error: str | None = None):
         with sf() as s:
@@ -536,7 +566,7 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
                 raise HTTPException(404)
             repo = Repository(s)
             enr = {k: (e.payload if (e := repo.latest_enrichment(business_id, k, fresh_only=False)) else None)
-                   for k in ("website", "ads", "emails", "maps_activity", "landing", "rank", "seo", "audit")}
+                   for k in ("website", "ads", "emails", "maps_activity", "landing", "rank", "seo", "audit", "site_info")}
             emails = list(s.scalars(select(Email).where(Email.business_id == business_id)
                                     .order_by(Email.is_guess, Email.confidence.desc().nulls_last())))
             status = crm.current_status(s, business_id)

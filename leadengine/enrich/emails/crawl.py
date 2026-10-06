@@ -17,6 +17,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 import httpx
 from bs4 import BeautifulSoup
 
+from leadengine.enrich.firecrawl import needs_js as _needs_js
 from leadengine.errors import NetworkError
 from leadengine.http import HttpClient
 from leadengine.log import get_logger
@@ -64,6 +65,8 @@ class CrawlResult:
     ssl_error: bool = False          # site only loads with certificate checks off (Phase 4 signal)
     redirected_to: str | None = None
     error: str | None = None
+    last_status: int | None = None   # HTTP status of the last failed homepage try (403 = blocks bots)
+    via_firecrawl: bool = False      # the site only loaded through Firecrawl (protected / JavaScript-only)
 
 
 def _clean_url(url: str) -> str:
@@ -98,8 +101,12 @@ class SiteCrawler:
         max_pages: int = 8,
         timeout: float = 12.0,
         insecure_transport: httpx.AsyncBaseTransport | None = None,
+        firecrawl=None,
+        firecrawl_subpages: int = 2,
     ) -> None:
         self.http = http
+        self.firecrawl = firecrawl
+        self.firecrawl_subpages = firecrawl_subpages
         self.max_pages = max_pages
         self.timeout = timeout
         self._insecure: httpx.AsyncClient | None = None
@@ -132,6 +139,7 @@ class SiteCrawler:
                 return None
             result.ssl_error = True  # only when the page really loads with certificate checks off
         if r.status_code >= 400:
+            result.last_status = r.status_code
             return None
         ctype = r.headers.get("content-type", "text/html")
         if "html" not in ctype and "text/plain" not in ctype:
@@ -153,8 +161,25 @@ class SiteCrawler:
         for url in dict.fromkeys(tries):
             page = await self.fetch(url, result)
             if page is not None:
+                if self._fc_ok() and _needs_js(page.html):      # empty JavaScript shell: read the rendered page
+                    rendered = await self.fetch_firecrawl(page.final_url, result)
+                    if rendered is not None:
+                        rendered.headers, rendered.cookies = page.headers, page.cookies
+                        return rendered
                 return page
+        if self._fc_ok():                                       # blocked or down for us: try Firecrawl once
+            return await self.fetch_firecrawl(tries[0], result)
         return None
+
+    def _fc_ok(self) -> bool:
+        return self.firecrawl is not None and self.firecrawl.enabled
+
+    async def fetch_firecrawl(self, url: str, result: CrawlResult) -> Page | None:
+        got = await self.firecrawl.scrape(url)
+        if not got or got["status"] >= 400 or not got["html"]:
+            return None
+        result.via_firecrawl = True
+        return Page(url, got["url"], got["status"], got["html"][:MAX_BYTES])
 
     async def crawl(self, website: str) -> CrawlResult:
         result = CrawlResult(start_url=website)
@@ -173,9 +198,12 @@ class SiteCrawler:
         queue = self.plan(home, result)
         visited = {_clean_url(home.url), _clean_url(home.final_url)}
         todo = [(u, k) for u, k in queue if _clean_url(u) not in visited][: self.max_pages - 1]
+        if result.via_firecrawl:          # the site only opens through Firecrawl: read the best few pages that way
+            todo = todo[: self.firecrawl_subpages]
+        fetch = self.fetch_firecrawl if result.via_firecrawl else self.fetch
         for i in range(0, len(todo), 3):  # small batches: polite but not slow
             batch = todo[i:i + 3]
-            pages = await asyncio.gather(*(self.fetch(u, result) for u, _ in batch))
+            pages = await asyncio.gather(*(fetch(u, result) for u, _ in batch))
             for (url, kind), page in zip(batch, pages):
                 visited.add(_clean_url(url))
                 if page is not None and _clean_url(page.final_url) not in {_clean_url(p.final_url) for p in result.pages}:

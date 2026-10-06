@@ -66,7 +66,13 @@ People searching from the red spots don't see you in the first 20 results.</p>
 
 {% if seo %}<section class="card"><h2>Local SEO {% if seo.score is not none %}<span class="pill">{{ seo.score }}/100</span>{% endif %}</h2>
 <div class="grid2"><div><div class="lbl">Fix first</div><ul class="issues">{% for i in (seo.issues or [])[:7] %}<li>{{ i }}</li>{% endfor %}</ul></div>
-<div><div class="lbl">Already working</div><ul class="issues">{% for p in (seo.positives or [])[:7] %}<li>{{ p }}</li>{% endfor %}</ul></div></div></section>{% endif %}
+<div><div class="lbl">Already working</div><ul class="issues">{% for p in (seo.positives or [])[:7] %}<li>{{ p }}</li>{% endfor %}</ul></div></div>
+{% set site = (seo.facts or {}).get('site') %}{% set cs = (seo.facts or {}).get('competitor_sites') or [] %}
+{% if site and cs %}<div class="lbl" style="margin-top:14px">Your website vs the businesses above you on Google</div>
+<table><tr><th>Business</th><th>Pages</th><th>Service pages</th><th>Town pages</th><th>Blog posts</th></tr>
+<tr><td><b>{{ b.name }}</b></td><td>{{ site.pages }}</td><td>{{ site.service_pages }}</td><td>{{ site.area_pages }}</td><td>{{ site.blog_posts }}</td></tr>
+{% for c in cs %}<tr><td>{{ c.name }}</td><td>{{ c.pages }}</td><td>{{ c.service_pages }}</td><td>{{ c.area_pages }}</td><td>{{ c.blog_posts }}</td></tr>{% endfor %}</table>
+<p class="note">Every service and every town you serve needs its own page — that is what Google ranks for "service + town" searches.</p>{% endif %}</section>{% endif %}
 
 {% if competitors %}<section class="card"><h2>Who is winning the customers in your area</h2>
 <table><tr><th>Business</th><th>Rating</th><th>Reviews</th>{% if competitors[0].solv is not none %}<th>Map pack share</th>{% endif %}<th>Website</th><th>Google Ads</th></tr>

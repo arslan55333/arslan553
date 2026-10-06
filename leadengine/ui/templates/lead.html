@@ -45,7 +45,26 @@
 <div class="card" style="margin-top:16px"><h2>Local SEO {% if seo.score is not none %}score {{ seo.score }}/100{% endif %}
  <span class="small muted">{% if seo.onpage is not none %}website {{ seo.onpage }} · {% endif %}{% if seo.gbp is not none %}Google profile {{ seo.gbp }}{% endif %}{% if seo.authority is not none %} · authority {{ seo.authority }}/10{% endif %}</span></h2>
  <div class="grid g2"><div>{% if seo.issues %}<b class="small">What's holding it back</b><ul class="clean small">{% for i in seo.issues[:8] %}<li>{{ i }}</li>{% endfor %}</ul>{% endif %}</div>
- <div>{% if seo.positives %}<b class="small">Already good</b><ul class="clean small muted">{% for p in seo.positives[:8] %}<li>{{ p }}</li>{% endfor %}</ul>{% endif %}</div></div></div>{% endif %}
+ <div>{% if seo.positives %}<b class="small">Already good</b><ul class="clean small muted">{% for p in seo.positives[:8] %}<li>{{ p }}</li>{% endfor %}</ul>{% endif %}</div></div>
+ {% set site = (seo.facts or {}).get('site') %}{% set cs = (seo.facts or {}).get('competitor_sites') or [] %}
+ {% if site %}<b class="small">Pages on the website vs competitors</b> <span class="small muted">(full page list from Firecrawl)</span>
+ <table class="small" style="margin-top:6px"><tr><th></th><th>Pages</th><th>Service pages</th><th>Town pages</th><th>Blog posts</th></tr>
+  <tr><td><b>{{ b.name }}</b></td><td>{{ site.pages }}</td><td>{{ site.service_pages }}</td><td>{{ site.area_pages }}</td><td>{{ site.blog_posts }}</td></tr>
+  {% for c in cs %}<tr><td><a href="{{ c.website }}" target="_blank" rel="noopener">{{ c.name }}</a></td><td>{{ c.pages }}</td><td>{{ c.service_pages }}</td><td>{{ c.area_pages }}</td><td>{{ c.blog_posts }}</td></tr>{% endfor %}
+ </table>{% endif %}</div>{% endif %}
+{% set info = enr.site_info %}{% if b.website or info %}
+<div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Website facts</h2>
+ <form method="post" action="/leads/{{ b.id }}/site-facts"><button class="btn ghost" title="Firecrawl reads the site with AI (about 5 credits)">{{ 'Read again' if info else 'Read services / owner / years' }} (Firecrawl)</button></form></div>
+ {% if info %}<div class="kv small" style="margin-top:8px">
+  {% if info.services %}<div>Services</div><div>{{ info.services[:15]|join(', ') }}</div>{% endif %}
+  {% if info.service_areas %}<div>Areas served</div><div>{{ info.service_areas[:20]|join(', ') }}</div>{% endif %}
+  {% if info.owner_name %}<div>Owner</div><div>{{ info.owner_name }}</div>{% endif %}
+  {% if info.founded_year or info.years_in_business %}<div>In business</div><div>{% if info.founded_year %}since {{ info.founded_year }}{% endif %}{% if info.years_in_business %} ({{ info.years_in_business }} years){% endif %}</div>{% endif %}
+  {% if info.license_number %}<div>License</div><div>{{ info.license_number }}</div>{% endif %}
+  {% if info.offers %}<div>Offers</div><div>{{ info.offers[:6]|join(' · ') }}</div>{% endif %}
+  {% if info.booking is defined %}<div>Online booking/quote</div><div>{{ 'yes' if info.booking else 'no' }}</div>{% endif %}
+  {% if info.emails %}<div>Emails on site</div><div>{{ info.emails[:5]|join(', ') }}</div>{% endif %}
+ </div>{% else %}<p class="small muted">What the business says it does, where, since when and who owns it — useful for a personal first line in outreach.</p>{% endif %}</div>{% endif %}
 {% set land = enr.landing %}{% if land %}
 <div class="card" style="margin-top:16px"><h2>Ad landing page {% if land.score is not none %}score {{ land.score }}/100{% endif %}</h2>
  <div class="grid g2"><div>

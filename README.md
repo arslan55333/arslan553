@@ -225,6 +225,42 @@ email drafts then include the link. Facts only, noindex, with a "not affiliated 
 
 ![Audit report](docs/img/audit-report.jpg)
 
+## Settings page (keys, proxies, options in the dashboard)
+
+**⚙ Settings** in the dashboard:
+- **API keys**: SerpAPI, Google Places, PageSpeed, Firecrawl, Claude / Gemini / Groq, Open PageRank, Netlify,
+  outreach mailbox, alert webhook.
+  - Each key has a free **Test** call.
+  - Keys are saved to `.env` only (chmod 600, never committed) and shown masked.
+- **Proxies**: one per line, each tested against Google.
+- **Options**: brand, sender, postal address, default source, ads-check mode, Firecrawl mode, AI provider.
+  - Saved to `data/settings.json`, layered over `config.toml`.
+
+Changes apply immediately, without a restart. The scan form greys out sources whose key is missing.
+
+## Firecrawl (optional)
+
+`FIRECRAWL_API_KEY` plus `[firecrawl] mode`:
+
+| Mode | What it does |
+|---|---|
+| `off` | Firecrawl is never called. |
+| `fallback` | Reads a page through Firecrawl only when the normal fetch is blocked (401/403/429/503) or returns an empty JavaScript shell. Used by the email crawler, Website Score, ad landing audit and SEO audit. |
+| `smart` (default) | `fallback`, plus `/map`: the full page list of the site and of the top 3 competitors. This gives real service / town / blog page counts and a "pages vs competitors" table in the lead page and audit report. |
+| `full` | `smart`, plus AI JSON extraction of services, areas served, owner, founded year, license, offers and online booking. Stored as the `site_info` enrichment; fills the owner name. |
+
+`max_per_run` caps credits per run. A 401, 402 or 403 from Firecrawl switches it off for the rest of the run. Every
+call is recorded in **Credits** as provider `firecrawl`.
+
+Without Firecrawl, a site that blocks bots is flagged `blocks_bots`, which is neutral, instead of `broken`.
+
+## My targets
+
+The leads filter `?targets=1` (dashboard card **🎯 My targets**) shows businesses that:
+- run Google Ads (Active / Likely or LSA);
+- have no real website, or a website, landing page or local SEO score under 50;
+- are not national chains (`leadengine/data/chains.txt`, plus domains seen in 3 or more cities).
+
 ## Weekly watch & alerts
 
 Dashboard → **Alerts**: save a keyword + places; every N days the Ads finder runs again and every
@@ -274,7 +310,8 @@ Windows task (`monitor.bat`). CLI: `watch add`, `watch list`, `monitor`, `alerts
 
 ## Proxies
 
-Optional. Put `PROXIES=http://user:pass@host:port,...` or `PROXY_FILE=proxies.txt` in `.env`
+Optional. Paste them on **⚙ Settings → Proxies** (or put `PROXIES=http://user:pass@host:port,...` /
+`PROXY_FILE=proxies.txt` in `.env`)
 (residential proxies recommended for big runs). Each browser context gets the next healthy
 proxy; failing or captcha'd proxies are benched automatically. `python -m leadengine proxies --check`.
 

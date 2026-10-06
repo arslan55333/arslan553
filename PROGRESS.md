@@ -2,9 +2,14 @@
 
 ## Current Status
 - Current phase: **all phases (0–10) built and self-tested**. Remaining: owner's live runs on a real PC/network (see "Next Steps").
-- Last completed step: Round 2 (owner feedback + 6 advancements) built and self-tested — 224 tests passing locally
+- Last completed step: Round 3: real-world testing with the owner's keys (live Google Maps, live Google SERP, real
+  websites, Firecrawl). Bugs found in those runs are fixed, and the Settings page, live results, Firecrawl and My
+  targets are added. 243 tests pass.
 - Owner tested on Windows: dashboard runs; found "–" (unchecked) shown for Google Ads on Prime Dumpster -> fixed (see Round 2)
-- Waiting on: owner — live runs (Google Maps scraping, real websites, AI key, Netlify, mailbox) which the build machine cannot reach
+- Waiting on: owner:
+  - a free PageSpeed key;
+  - optionally an AI key, Netlify and a mailbox;
+  - which next features to build (see "Next Steps").
 
 ### Final summary (what you have now)
 | Area | What it does | Command / place |
@@ -29,10 +34,10 @@
 ## Phase Checklist
 - [x] Phase 0 — Audit & plan (approved: Path B)
 - [x] Phase 1 — Foundation: storage, cache, config, provider interface (self-tested by Claude at owner's request)
-- [ ] Phase 2 — Scraping engine v2 (Playwright, ZIP grid, proxies) — built + self-tested, awaiting live run
-- [ ] Phase 3 — Email extraction v2 (+ verification, confidence) — built + self-tested, awaiting live run
-- [ ] Phase 4 — Website Score (0–100) — built + self-tested, awaiting live run
-- [ ] Phase 5 — Google Ads detection — built + self-tested, awaiting live run
+- [x] Phase 2 — Scraping engine v2 (Playwright, ZIP grid, proxies) — live-tested: real Google Maps, 20 results per cell
+- [x] Phase 3 — Email extraction v2 (+ verification, confidence) — live-tested on real sites (incl. Cloudflare-protected)
+- [x] Phase 4 — Website Score (0–100) — live-tested (PageSpeed needs the owner's free key)
+- [x] Phase 5 — Google Ads detection — live-tested: real search ads parsed, Maps sponsored listings, SerpAPI captcha fallback
 - [x] Phase 6 — Opportunity Score & filtering — built + self-tested (pure scoring, no live dependency)
 - [x] Phase 7 — Dashboard & mini CRM — built + self-tested (rendered and checked in a real browser)
 - [ ] Phase 8 — Preview landing page generator — built + self-tested; live AI copy + live deploy need owner keys
@@ -40,6 +45,42 @@
 - [x] Phase 10 — Hardening & polish (self-tested; CI on Linux + Windows)
 
 ## Phase Log (newest first)
+### Round 3 — real-world testing with the owner's keys + Settings page + Firecrawl (2026-10-06)
+
+Bugs found in live runs, all fixed with regression tests:
+- **Google Maps ad links.** Sponsored Maps listings link to `google.com/aclk?…adurl=`.
+  - The site was treated as google.com, so LoadUp showed "only a Facebook page" and scored Warm 85.
+  - Fix: ad links are unwrapped to the real site (or the redirect is followed). The listing is recorded as a paid
+    Maps ad, so ads become **Active** with evidence.
+- **National chains / franchises** (LoadUp, 1-800-GOT-JUNK, …) were scored as leads.
+  - Fix: they are skipped, using `leadengine/data/chains.txt` plus domains seen in 3 or more cities (`skip_chains`).
+- **Search-ad attribution by headline name** gave false matches. Search ads now match by domain or phone only.
+- **An empty Google Maps scan was cached for 14 days.** Empty results and empty grid cells are no longer cached.
+  The run fails with a clear message.
+- **Place pages in Google's "limited view"** (empty h1) hung each detail fetch. They now fail fast, and a circuit
+  breaker stops after 2 failures.
+- **Bot-blocked sites were reported as "broken".** A Cloudflare 403 said "website is down", which made a fake Hot lead.
+  - Now flagged `blocks_bots` (neutral), or read through Firecrawl.
+  - Real case: `actioncarting.com` went from "broken" to 79/100, WordPress 3.7.1, and 4 real emails.
+- **Live table** showed "landing" on every row (Jinja Undefined). Fixed.
+
+New features:
+- **⚙ Settings page**:
+  - every API key with a free Test call; proxies with a test;
+  - brand, sender and options;
+  - the scan form greys out sources without a key.
+- **Live results** on scan and sweep job pages, as businesses and advertisers are found.
+- **Ads check `auto` mode**: the free browser first, SerpAPI only on a captcha, capped at `paid_fallback_max` per run.
+- **Firecrawl** (`leadengine/enrich/firecrawl.py`), with modes off / fallback / smart / full:
+  - fallback reads for emails, Website Score, landing audit and SEO;
+  - the full page list, giving real service / town / blog page counts;
+  - a "pages vs competitors" table on the lead page and audit report;
+  - AI site facts: services, areas, owner, founded year and offers;
+  - a per-run credit cap; it disables itself on 401 / 402.
+- **🎯 My targets** filter and dashboard card: running ads, plus no or weak website / landing / SEO, and not a chain.
+
+Live test spend: SerpAPI 2 credits in this round, 233 left of 250 this month. Firecrawl 16 credits.
+
 ### Round 2 — owner feedback + 6 advancements (2026-10-06)
 - Owner feedback fixed:
   - Prime Dumpster showed "–" for ads. The deep checks ran only for businesses *inside* the scanned ZIP. Manhattan ZIPs are ~1 km and Google returns the whole city, so most leads were never checked. Now every qualifying business found is deep-checked (`check_scope = "all"`, `max_checks`), with an "only inside my ZIPs" option.
@@ -366,12 +407,28 @@ tests/
 - (2026-10-05) Outreach = drafts only by default. Sending is opt-in, per-email approval, throttled, CAN-SPAM footer + List-Unsubscribe, separate outreach domain enforced via `allowed_from_domains`; unsubscribe handled by reply ("unsubscribe") + IMAP check rather than a hosted link.
 
 ## Next Steps
-- Owner: test Round 2 on your PC: Ads finder (e.g. "dumpster rental" in "New York, NY"), Rank map on one lead, Build audit report, add a Watch. Send screenshots of anything wrong.
-- Owner: follow USER_GUIDE.md on your PC — `doctor`, then `scan "<keyword>" --zip <your ZIP>` and check the leads in `ui`. Report anything odd (0 results, captcha loops, wrong emails/scores) with the job log.
-- Owner: add keys you want (PageSpeed free key recommended; AI key for AI copy/drafts; Netlify for preview links).
-- Later ideas (not built): hosted one-click unsubscribe page, multi-user login for the dashboard, scheduled weekly re-scans.
-- Owner (any time): live runs of Phases 2–4 on a real ZIP.
-- (Done) Phase 4 — Website Score (0–100): copyright year, HTTPS/SSL validity & expiry (crawler already flags broken SSL), mobile viewport, tech stack via webappanalyzer fingerprints (old jQuery/WordPress/Flash/tables/builders), PageSpeed Insights (free key), Wayback CDX + sitemap lastmod age, conversion basics (click-to-call, forms, reviews widget, CTA), Playwright screenshot, optional AI vision rating, flags for no/broken/parked/Facebook-only sites.
+- Owner:
+  - pull the latest code (`setup.bat`), then open **⚙ Settings**;
+  - add a free PageSpeed key (and optionally an AI key);
+  - run one scan and one Ads finder sweep in your niche;
+  - check **🎯 My targets**.
+- Owner: pick which features from the list below to build next (not built yet):
+  1. **Google Business Profile audit+**: category gaps vs the top 3, services / products / Q&A / posts present?,
+     photos freshness, review keywords, NAP consistency on Yelp / BBB / Facebook (citations).
+  2. **Review intelligence**: review velocity chart, unanswered negative reviews, AI summary of complaints to use in
+     outreach.
+  3. **Rank history**: re-run the rank map weekly and show "you dropped from 3 to 9", plus an alert.
+  4. **Ads intelligence**:
+     - ad copy library per advertiser (headlines over time);
+     - estimated monthly spend (keyword CPC × impression share);
+     - Meta Ad Library check (Facebook / Instagram ads).
+  5. **Ahrefs-style site crawl** (Firecrawl crawl):
+     - broken links, missing titles / H1 per page, duplicate pages, page speed per page;
+     - keyword volume and CPC for "service + town" (DataForSEO, ~$0.0006 / keyword).
+  6. **Backlink / authority**: referring domains (Open PageRank / Common Crawl) vs competitors.
+  7. **AI one-click pitch**: the audit report + preview + email in one button, with a Loom-style script.
+  8. **Client portal / monthly report** for clients you win: rank map, calls and reviews each month.
+  9. **Email warm-up & sending domain checks** (SPF / DKIM / DMARC), bounce-safe sending limits.
 
 ### Open questions for owner
 1. Which OS and Python version do you use? (Instructions assume Windows + Python 3.11+.)

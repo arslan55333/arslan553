@@ -13,7 +13,9 @@
  <div><label>ZIP</label><input name="zip" style="width:80px" value="{{ q.get('zip','') }}"></div>
  <div><label>Keyword</label><input name="keyword" style="width:140px" value="{{ q.get('keyword','') }}"></div>
  <div><label>Status</label><select name="status"><option value="">Any</option>{% for st in STATUSES %}<option {{ 'selected' if q.get('status')==st }}>{{ st }}</option>{% endfor %}</select></div>
+ <div><label title="Pays for Google Ads but has no real website, or a weak website / landing page / local SEO — and isn't a chain" style="font-weight:600"><input type="checkbox" name="targets" value="1" {{ 'checked' if q.get('targets') }}> 🎯 My targets</label></div>
  <div><button class="btn">Filter</button></div></form>
+<p class="small" style="margin:-4px 0 10px"><a href="/leads?targets=1">🎯 My targets</a> <span class="muted">= running Google Ads + no website or a weak site / landing page / SEO (score under 50), chains left out.</span></p>
 {% if q.get('error') %}<p class="error">{{ q.get('error') }}</p>{% endif %}
 <form method="post" action="/leads/check" id="checkform">
 <div class="row" style="margin:6px 0 10px"><button class="btn">Deep-check selected</button>

@@ -36,24 +36,45 @@ python -m leadengine ui
 old folder into the new one: the **`data`** folder (all your leads), **`.env`** and **`config.toml`**.
 Then run `setup.bat` once in the new folder.
 
-### Keys (`.env` file, Notepad mein kholo)
-Nothing is required to start. The scraper is free. Add keys only when you need them:
+### Keys and options: the ⚙ Settings page (no file editing)
+Nothing is required to start: the scraper is free. When you need a key, open the dashboard and click
+**⚙ Settings** (top right). Paste the key and click **Save**. Then click **Test** next to it; the test call is
+always free. Each key also has a "get a key" link.
 
-| Key | Why | Cost |
+| Key | What it unlocks | Cost |
 |---|---|---|
-| `PAGESPEED_API_KEY` | mobile speed in Website Score | free (Google Cloud) |
-| `ANTHROPIC_API_KEY` (or Gemini/Groq) | AI-written preview copy + email drafts | pay per use |
-| `SERPAPI_API_KEY` | fills missing phone/website for top leads | 250 free/month |
-| `NETLIFY_TOKEN` | publish preview sites online | free plan |
-| `OUTREACH_SMTP_USER` / `OUTREACH_SMTP_PASSWORD` | save drafts to your mailbox / send | free |
+| Google PageSpeed | real mobile speed score for websites and ad landing pages | **free**: without a key Google blocks most checks |
+| Firecrawl | reads protected / JavaScript-only websites, lists every page of a site, AI site facts (see 3c) | free plan, then paid |
+| SerpAPI | Google results without captchas; used only as the captcha fallback for ad checks | 250 free / month |
+| Google Places API (New) | official business data source | paid after the free credit |
+| Claude / Gemini / Groq | AI-written email drafts and preview copy | pay per use (Gemini / Groq have free tiers) |
+| Open PageRank | domain authority in the Local SEO score | free |
+| Netlify | publish previews and reports as links | free plan |
+| Outreach mailbox | save drafts to your mailbox, reply checks, opt-in sending | free |
 
-> **Urdu:** Keys sirf `.env` mein likho, kabhi code ya config.toml mein nahi. `.env` GitHub par upload
-> nahi hoti. AI key ke baghair bhi tool chalta hai: wo achay template use karta hai.
+The same page also has:
+- **Proxies**: one per line, with a **Test** button. Each proxy shows ✓ or ✗ for Google.
+- **Options**:
+  - your agency name, email and postal address;
+  - the default scan source;
+  - the Google Ads check mode (**Auto** = the free browser, SerpAPI only when Google shows a captcha, and at most
+    *N* SerpAPI credits per run);
+  - the Firecrawl mode;
+  - the AI provider.
 
-### Your details (`config.toml`)
-Open `config.toml` and fill in:
-- `[preview]` → `brand_name` (your agency name), `brand_url`, `brand_email`
-- `[outreach]` → `sender_name`, `physical_address` (**required by US law before emailing**), `offer`
+> **Urdu:** Ab `.env` file kholne ki zarurat nahi. Sab kuch dashboard ke **⚙ Settings** page par hai. Key paste
+> karo, Save karo, phir Test dabao: "key works" aa jaye to theek hai. Keys sirf aap ke PC par `.env` mein save
+> hoti hain, GitHub par kabhi nahi jaati. Agar kisi key ka source scan mein grey ho, to wo key Settings mein
+> add karni hai.
+
+### Your details
+On **⚙ Settings → Options**, fill in:
+- your agency name, website and email;
+- your name;
+- your postal address (**required by US law before emailing**);
+- one line about your offer.
+
+(Advanced: the same values live in `config.toml`. What you save on the Settings page wins.)
 
 ---
 
@@ -153,6 +174,23 @@ Either way you get emails, website score, Google Ads and local SEO.
 **Clickable dashboard:** the cards (Hot leads, Running Google Ads, With email) and the pipeline boxes open the
 matching leads.
 
+**🎯 My targets** (dashboard card, or the tick box on the Leads page) shows exactly your niche. A target is a
+business that:
+- is running Google Ads (Active or Likely);
+- has **no real website** (none, only Facebook, a directory page, or a down/parked site), **or** a weak website,
+  ad landing page or local SEO (score under 50);
+- is **not** a national chain or franchise (LoadUp, 1-800-GOT-JUNK, … see `leadengine/data/chains.txt`).
+
+> **Urdu:** 🎯 My targets = wo log jo Google Ads par paisa laga rahe hain lekin website nahi hai ya bohat kamzor
+> hai. Yehi aap ke best clients hain. Dashboard par card par click karo.
+
+**Live results:** while a scan or ads sweep is running, its job page fills up as businesses are found. Each
+row shows rating, website score, ads and landing-page score, so you don't wait for the whole run.
+
+**Websites that block robots:** some sites (often Cloudflare) answer bots with "403 Forbidden". These are not
+"down", so they get the grey flag **blocks bots** instead of becoming a fake Hot lead. With a Firecrawl key
+they are read normally.
+
 ## 3b. Audit report (client ko bhejne wali report)
 
 On a lead page click **Build audit report**. You get one good-looking page with:
@@ -170,6 +208,34 @@ To make a PDF: open the report → Ctrl+P → "Save as PDF".
 
 > **Urdu:** Ye report email mein link ki tarah bhejo ya PDF bana kar attach karo. Isme sirf asli,
 > measure ki hui cheezen hain. Koi jhoota claim nahi.
+
+## 3c. Firecrawl: what it does for you
+
+Firecrawl (firecrawl.dev) is a service that opens a website like a real browser, even when the site is
+protected or built only with JavaScript. 1 credit is about 1 page. Add the key on **⚙ Settings**, then pick a mode:
+
+| Mode | What happens | Credits |
+|---|---|---|
+| Off | never used | 0 |
+| Only when a site can't be read | used only when our normal check is blocked (403) or the page is an empty JavaScript shell | ~1–3 per blocked site |
+| **Smart (recommended)** | the above, plus a list of **every page** of the site for the Local SEO audit, and the same for the top 3 competitors | +1 per site, +3 competitors |
+| Full | Smart, plus AI reads each shortlisted website: services, towns served, owner name, year founded, offers | +~5 per site |
+
+What you get:
+- **More emails and real website scores** for sites that used to show "website does not load".
+  - Real test: `actioncarting.com` was wrongly marked down.
+  - With Firecrawl it scored 79/100 (very old WordPress 3.7.1) and 4 real emails were found.
+- **Pages vs competitors** (lead page → Local SEO, and in the audit report). For example: *"your site has 6 pages;
+  the competitors above you average 85 (12 service pages)"*. This is a strong reason for a client to buy SEO pages.
+- **Website facts** (lead page → **Read services / owner / years**, any mode):
+  - services, areas served, owner name, years in business, license and offers;
+  - use these for a personal first line in your email.
+- A safety cap: one run never spends more than `max_per_run` credits (300 by default). Every call shows on the
+  **Credits** page.
+
+> **Urdu:** Firecrawl un websites ko bhi parh leta hai jo bots ko block karti hain ya sirf JavaScript se banti
+> hain. "Smart" mode rakho: is se SEO audit mein pata chalta hai ke client ki site par kitne pages hain aur
+> competitors ki site par kitne. Ye client ko dikhane ke liye bohat acha point hai.
 
 ## 4. Build a preview website for a lead
 
@@ -226,7 +292,7 @@ Sending is **off** by default. To turn it on:
 2. Fill these in `config.toml`:
    - `[outreach]`: `sender_email`, `physical_address`
    - `[outreach.sending]`: `enabled = true`, `smtp_host`, and `allowed_from_domains = ["getacme-web.com"]`
-3. Put the mailbox login (an app password) in `.env`.
+3. Put the mailbox login (an app password) on **⚙ Settings** (Outreach mailbox user / app password).
 4. On a lead page, click **Approve this one** on the draft you like.
 5. Go to **Outbox**, tick the confirm box, and click **Send**.
 
@@ -258,7 +324,7 @@ alert. You see a red number next to "Alerts" and a yellow box on the dashboard.
 - It runs by itself while `start.bat` is open.
 - To run it even when the dashboard is closed, double-click **`schedule.bat`** once. It checks every
   morning at 9.
-- Optional: put a webhook URL in `.env` as `ALERT_WEBHOOK_URL` (n8n / Make / Zapier → WhatsApp, Slack or
+- Optional: put a webhook URL on **⚙ Settings → Alert webhook URL** (n8n / Make / Zapier → WhatsApp, Slack or
   email) to get alerts on your phone.
 
 > **Urdu:** Jo business is hafte naya naya ads chalana shuru karta hai, wo abhi abhi paisa kharch karne
@@ -283,7 +349,7 @@ alert. You see a red number next to "Alerts" and a yellow box on the dashboard.
 | Problem | Fix |
 |---|---|
 | "Executable doesn't exist" / browser error | `python -m playwright install chromium` |
-| Google shows a captcha, scan stops | wait a bit; for big runs add residential proxies (`PROXIES=` in `.env`), then `scan --resume <id>` |
+| Google shows a captcha, scan stops | wait a bit; for big runs add residential proxies (**⚙ Settings → Proxies**), then `scan --resume <id>` |
 | No emails found for a site | many small businesses only have a contact form; the phone number is still in the lead |
 | Drafts say "[ADD YOUR MAILING ADDRESS…]" | fill `physical_address` in `[outreach]`, then click "Regenerate drafts" |
 | Preview has no link in the email | publish it (`NETLIFY_TOKEN` + "Publish"); otherwise the screenshot is attached |

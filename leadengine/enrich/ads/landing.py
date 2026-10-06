@@ -101,28 +101,41 @@ def score_landing(f: dict[str, Any], *, ad_title: str | None, load_ms: int | Non
 
 
 async def audit_landing(http: HttpClient, url: str, *, ad_title: str | None = None, renderer=None,
-                        pagespeed_key: str = "", use_pagespeed: bool = True, shot_path=None) -> dict[str, Any]:
+                        pagespeed_key: str = "", use_pagespeed: bool = True, shot_path=None,
+                        firecrawl=None) -> dict[str, Any]:
+    from leadengine.enrich.firecrawl import needs_js
     from leadengine.enrich.website import remote
 
     out: dict[str, Any] = {"url": url, "ad_title": ad_title}
     t0 = time.monotonic()
+    html, final, status, error = None, url, None, None
     try:
         r = await http.request("GET", url, follow_redirects=True, retries=1)
+        html, final, status = r.text, str(r.url), r.status_code
     except Exception as exc:
-        return {**out, "error": f"{type(exc).__name__}", "score": 0,
-                "issues": ["the ad's landing page did not load in our test"]}
-    out["load_ms"] = int((time.monotonic() - t0) * 1000)
-    out["final_url"] = str(r.url)
-    if r.status_code >= 400:
-        return {**out, "status": r.status_code, "score": 0,
-                "issues": [f"the ad's landing page returns an error (HTTP {r.status_code})"]}
-    facts = page_facts(r.text, str(r.url))
+        error = type(exc).__name__
+    out["load_ms"] = int((time.monotonic() - t0) * 1000) if error is None else None
+    if firecrawl is not None and firecrawl.enabled and (error or (status or 0) >= 400 or needs_js(html or "")):
+        got = await firecrawl.scrape(final)              # protected or JavaScript-only page: read it rendered
+        if got and got["status"] < 400 and got["html"]:
+            html, final, status, error = got["html"], got["url"], got["status"], None
+            out["via_firecrawl"] = True
+    if error:
+        return {**out, "error": error, "score": 0, "issues": ["the ad's landing page did not load in our test"]}
+    out["final_url"] = final
+    if (status or 0) >= 400:
+        if status in (401, 403, 429, 503):
+            return {**out, "status": status, "score": None,
+                    "issues": [f"the landing page blocks automatic checks (HTTP {status}) — check it by hand"]}
+        return {**out, "status": status, "score": 0,
+                "issues": [f"the ad's landing page returns an error (HTTP {status})"]}
+    facts = page_facts(html or "", final)
     mobile = None
     if renderer is not None:
-        rend = await renderer.render(str(r.url), shot_path)
+        rend = await renderer.render(final, shot_path)
         mobile = rend.get("mobile")
         out["screenshot"], out["mobile_screenshot"] = rend.get("screenshot"), rend.get("mobile_screenshot")
-    ps = await remote.pagespeed(http, str(r.url), pagespeed_key) if use_pagespeed else None
+    ps = await remote.pagespeed(http, final, pagespeed_key) if use_pagespeed else None
     score, issues = score_landing(facts, ad_title=ad_title, load_ms=out["load_ms"], mobile=mobile,
                                   pagespeed=ps if ps and not ps.get("error") else None)
     return {**out, "facts": facts, "mobile": mobile, "pagespeed": ps, "score": score, "issues": issues}

@@ -39,13 +39,14 @@ Return JSON: {{"outdated_1_10": <int>, "era": "<e.g. 2008-2012 style>", "why": "
 class WebsiteAnalyzer:
     def __init__(self, settings: Settings, http: HttpClient, *, renderer: WebsiteRenderer | None = None,
                  llm: LLM | None = None, crawler: SiteCrawler | None = None,
-                 screenshot_dir: Path | None = None, today: date | None = None) -> None:
+                 screenshot_dir: Path | None = None, today: date | None = None, firecrawl=None) -> None:
         self.settings = settings
         self.cfg = settings.section("website")
         self.http = http
         self.renderer = renderer
         self.llm = llm
-        self.crawler = crawler or SiteCrawler(http, max_pages=1, timeout=float(self.cfg.get("timeout_seconds", 15)))
+        self.crawler = crawler or SiteCrawler(http, max_pages=1, timeout=float(self.cfg.get("timeout_seconds", 15)),
+                                              firecrawl=firecrawl)
         self.screenshot_dir = screenshot_dir or settings.root / "data" / "screenshots"
         self.today = today or date.today()
 
@@ -69,8 +70,14 @@ class WebsiteAnalyzer:
         crawl = CrawlResult(start_url=website)
         page = await self.crawler._home(website, crawl)
         if page is None:
+            if crawl.last_status in (401, 403, 429, 503):        # it's up, it just refuses robots: not a lead signal
+                return {"score": None, "grade": "n/a", "flags": flags + ["blocks_bots"], "domain": domain,
+                        "reasons": [f"the website blocks automatic checks (HTTP {crawl.last_status}) — check it by hand"
+                                    + ("" if self.crawler.firecrawl else ", or add a Firecrawl key in Settings")]}
             return {"score": None, "grade": "n/a", "flags": flags + ["broken"],
                     "reasons": ["website does not load"], "domain": domain}
+        if crawl.via_firecrawl:
+            flags.append("read_via_firecrawl")
         if crawl.ssl_error:
             flags.append("ssl_invalid")
         final_domain = normalize_domain(page.final_url)

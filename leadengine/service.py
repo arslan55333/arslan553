@@ -105,6 +105,11 @@ class LeadService:
             ban_seconds=float(proxy_cfg.get("ban_seconds", 600)),
         )
 
+    def firecrawl(self):
+        """A Firecrawl client for one run (None when no key / mode off). See leadengine/enrich/firecrawl.py."""
+        from leadengine.enrich.firecrawl import build_firecrawl
+        return build_firecrawl(self.settings, self.http, self.credits)
+
     def provider(self, name: str) -> Provider:
         if name not in self._providers:
             self._providers[name] = build_provider(name, self.settings, self.http, self.credits, self.proxies)
@@ -341,6 +346,9 @@ class LeadService:
             if cfg.get("seo", True):
                 say("Local SEO checks...")
                 await self.seo_audits(shortlist_ids, on_progress=say)
+            if str(self.settings.section("firecrawl").get("mode", "smart")) == "full" and self.settings.firecrawl_api_key:
+                say("Reading services / owner / years from websites (Firecrawl)...")
+                await self.site_info(shortlist_ids, on_progress=say)
         if ads and shortlist_ids:
             say(f"Checking Google Ads for {len(shortlist_ids)} shortlisted businesses...")
             outcome.ads = await self.detect_ads(shortlist_ids, keyword=keyword, on_progress=say)
@@ -436,7 +444,7 @@ class LeadService:
         summary = EmailRunSummary()
         with self._sf() as session:
             repo = Repository(session)
-            finder = build_email_finder(self.settings, self.http, repo)
+            finder = build_email_finder(self.settings, self.http, repo, firecrawl=self.firecrawl())
             sem = asyncio.Semaphore(int(cfg.get("concurrency", 5)))
             businesses = [b for b in (repo.get_business(i) for i in business_ids) if b is not None]
 
@@ -560,7 +568,7 @@ class LeadService:
                 llm = build_llm(settings, "llm")
             except (LLMError, ImportError) as exc:
                 say(f"AI design review disabled: {exc}")
-        analyzer = WebsiteAnalyzer(settings, self.http, renderer=renderer, llm=llm)
+        analyzer = WebsiteAnalyzer(settings, self.http, renderer=renderer, llm=llm, firecrawl=self.firecrawl())
         await self.resolve_ad_websites(business_ids)
         rows: list[dict] = []
         sem = asyncio.Semaphore(int(cfg.get("concurrency", 3)))
@@ -646,7 +654,8 @@ class LeadService:
         budget = {"paid": int(cfg.get("paid_fallback_max", 10))}
         ttl = self.settings.ttl("ads")
         today = date.today()
-        crawler = SiteCrawler(self.http, max_pages=1, timeout=float(cfg.get("timeout_seconds", 15)))
+        crawler = SiteCrawler(self.http, max_pages=1, timeout=float(cfg.get("timeout_seconds", 15)),
+                              firecrawl=self.firecrawl())
         rows: list[dict] = []
         try:
             with self._sf() as session:
@@ -1039,6 +1048,7 @@ class LeadService:
         say = on_progress or (lambda _m: None)
         renderer = WebsiteRenderer()
         shots = self.settings.root / "data" / "screenshots"
+        fc = self.firecrawl()
         done = 0
         try:
             for r in rows:
@@ -1048,7 +1058,7 @@ class LeadService:
                 say(f"  landing page: {url}")
                 out = await audit_landing(self.http, url, ad_title=r.get("ad_title"), renderer=renderer,
                                           pagespeed_key=self.settings.pagespeed_api_key,
-                                          shot_path=shots / f"landing-{r['business_id']}.jpg")
+                                          shot_path=shots / f"landing-{r['business_id']}.jpg", firecrawl=fc)
                 with self._sf() as session:
                     repo = Repository(session)
                     biz = repo.get_business(r["business_id"])
@@ -1073,9 +1083,11 @@ class LeadService:
 
         from leadengine.db.models import SearchResult
         from leadengine.enrich.seo import seo_audit
+        from leadengine.scoring.opportunity import chain_name
 
         say = on_progress or (lambda _m: None)
         key = self.settings.openpagerank_api_key
+        fc = self.firecrawl()
         rows = []
         for bid in business_ids:
             with self._sf() as session:
@@ -1093,12 +1105,14 @@ class LeadService:
                                                  .where(SearchResult.business_id == bid)):
                     for other, orank in repo.search_results(sid, limit=10):
                         if other.id != bid and (rank is None or orank < rank):
-                            comps.append({"name": other.name, "review_count": other.review_count})
+                            comps.append({"name": other.name, "review_count": other.review_count,
+                                          "website": other.website, "chain": bool(chain_name(other, {}))})
                 kw = next(iter(repo.keywords_for(bid)), None) or (biz.categories or [None])[0]
                 towns = [t.split(",")[0] for t in zip_directory().towns(biz.zip_code)] if biz.zip_code else []
                 session.expunge(biz)
             say(f"  local SEO: {biz.name}")
-            out = await seo_audit(self.http, biz, service=kw, competitors=comps[:5], towns=towns, opr_key=key)
+            out = await seo_audit(self.http, biz, service=kw, competitors=comps[:5], towns=towns, opr_key=key,
+                                  firecrawl=fc)
             with self._sf() as session:
                 repo = Repository(session)
                 repo.set_enrichment(bid, "seo", out, ttl_days=self.settings.ttl("website"), source="seo")
@@ -1107,6 +1121,41 @@ class LeadService:
                 session.commit()
             rows.append({"id": bid, "name": biz.name, **out})
         return rows
+
+    async def site_info(self, business_ids: list[int], *, refresh: bool = False, explicit: bool = False,
+                        on_progress: Callable[[str], None] | None = None) -> int:
+        """Firecrawl 'full' mode: services, service areas, owner, years in business from each website (cached).
+        ``explicit`` (the lead page button) runs it whatever the mode, as long as a key is saved."""
+        fc = self.firecrawl()
+        if fc is not None and explicit:
+            fc.mode = "full"
+        if fc is None or not fc.can_extract:
+            return 0
+        say = on_progress or (lambda _m: None)
+        done = 0
+        for bid in business_ids:
+            with self._sf() as session:
+                repo = Repository(session)
+                biz = repo.get_business(bid)
+                if biz is None or not biz.website or set(biz.website_flags or []) & {
+                        "broken", "parked", "facebook_only", "social_or_directory_only"}:
+                    continue
+                if not refresh and repo.latest_enrichment(bid, "site_info") is not None:
+                    continue
+                url = biz.website
+            say(f"  reading site facts: {url}")
+            info = await fc.extract_info(url)
+            if info is None:
+                continue
+            with self._sf() as session:
+                repo = Repository(session)
+                repo.set_enrichment(bid, "site_info", info, ttl_days=self.settings.ttl("website"), source="firecrawl")
+                biz = repo.get_business(bid)
+                if info.get("owner_name") and not biz.owner_name:
+                    biz.owner_name = str(info["owner_name"])[:120]
+                session.commit()
+            done += 1
+        return done
 
     # ── audit report ─────────────────────────────────────────────────
     async def build_reports(self, business_ids: list[int], *, deploy: bool | None = None,

@@ -6,6 +6,8 @@
  <a class="card stat link" href="/leads?ads=Active"><div class="l">Running Google Ads</div><div class="n">{{ ads_active }}</div><div class="small muted">{{ ads_likely }} likely · open →</div></a>
  <a class="card stat link" href="/leads?email=any"><div class="l">With email</div><div class="n">{{ with_email }}</div><div class="small muted">open →</div></a>
 </div>
+<a class="card link" href="/leads?targets=1" style="margin-top:16px;display:flex;justify-content:space-between;align-items:center">
+ <span><b>🎯 My targets: {{ targets }}</b> <span class="small muted">— running Google Ads but no website, or a weak website / landing page / local SEO (chains left out)</span></span><span>open →</span></a>
 {% set na = unseen_alerts() %}{% if na %}<a class="card link" href="/alerts" style="margin-top:16px;border-color:#f59e0b;background:#fffbeb">
  <b>{{ na }} new alert{{ 's' if na > 1 }}</b> — businesses that just started advertising in your watched areas →</a>{% endif %}
 <div class="card" style="margin-top:16px"><h2>Pipeline</h2><div class="pipeline">
