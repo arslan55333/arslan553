@@ -94,7 +94,11 @@ def decide(
             evidence.append("Google remarketing tag on website")
         if site.call_tracking:
             evidence.append("call tracking: " + ", ".join(site.call_tracking))
+        if site.meta_pixel:
+            evidence.append("Meta (Facebook/Instagram) pixel on website")
         if status == "None":
+            if site.google_ads_evidence and not any("Google Ads" in e or "remarketing" in e for e in evidence):
+                evidence.append("Google Ads tracking on website (gclid / ads scripts)")
             if site.google_ads_evidence:
                 status, confidence = "Likely", 70 if site.google_ads_ids else 60
             elif site.call_tracking and site.gclid_handling:

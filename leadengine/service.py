@@ -29,7 +29,7 @@ from leadengine.geo.zipdata import DEFAULT_RADIUS_KM, haversine_km, zip_director
 from leadengine.http import HttpClient
 from leadengine.log import get_logger
 from leadengine.models import BusinessRecord, SearchQuery
-from leadengine.normalize import normalize_keyword
+from leadengine.normalize import normalize_domain, normalize_keyword, unwrap_ad_url
 from leadengine.providers import Provider, build_provider
 from leadengine.providers.playwright_maps import PlaywrightMapsProvider, activity_payload
 from leadengine.providers.serpapi import SerpApiProvider
@@ -132,12 +132,24 @@ class LeadService:
         for i, rec in enumerate(records, 1):
             try:
                 with session.begin_nested():  # one bad record must not break the run
+                    click_url = None
+                    real, was_ad = unwrap_ad_url(rec.website)
+                    if was_ad:                    # "Website" of a sponsored listing = Google's ad click link
+                        click_url, rec.website, rec.sponsored = rec.website, real, True
                     biz = repo.upsert_business(rec)
                     fill_location(biz)
                     if rec.sponsored:
                         repo.set_enrichment(biz.id, "maps_sponsored",
-                                            {"keyword": keyword, "zip": zip_code, "provider": rec.provider},
+                                            {"keyword": keyword, "zip": zip_code, "provider": rec.provider,
+                                             "click_url": click_url, "landing_url": real if was_ad else None},
                                             ttl_days=self.settings.ttl("ads"), source=rec.provider)
+                        if biz.ads_status != "Active":   # a sponsored listing IS proof of ad spend
+                            biz.ads_status, biz.ads_confidence = "Active", 90
+                            repo.set_enrichment(biz.id, "ads", {
+                                "status": "Active", "lsa": bool(biz.lsa), "confidence": 90, "meta_ads": bool(biz.meta_ads),
+                                "google_ads_ids": [], "keyword": keyword,
+                                "evidence": [f"sponsored (paid) listing on Google Maps for '{keyword}'"]},
+                                ttl_days=self.settings.ttl("ads"), source=rec.provider)
                 ranked.append((biz, rec.rank or i))
             except Exception:
                 skipped += 1
@@ -262,6 +274,9 @@ class LeadService:
                 if report.cells_run and report.cells_failed == report.cells_run:
                     raise ProviderError(provider.name, "every grid cell failed: " + "; ".join(report.errors[:3]))
 
+                if not records:
+                    raise ProviderError(provider.name, "Google Maps returned no businesses (blocked, captcha or "
+                                                       "a changed page) - nothing was cached, try again later")
                 ranked, skipped = self._store(session, repo, records, keyword, zip_code)
                 search = repo.record_search(
                     base, provider.name, ranked, exhausted=report.saturated_leaves == 0,
@@ -473,6 +488,40 @@ class LeadService:
 
 
     # ── website score (Phase 4) ──────────────────────────────────────
+    async def resolve_ad_websites(self, business_ids: list[int]) -> int:
+        """Businesses whose website is a Google ad click link: follow it to the real site (cheap, once)."""
+        fixed = 0
+        with self._sf() as session:
+            repo = Repository(session)
+            todo = []
+            for bid in business_ids:
+                biz = repo.get_business(bid)
+                if biz is None:
+                    continue
+                if fix_ad_website(repo, biz):
+                    fixed += 1
+                spon = repo.latest_enrichment(bid, "maps_sponsored", fresh_only=False)
+                click = (spon.payload or {}).get("click_url") if spon else None
+                if not biz.website and click:
+                    todo.append((bid, click))
+            session.commit()
+        if self.http is None:
+            return fixed
+        for bid, click in todo:
+            try:
+                r = await self.http.request("GET", click, follow_redirects=True, retries=0, timeout=15)
+                final = str(r.url)
+            except Exception:
+                continue
+            real, _ = unwrap_ad_url(final)
+            if real and "google." not in (normalize_domain(real) or "google."):
+                with self._sf() as session:
+                    biz = Repository(session).get_business(bid)
+                    biz.website, biz.domain = real, normalize_domain(real)
+                    session.commit()
+                    fixed += 1
+        return fixed
+
     async def score_websites(self, business_ids: list[int], *, refresh: bool = False, render: bool | None = None,
                              vision: bool | None = None, on_progress: Callable[[str], None] | None = None) -> list[dict]:
         """Analyse each business website (cached per business) and store the score."""
@@ -500,6 +549,7 @@ class LeadService:
             except (LLMError, ImportError) as exc:
                 say(f"AI design review disabled: {exc}")
         analyzer = WebsiteAnalyzer(settings, self.http, renderer=renderer, llm=llm)
+        await self.resolve_ad_websites(business_ids)
         rows: list[dict] = []
         sem = asyncio.Semaphore(int(cfg.get("concurrency", 3)))
         with self._sf() as session:
@@ -536,6 +586,37 @@ class LeadService:
 
 
     # ── ads detection (Phase 5) ──────────────────────────────────────
+    async def live_serp(self, query: str, city: str, state: str, *, add_city: bool = True, source: str | None = None,
+                        budget: dict | None = None):
+        """One Google results page: free browser first; with serp_provider = "auto" a captcha falls back
+        to SerpAPI (if a key is set) while ``budget["paid"]`` allows (credits are precious)."""
+        from leadengine.enrich.ads.serp import SerpSnapshot, serp_browser, serp_serpapi
+
+        cfg = self.settings.section("ads")
+        source = (source or str(cfg.get("serp_provider", "auto"))).lower()
+        paid_ok = bool(self.settings.serpapi_api_key) and (budget is None or budget.get("paid", 0) > 0)
+
+        async def paid():
+            if budget is not None:
+                budget["paid"] = budget.get("paid", 0) - 1
+            return await serp_serpapi(self._ready("serpapi"), query, city, state, add_city=add_city)
+
+        try:
+            if source == "serpapi":
+                return await paid()
+            prov = self._ready("playwright")
+            snap = await serp_browser(prov, query, city, state, prov.base_url, add_city=add_city)
+            if snap.error and source == "auto" and paid_ok:
+                try:
+                    alt = await paid()
+                    alt.error = None
+                    return alt
+                except LeadEngineError as exc:
+                    snap.error += f"; SerpAPI fallback failed: {exc}"
+            return snap
+        except LeadEngineError as exc:
+            return SerpSnapshot(query, f"{city}, {state}", source, error=str(exc))
+
     async def detect_ads(self, business_ids: list[int], *, keyword: str | None = None, refresh: bool = False,
                          on_progress: Callable[[str], None] | None = None) -> list[dict]:
         """Live SERP ads + LSA (per keyword/city, cached), website ad tags (per business, cached),
@@ -549,7 +630,8 @@ class LeadService:
 
         say = on_progress or (lambda _m: None)
         cfg = self.settings.section("ads")
-        serp_source = str(cfg.get("serp_provider", "playwright")).lower()
+        serp_source = str(cfg.get("serp_provider", "auto")).lower()
+        budget = {"paid": int(cfg.get("paid_fallback_max", 10))}
         ttl = self.settings.ttl("ads")
         today = date.today()
         crawler = SiteCrawler(self.http, max_pages=1, timeout=float(cfg.get("timeout_seconds", 15)))
@@ -569,19 +651,16 @@ class LeadService:
                 if serp_source != "none":
                     for kw, loc in {p for p in plans.values() if p}:
                         city, state = loc.split("|")
-                        cached = None if refresh else repo.get_serp(kw, loc, serp_source, ttl)
+                        cached = None if refresh else (repo.get_serp(kw, loc, serp_source, ttl)
+                                                       or repo.get_serp(kw, loc, "serpapi", ttl)
+                                                       or repo.get_serp(kw, loc, "playwright", ttl))
                         if cached is not None:
                             snapshots[(kw, loc)] = SerpSnapshot.from_dict(cached.payload)
                             continue
                         say(f"  Google search: {kw} {city}, {state} ({serp_source})")
-                        try:
-                            if serp_source == "serpapi":
-                                snap = await serp_serpapi(self._ready("serpapi"), kw, city, state)
-                            else:
-                                prov = self._ready("playwright")
-                                snap = await serp_browser(prov, kw, city, state, prov.base_url)
-                        except LeadEngineError as exc:
-                            snap = SerpSnapshot(kw, f"{city}, {state}", serp_source, error=str(exc))
+                        snap = await self.live_serp(kw, city, state, source=serp_source, budget=budget)
+                        if snap.provider == "serpapi" and serp_source == "auto":
+                            say("    (free check got a captcha - used 1 SerpAPI credit)")
                         snapshots[(kw, loc)] = snap
                         if not snap.error:
                             repo.save_serp(kw, loc, serp_source, snap.as_dict())
@@ -680,17 +759,25 @@ class LeadService:
                 businesses = [b for b in (repo.get_business(i) for i in business_ids) if b]
             ids = [b.id for b in businesses]
             webs = repo.latest_enrichments(ids, "website")
+            from sqlalchemy import func as sfunc
+
+            from leadengine.scoring.opportunity import chain_name
+            domain_cities = dict(session.execute(
+                select(Business.domain, sfunc.count(sfunc.distinct(Business.city)))
+                .where(Business.domain.is_not(None)).group_by(Business.domain)).all())
             done = {"emails": set(repo.latest_enrichments(ids, "emails")),
                     "ads": {i for i, e in repo.latest_enrichments(ids, "ads").items()
                             if (e.payload or {}).get("status") != "Unknown"}}
             statuses = repo.lead_statuses(ids if len(ids) <= 900 else None)
             for biz in businesses:
                 fill_location(biz)
+                fix_ad_website(repo, biz)
                 web = webs.get(biz.id)
                 checked = {k for k, have in (("website", webs), ("emails", done["emails"]), ("ads", done["ads"]))
                            if biz.id in have}
                 opp = score_business(biz, today=today, website_reasons=(web.payload or {}).get("reasons") if web else None,
-                                     lead_status=statuses.get(biz.id), weights=weights, rules=rules, checked=checked)
+                                     lead_status=statuses.get(biz.id), weights=weights, rules=rules, checked=checked,
+                                     chain=chain_name(biz, domain_cities))
                 biz.opportunity_score, biz.lead_label, biz.lead_reason = opp.score, opp.label, opp.reason
                 biz.scored_at = utcnow()
                 out.append({"id": biz.id, "name": biz.name, "score": opp.score, "label": opp.label,
@@ -813,7 +900,8 @@ class LeadService:
         say = on_progress or (lambda _m: None)
         pause = sleep or asyncio.sleep
         cfg = self.settings.section("ads")
-        source = str(cfg.get("serp_provider", "playwright")).lower()
+        source = str(cfg.get("serp_provider", "auto")).lower()
+        budget = {"paid": int(cfg.get("paid_fallback_max", 10))}
         if source == "none":
             raise LeadEngineError("[ads] serp_provider is 'none' - set it to playwright (free) or serpapi")
         places = [p for p in (resolve_place(x) for x in locations) if p]
@@ -844,14 +932,7 @@ class LeadService:
                     if live:
                         await pause(random.uniform(float(cfg.get("sweep_delay_min", 4)), float(cfg.get("sweep_delay_max", 9))))
                     live += 1
-                    try:
-                        if source == "serpapi":
-                            snap = await serp_serpapi(self._ready("serpapi"), q, city, state, add_city=add_city)
-                        else:
-                            prov = self._ready("playwright")
-                            snap = await serp_browser(prov, q, city, state, prov.base_url, add_city=add_city)
-                    except LeadEngineError as exc:
-                        snap = SerpSnapshot(q, label, source, error=str(exc))
+                    snap = await self.live_serp(q, city, state, add_city=add_city, source=source, budget=budget)
                     snap.keyword = tag
                     if not snap.error:
                         with self._sf() as session:
@@ -862,7 +943,8 @@ class LeadService:
                 if snap.error:
                     failed += 1
                     say(f"  {tag} @ {label}: {snap.error}")
-                    if "captcha" in snap.error.lower():
+                    if "captcha" in snap.error.lower() and (source != "auto" or budget["paid"] <= 0
+                                                            or not self.settings.serpapi_api_key):
                         blocked = True
                         say("  Google is asking for a captcha - stopping here (results so far are kept). "
                             "Try later or add proxies.")
@@ -1208,6 +1290,30 @@ def match_advertiser(session: Session, adv) -> Business | None:
             if name_similarity(b.name, adv.name) >= 0.8 and len(adv.name.split()) >= 2:
                 return b
     return None
+
+def fix_ad_website(repo: Repository, biz: Business) -> bool:
+    """Older rows saved a Google ad click link as the website: unwrap it and record the ad (no network)."""
+    real, was_ad = unwrap_ad_url(biz.website)
+    if not was_ad:
+        return False
+    from sqlalchemy import delete
+
+    from leadengine.db.models import Enrichment
+
+    click = biz.website
+    biz.website, biz.domain = real, normalize_domain(real) if real else None
+    biz.website_score = biz.website_grade = None          # the old score was for Google's link: redo it
+    biz.website_flags = []
+    repo.session.execute(delete(Enrichment).where(Enrichment.business_id == biz.id,
+                                                  Enrichment.kind.in_(("website", "emails", "seo", "ads_site"))))
+    repo.set_enrichment(biz.id, "maps_sponsored", {"click_url": click, "landing_url": real, "provider": "fix"},
+                        ttl_days=30, source="fix")
+    if biz.ads_status != "Active":
+        biz.ads_status, biz.ads_confidence = "Active", 90
+        repo.set_enrichment(biz.id, "ads", {"status": "Active", "lsa": bool(biz.lsa), "confidence": 90,
+                                            "meta_ads": bool(biz.meta_ads), "google_ads_ids": [],
+                                            "evidence": ["sponsored (paid) listing on Google Maps"]}, ttl_days=30, source="fix")
+    return True
 
 def fill_location(biz: Business) -> bool:
     """Maps cards often lack city/ZIP ("91-01 120th St"); take them from the nearest ZIP centre."""

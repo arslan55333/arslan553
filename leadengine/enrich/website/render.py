@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +66,8 @@ class WebsiteRenderer:
                 args: dict[str, Any] = {"headless": self.headless}
                 if self.executable_path:
                     args["executable_path"] = self.executable_path
+                if os.environ.get("LEADENGINE_BROWSER_PROXY"):        # a fixed upstream proxy (company network)
+                    args["proxy"] = {"server": os.environ["LEADENGINE_BROWSER_PROXY"]}
                 self._browser = await self._pw.chromium.launch(**args)
             return self._browser
 

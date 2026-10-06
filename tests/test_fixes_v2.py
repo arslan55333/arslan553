@@ -187,3 +187,52 @@ def test_failed_google_check_is_unknown_not_no_ads(settings, session_factory, ma
     app = create_app(st, start_runner=False)
     with TestClient(app) as c:
         assert "check failed" in c.get("/leads").text
+
+
+def test_sponsored_maps_listing_with_google_ad_link(settings, session_factory):
+    """Owner's LoadUp case: the 'Website' of a sponsored listing is google.com/aclk?... ."""
+    from leadengine.normalize import unwrap_ad_url
+
+    aclk = ("https://www.google.com/aclk?sa=L&ai=DChsSEwjX&co=1&adurl=https://goloadup.com/dumpster-rental/"
+            "%3Futm_source%3Dadwords%26utm_campaign%3DPMAX")
+    assert unwrap_ad_url(aclk) == ("https://goloadup.com/dumpster-rental/?utm_source=adwords&utm_campaign=PMAX", True)
+    assert unwrap_ad_url("https://www.google.com/aclk?sa=L&ai=X") == (None, True)
+    assert unwrap_ad_url("https://loadup.com/")[1] is False
+    svc = LeadService(settings, session_factory, None)
+    with session_factory() as s:
+        repo = Repository(s)
+        ranked, _ = svc._store(s, repo, [BusinessRecord(name="LoadUp Junk Removal", provider="t", place_id="L",
+                                                        website=aclk, rating=4.7, review_count=946)], "dumpster rental", None)
+        s.commit()
+        b = ranked[0][0]
+        assert b.website.startswith("https://goloadup.com/") and b.domain == "goloadup.com" and b.ads_status == "Active"
+        ev = repo.latest_enrichment(b.id, "ads", fresh_only=False).payload["evidence"][0]
+        assert "sponsored (paid) listing on Google Maps" in ev
+        # an old row saved before the fix is repaired by Re-score
+        old = add(s, "Old Row", website="https://www.google.com/aclk?sa=L&adurl=https://oldrow.com/", review_count=50)
+        old.website_flags, old.website_score = ["social_or_directory_only"], None
+        s.commit()
+        oid = old.id
+    svc.rescore()
+    with session_factory() as s:
+        o = s.get(Business, oid)
+        assert o.website == "https://oldrow.com/" and o.ads_status == "Active" and "Facebook" not in (o.lead_reason or "")
+
+
+def test_national_chains_are_skipped(settings, session_factory):
+    from leadengine.scoring.opportunity import chain_name
+
+    assert chain_name(Business(name="LoadUp Junk Removal", domain="goloadup.com")) == "loadup"
+    assert chain_name(Business(name="Acme", domain="www.1800gotjunk.com")) == "1-800-got-junk"
+    assert chain_name(Business(name="Junk King Queens")) == "junk king"
+    assert chain_name(Business(name="Kingston Hauling")) is None              # word boundaries, no false match
+    assert chain_name(Business(name="X", domain="multi.com"), {"multi.com": 4}).startswith("multi.com has listings")
+    with session_factory() as s:
+        b = add(s, "LoadUp Junk Removal", website="https://goloadup.com/dumpster-rental/", rating=4.7, review_count=946)
+        b.ads_status, b.website_score = "Active", 30
+        s.commit()
+        bid = b.id
+    LeadService(settings, session_factory, None).rescore()
+    with session_factory() as s:
+        b = s.get(Business, bid)
+        assert b.lead_label == "Skip" and "national chain" in b.lead_reason

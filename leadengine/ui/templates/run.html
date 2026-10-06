@@ -6,8 +6,9 @@
    <input name="keyword" id="kw" required placeholder="dumpster rental" style="width:100%">
    <div class="ac-list" id="kw-list"></div></div>
   <div><label>Source</label><select name="provider" style="width:100%">
-   <option value="playwright">Browser (free)</option><option value="serpapi">SerpAPI (paid)</option>
-   <option value="google_places">Google Places (paid)</option><option value="osm">OpenStreetMap (free)</option></select></div>
+   {% for val, text in [('playwright','Browser (free)'),('serpapi','SerpAPI (paid, no captchas)'),('google_places','Google Places API (paid)'),('osm','OpenStreetMap (free, less data)')] %}
+   <option value="{{ val }}" {{ 'selected' if disc.get('provider', 'playwright') == val }} {{ 'disabled' if not have[val] }}>{{ text }}{{ ' — add key in Settings' if not have[val] }}</option>{% endfor %}</select>
+   <div class="small muted" style="margin-top:4px">Keys & proxies: <a href="/settings">Settings</a></div></div>
  </div>
 
  <div class="ac" style="margin-top:14px"><label>Where (ZIP, city or neighbourhood)</label>

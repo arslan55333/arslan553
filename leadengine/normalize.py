@@ -83,3 +83,30 @@ def parse_us_address(address: str | None) -> tuple[str | None, str | None, str |
     if not m:
         return None, None, None
     return m.group(1).strip(), m.group(2), m.group(3)
+
+
+_AD_HOSTS = ("googleadservices.com", "doubleclick.net", "googlesyndication.com")
+
+
+def unwrap_ad_url(url: str | None) -> tuple[str | None, bool]:
+    """Google ad click links (google.com/aclk?..., googleadservices.com/...) -> (real site or None, was_an_ad).
+
+    Sponsored Maps listings link their "Website" button through Google's ad click URL; the real
+    landing page is in ``adurl=``. When it isn't there, the caller resolves the redirect later.
+    """
+    if not url:
+        return url, False
+    from urllib.parse import parse_qs, urlparse
+
+    p = urlparse(url)
+    host = (p.hostname or "").lower()
+    is_ad = host.endswith(_AD_HOSTS) or (host.startswith(("www.google.", "google.")) and p.path.startswith(("/aclk", "/url")))
+    if not is_ad:
+        return url, False
+    qs = parse_qs(p.query)
+    for key in ("adurl", "url", "q"):
+        for v in qs.get(key, []):
+            if v.startswith("http"):
+                inner, _ = unwrap_ad_url(v)
+                return inner, True
+    return None, True

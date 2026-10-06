@@ -15,6 +15,8 @@ Several searches run in parallel, each in its own context (``contexts`` option).
 
 from __future__ import annotations
 
+import os
+
 import asyncio
 import random
 import re
@@ -209,6 +211,8 @@ class PlaywrightMapsProvider(Provider):
                 launch["channel"] = self.opt("channel", "")
             if self.proxies.enabled:
                 launch["proxy"] = {"server": "http://per-context"}  # each context sets its own
+            elif os.environ.get("LEADENGINE_BROWSER_PROXY"):        # a fixed upstream proxy (company network)
+                launch["proxy"] = {"server": os.environ["LEADENGINE_BROWSER_PROXY"]}
             try:
                 self._browser = await self._pw.chromium.launch(**launch)
             except Exception as exc:
@@ -237,6 +241,8 @@ class PlaywrightMapsProvider(Provider):
         }
         if proxy is not None:
             ctx_args["proxy"] = proxy.playwright()
+        if os.environ.get("LEADENGINE_BROWSER_IGNORE_TLS"):   # behind a TLS-inspecting company proxy
+            ctx_args["ignore_https_errors"] = True
         if query is not None and query.has_coordinates:
             ctx_args["geolocation"] = {"latitude": query.lat, "longitude": query.lng}
             ctx_args["permissions"] = ["geolocation"]
@@ -493,6 +499,8 @@ class PlaywrightMapsProvider(Provider):
 
     async def place_details(self, url: str, *, reviews: bool = True, proxy: Proxy | None = None,
                             review_limit: int = 20) -> dict[str, Any]:
+        if getattr(self, "_details_off", False):
+            raise ProviderError(self.name, "place pages unavailable this run (Google shows a limited view)")
         ctx = await self._new_context(proxy, None)
         try:
             page = await ctx.new_page()
@@ -500,7 +508,18 @@ class PlaywrightMapsProvider(Provider):
             await page.goto(url + f"{sep}hl=en", wait_until="domcontentloaded")
             await self._check_blocked(page)
             await self._accept_consent(page)
-            await page.wait_for_selector("h1", timeout=12_000)
+            try:   # the place name must actually render; an empty shell = Google's limited (signed-out) view
+                await page.wait_for_function(
+                    "() => [...document.querySelectorAll('h1')].some(h => (h.innerText || '').trim().length > 1)",
+                    timeout=int(self.opt("details_timeout_ms", 8000)))
+                self._details_fails = 0
+            except Exception:
+                self._details_fails = getattr(self, "_details_fails", 0) + 1
+                if self._details_fails >= 2 and not getattr(self, "_details_off", False):
+                    self._details_off = True
+                    log.warning("Google Maps place pages show a limited view here; skipping place details "
+                                "(review dates, owner replies) for the rest of this run")
+                raise ProviderError(self.name, "place page did not render (limited view)")
             await page.wait_for_timeout(800)
             dom = await page.evaluate(PLACE_JS)
             items: list[dict] = []

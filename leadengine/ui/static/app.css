@@ -60,3 +60,7 @@ button.area:hover{border-color:var(--brand)}
 button.area.added{background:#ecfdf5;border-color:#10b981}
 .heat svg{width:100%;height:auto;border-radius:10px}
 .nbadge{background:#ef4444;color:#fff;border-radius:999px;padding:0 7px;font-size:11px;font-weight:700;margin-left:2px}
+.keys{display:flex;flex-direction:column;gap:12px}
+.keyrow{display:grid;grid-template-columns:1fr auto;gap:6px 16px;align-items:center;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.keyrow > div:last-child{grid-column:1 / -1}
+@media(max-width:760px){.keyrow{grid-template-columns:1fr}.keyrow input[type=password]{width:100%!important}}

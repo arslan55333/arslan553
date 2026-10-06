@@ -82,6 +82,9 @@ def test_match_ads():
     assert [a.title for a in match_ads(ads, name="Bobs", domain=None, phone="(214) 555-0101")] == ["Bob's Roofing LLC"]
     assert [a.title for a in match_ads(ads, name="Smith Roofing", domain=None, phone=None)] == ["Smith Roofing & Gutters"]
     assert match_ads(ads, name="Roofing", domain="other.com", phone=None) == []   # one generic word is not a match
+    # real case: a search-ad headline is not a business name
+    real = [SerpAd("search", "Dumpster Rental | Dumpster Rental Company", "aaacarting.com")]
+    assert match_ads(real, name="Dumpster Rental Champs", domain="dumpsterchamps.com", phone="6463496338") == []
     assert name_similarity("Smith Roofing", "Jones Roofing") < 0.8
 
 

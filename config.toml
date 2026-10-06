@@ -72,7 +72,8 @@ shortlist_only = true
 
 # Google Ads detection (Phase 5)
 [ads]
-serp_provider = "playwright"   # playwright (free) | serpapi (1 credit per keyword+city) | none
+serp_provider = "auto"         # auto = free browser, SerpAPI only when Google shows a captcha | playwright | serpapi | none
+paid_fallback_max = 10         # most SerpAPI credits one run may use as captcha fallback
 gtm = true                     # read the site's Google Tag Manager container for hidden AW- tags
 transparency = false           # Ads Transparency Center via SerpAPI (1 credit per business)
 timeout_seconds = 15

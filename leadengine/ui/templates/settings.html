@@ -1,0 +1,44 @@
+{% extends "base.html" %}{% block title %}Settings{% endblock %}{% block body %}
+<h1>Settings</h1>
+<p class="sub">Everything in one place. Keys and proxies are saved in the <code>.env</code> file on <b>your</b> computer only (never uploaded).
+Each <b>Test</b> button uses a free call — it doesn't spend credits.</p>
+{% if saved %}<p class="ok" style="background:#ecfdf5;border:1px solid #a7f3d0;padding:10px 12px;border-radius:8px">✓ Saved ({{ saved }}). Changes are active right away.</p>{% endif %}
+
+<form method="post" action="/settings/keys" class="card" id="keys" autocomplete="off">
+ <h2>API keys</h2>
+ <p class="small muted">Paste a key and press Save. Leave a box empty to keep the saved key. Tick “remove” to delete one.</p>
+ <div class="keys">
+ {% for k in keys %}<div class="keyrow">
+  <div><b>{{ k.label }}</b> {% if env.get(k.env) %}<span class="badge Active">saved</span>{% endif %}
+   <div class="small muted">{{ k.help }}{% if k.url %} · <a href="{{ k.url }}" target="_blank" rel="noopener">get a key</a>{% endif %}</div></div>
+  <div class="row" style="gap:6px;flex-wrap:nowrap">
+   <input name="{{ k.env }}" type="password" placeholder="{{ env.get(k.env) or 'paste key' }}" style="width:260px" autocomplete="new-password">
+   {% if k.test %}<button type="button" class="btn ghost" hx-post="/settings/test/{{ k.test }}" hx-target="#t-{{ k.test }}" hx-swap="innerHTML">Test</button>{% endif %}
+   {% if env.get(k.env) %}<label class="small" style="font-weight:500;margin:0;white-space:nowrap"><input type="checkbox" name="clear_{{ k.env }}" value="1">remove</label>{% endif %}
+  </div>
+  <div class="small" id="t-{{ k.test or loop.index }}"></div></div>{% endfor %}
+ </div>
+ <div style="margin-top:12px"><button class="btn">Save keys</button></div>
+</form>
+
+<form method="post" action="/settings/proxies" class="card" id="proxies" style="margin-top:16px">
+ <h2>Proxies (rotation)</h2>
+ <p class="small muted">One per line: <code>host:port</code>, <code>host:port:user:pass</code> or <code>http://user:pass@host:port</code>.
+ Each browser window uses the next healthy proxy; blocked ones are rested automatically. Residential proxies work best with Google.</p>
+ <textarea name="proxies" rows="5" placeholder="123.45.67.89:8080:user:pass">{{ proxies }}</textarea>
+ <div class="row" style="margin-top:8px"><button class="btn">Save proxies</button>
+  <button type="button" class="btn ghost" hx-post="/settings/test-proxies" hx-target="#proxytest" hx-swap="innerHTML">Test proxies</button></div>
+ <div id="proxytest" style="margin-top:8px"></div>
+</form>
+
+<form method="post" action="/settings/options" class="card" id="options" style="margin-top:16px">
+ <h2>Your details & how the tool works</h2>
+ <div class="grid g2">{% for sec, key, label, kind, extra in options %}{% set name = sec ~ '.' ~ key %}
+  <div><label>{{ label }}</label>
+  {% if kind == 'choice' %}<select name="{{ name }}" style="width:100%">{% for val, text in extra %}<option value="{{ val }}" {{ 'selected' if values[name]|string == val }}>{{ text }}</option>{% endfor %}</select>
+  {% elif kind == 'number' %}<input name="{{ name }}" type="number" value="{{ values[name] }}" style="width:140px">
+  {% else %}<input name="{{ name }}" value="{{ values[name] }}" style="width:100%" placeholder="{{ extra }}">{% endif %}</div>{% endfor %}
+ </div>
+ <div style="margin-top:12px"><button class="btn">Save</button></div>
+</form>
+{% endblock %}

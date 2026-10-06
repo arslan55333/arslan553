@@ -20,6 +20,7 @@ DEFAULT_RULES = {
     "modern_site": 80,           # website score at/above this -> Skip (nothing to sell)
     "reviews_full": 300,         # review count that earns full reputation points
     "require_ads_for_hot": True, # Hot only with proof of ad spend (Active / Likely / LSA)
+    "skip_chains": True,         # national chains / franchises are not redesign prospects
 }
 CONTACTED = {"Emailed", "Replied", "Won", "Lost"}
 
@@ -78,8 +79,10 @@ def _website(b: Business) -> tuple[float | None, str | None, str | None]:
     flags = set(b.website_flags or [])
     if not b.website or "no_website" in flags:
         return 1.0, "no website", None
-    if flags & {"facebook_only", "social_or_directory_only"}:
+    if "facebook_only" in flags:
         return 1.0, "only a Facebook page", None
+    if "social_or_directory_only" in flags:
+        return 1.0, "only a social/directory page, no own website", None
     if flags & {"broken", "parked", "server_default_page"}:
         return 1.0, "website is down/parked", None
     landing = getattr(b, "landing_score", None)
@@ -114,7 +117,7 @@ def _reachability(b: Business, emails_checked: bool = True) -> tuple[float, str 
 
 def score_business(b: Business, *, today: date, website_reasons: list[str] | None = None,
                    lead_status: str | None = None, weights: dict | None = None, rules: dict | None = None,
-                   checked: set[str] | None = None) -> Opportunity:
+                   checked: set[str] | None = None, chain: str | None = None) -> Opportunity:
     """``checked``: which deep checks ran for this lead ({"emails", "website", "ads"}); None = assume all."""
     weights = {**DEFAULT_WEIGHTS, **(weights or {})}
     rules = {**DEFAULT_RULES, **(rules or {})}
@@ -151,6 +154,8 @@ def score_business(b: Business, *, today: date, website_reasons: list[str] | Non
     skip = None
     if b.business_status and "CLOSED" in str(b.business_status).upper():
         skip = "business closed"
+    elif chain and rules.get("skip_chains", True):
+        skip = f"national chain / franchise ({chain})"
     elif lead_status in CONTACTED:
         skip = f"already contacted ({lead_status})"
     elif b.rating is not None and b.rating < rules["min_rating"]:
@@ -174,3 +179,34 @@ def score_business(b: Business, *, today: date, website_reasons: list[str] | Non
     if skip:
         reason = f"skip: {skip}" + (f" ({reason})" if notes else "")
     return Opportunity(score, label, reason[:300], parts, skip)
+
+
+# ── chains / franchises ──────────────────────────────────────────────
+_CHAINS: list[tuple[str, str]] | None = None
+
+
+def _chains() -> list[tuple[str, str]]:
+    global _CHAINS
+    if _CHAINS is None:
+        from pathlib import Path
+        rows = []
+        path = Path(__file__).resolve().parent.parent / "data" / "chains.txt"
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip() and not line.startswith("#"):
+                name, _, dom = (x.strip() for x in line.partition("|"))
+                rows.append((name, dom))
+        _CHAINS = rows
+    return _CHAINS
+
+
+def chain_name(b: Business, domain_cities: dict[str, int] | None = None, *, min_cities: int = 3) -> str | None:
+    """Known national brand (name or domain), or one website used by listings in many different cities."""
+    import re
+    low = re.sub(r"\s+", " ", (b.name or "").lower())
+    dom = (b.domain or "").lower()
+    for name, cdom in _chains():
+        if (cdom and (dom == cdom or dom.endswith("." + cdom))) or re.search(rf"(^|\W){re.escape(name)}(\W|$)", low):
+            return name
+    if dom and domain_cities and domain_cities.get(dom, 0) >= min_cities:
+        return f"{dom} has listings in {domain_cities[dom]} cities"
+    return None

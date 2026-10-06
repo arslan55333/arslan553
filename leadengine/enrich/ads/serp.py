@@ -278,6 +278,9 @@ def match_ads(ads: list[SerpAd], *, name: str, domain: str | None, phone: str | 
             hits.append(ad)
         elif phone_n and ad.phone and normalize_phone(ad.phone) == phone_n:
             hits.append(ad)
-        elif name and name_similarity(name, ad.title) >= 0.8 and len(_tokens(name)) >= 2:
+        elif (ad.kind != "search" and name and name_similarity(name, ad.title) >= 0.8 and len(_tokens(name)) >= 2
+              and not (domain and ad.domain and ad.domain != domain)):
+            # only LSA / map ads carry the business name; a search-ad headline is marketing text
+            # ("Dumpster Rental | Dumpster Rental Company") and must never match by name
             hits.append(ad)
     return hits

@@ -11,5 +11,6 @@
 {% set na = unseen_alerts() %}<a href="/alerts" class="{{ 'active' if p.startswith('/alerts') }}">Alerts{% if na %} <span class="nbadge">{{ na }}</span>{% endif %}</a>
 <a href="/outbox" class="{{ 'active' if p.startswith('/outbox') }}">Outbox</a>
 <a href="/jobs" class="{{ 'active' if p.startswith('/jobs') }}">Jobs</a>
-<a href="/credits" class="{{ 'active' if p.startswith('/credits') }}">Credits</a></nav></header>
+<a href="/credits" class="{{ 'active' if p.startswith('/credits') }}">Credits</a>
+<a href="/settings" class="{{ 'active' if p.startswith('/settings') }}">⚙ Settings</a></nav></header>
 <main>{% block body %}{% endblock %}</main></body></html>

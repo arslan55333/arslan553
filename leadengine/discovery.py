@@ -90,7 +90,7 @@ async def run_adaptive_grid(
                     report.cells_cached += 1
                     return ProviderResult(records=hit[0], exhausted=hit[1], api_calls=0)
             res = await provider.search(cell_query(base, c, cap))
-            if cache is not None:
+            if cache is not None and res.records:           # never checkpoint an empty (possibly blocked) page
                 cache.put(c.key(), res.records, res.exhausted)
             return res
 

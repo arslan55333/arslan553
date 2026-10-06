@@ -6,6 +6,8 @@ without a file on disk.
 
 from __future__ import annotations
 
+import json
+
 import os
 import tomllib
 from dataclasses import dataclass, field
@@ -72,6 +74,7 @@ class Settings:
     llm_keys: dict[str, str] = field(default_factory=dict)
     pagespeed_api_key: str = ""
     openpagerank_api_key: str = ""
+    firecrawl_api_key: str = ""
     alert_webhook_url: str = ""
     deploy_keys: dict[str, str] = field(default_factory=dict)
     outreach_keys: dict[str, str] = field(default_factory=dict)
@@ -102,6 +105,12 @@ class Settings:
 
         cfg_path = Path(env.get("LEADENGINE_CONFIG") or root / "config.toml")
         cfg: dict[str, Any] = tomllib.loads(cfg_path.read_text("utf-8")) if cfg_path.exists() else {}
+        overrides = root / "data" / "settings.json"          # what you changed on the dashboard's Settings page
+        if overrides.exists():
+            try:
+                cfg = _deep_merge(cfg, json.loads(overrides.read_text("utf-8")))
+            except (ValueError, OSError):
+                pass
 
         http_cfg = cfg.get("http", {})
         http = HttpSettings(
@@ -143,6 +152,7 @@ class Settings:
                       "groq": env.get("GROQ_API_KEY", ""), "ollama_url": env.get("OLLAMA_URL", "")},
             pagespeed_api_key=env.get("PAGESPEED_API_KEY", ""),
             openpagerank_api_key=env.get("OPENPAGERANK_API_KEY", ""),
+            firecrawl_api_key=env.get("FIRECRAWL_API_KEY", ""),
             alert_webhook_url=env.get("ALERT_WEBHOOK_URL", ""),
             deploy_keys={"netlify": env.get("NETLIFY_TOKEN", ""), "cloudflare_token": env.get("CLOUDFLARE_API_TOKEN", ""),
                          "cloudflare_account": env.get("CLOUDFLARE_ACCOUNT_ID", "")},
@@ -150,6 +160,13 @@ class Settings:
                            "smtp_password": env.get("OUTREACH_SMTP_PASSWORD", ""),
                            "webhook_url": env.get("OUTREACH_WEBHOOK_URL", "")},
         )
+
+
+def _deep_merge(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
+    out = dict(base)
+    for k, v in (extra or {}).items():
+        out[k] = _deep_merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
 
 
 @lru_cache(maxsize=1)

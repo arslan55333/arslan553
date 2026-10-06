@@ -177,7 +177,9 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
 
     @app.get("/run", response_class=HTMLResponse)
     def run_form(request: Request):
-        return render(request, "run.html", disc=settings.section("discovery"))
+        have = {"playwright": True, "osm": True, "serpapi": bool(settings.serpapi_api_key),
+                "google_places": bool(settings.google_places_api_key)}
+        return render(request, "run.html", disc=settings.section("discovery"), have=have)
 
     @app.post("/run")
     def run_submit(keyword: str = Form(...), zips: str = Form(...), provider: str = Form("playwright"),
@@ -309,6 +311,97 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
         svg = svg_heatmap(grid.points or [], focus, title=f"{grid.keyword} rank map",
                           tiles=bool(settings.section("rank").get("map_tiles", True)))
         return render(request, "rank_detail.html", grid=grid, focus=focus, row=row, biz=biz, svg=svg)
+
+    # ── settings (keys, proxies, options) ────────────────────────────
+    @app.get("/settings", response_class=HTMLResponse)
+    def settings_page(request: Request, saved: str | None = None):
+        from leadengine import settings_store as ss
+
+        env = ss.read_env(settings.root)
+        values = {f"{sec}.{key}": settings.section(sec).get(key, "") for sec, key, *_ in ss.OPTIONS}
+        proxies = "\n".join(x.strip() for x in (env.get("PROXIES", "") or "").split(",") if x.strip())
+        return render(request, "settings.html", keys=ss.KEYS, env={k: ss.mask(v) for k, v in env.items()},
+                      options=ss.OPTIONS, values=values, proxies=proxies, saved=saved)
+
+    @app.post("/settings/keys")
+    async def settings_keys(request: Request):
+        from leadengine import settings_store as ss
+
+        form = await request.form()
+        updates: dict[str, str | None] = {}
+        for k in ss.KEYS:
+            val = str(form.get(k["env"], "")).strip()
+            if form.get("clear_" + k["env"]):
+                updates[k["env"]] = None
+            elif val and not val.startswith("•"):
+                updates[k["env"]] = val
+        if updates:
+            ss.write_env(settings.root, updates)
+            ss.reload_into(settings)
+        return RedirectResponse("/settings?saved=keys#keys", status_code=303)
+
+    @app.post("/settings/proxies")
+    async def settings_proxies(request: Request):
+        from leadengine import settings_store as ss
+
+        form = await request.form()
+        lines = [x.strip() for x in str(form.get("proxies", "")).splitlines() if x.strip()]
+        ss.write_env(settings.root, {"PROXIES": ",".join(lines) if lines else None})
+        ss.reload_into(settings)
+        return RedirectResponse("/settings?saved=proxies#proxies", status_code=303)
+
+    @app.post("/settings/options")
+    async def settings_options(request: Request):
+        from leadengine import settings_store as ss
+
+        form = await request.form()
+        values: dict[str, dict[str, Any]] = {}
+        for sec, key, _label, kind, _extra in ss.OPTIONS:
+            raw = form.get(f"{sec}.{key}")
+            if raw is None:
+                continue
+            raw = str(raw).strip()
+            if kind == "number":
+                if not raw:
+                    continue
+                try:
+                    val: Any = int(float(raw))
+                except ValueError:
+                    continue
+            else:
+                val = raw
+            values.setdefault(sec, {})[key] = val
+        ss.write_overrides(settings.root, values)
+        ss.reload_into(settings)
+        return RedirectResponse("/settings?saved=options#options", status_code=303)
+
+    @app.post("/settings/test/{name}", response_class=HTMLResponse)
+    async def settings_test(name: str):
+        from leadengine import settings_store as ss
+
+        env = ss.read_env(settings.root)
+        key = next((k for k in ss.KEYS if k["test"] == name), None)
+        if key is None:
+            raise HTTPException(404)
+        ok, msg = await ss.test_key(name, env.get(key["env"], ""))
+        cls = "ok" if ok else "warn"
+        return HTMLResponse(f'<span class="{cls}">{"✓" if ok else "✗"} {msg}</span>')
+
+    @app.post("/settings/test-proxies", response_class=HTMLResponse)
+    async def settings_test_proxies():
+        from html import escape as h
+
+        from leadengine import settings_store as ss
+
+        env = ss.read_env(settings.root)
+        lines = [x for x in (env.get("PROXIES", "") or "").split(",") if x.strip()]
+        if not lines:
+            return HTMLResponse('<span class="muted">No proxies saved - the tool connects directly (fine for small runs).</span>')
+        rows = await ss.test_proxies(lines)
+        good = sum(1 for _, ok, _ in rows if ok)
+        items = "".join(f'<li class="{"ok" if ok else "warn"}">{"✓" if ok else "✗"} {h(line.split("@")[-1])} — {h(msg)}</li>'
+                        for line, ok, msg in rows)
+        return HTMLResponse(f"<p><b>{good} of {len(rows)} working</b></p><ul class='clean small'>{items}</ul>")
 
     # ── weekly watch + alerts ─────────────────────────────────────────
     @app.get("/alerts", response_class=HTMLResponse)
