@@ -77,6 +77,7 @@ class Business(Base):
     landing_score: Mapped[int | None] = mapped_column(Integer)      # 0-100, the page their ads send people to
     seo_score: Mapped[int | None] = mapped_column(Integer)          # 0-100 local SEO (on-page + Google profile)
     reputation_score: Mapped[int | None] = mapped_column(Integer)   # 0-100 reviews health (negatives, replies, speed)
+    citation_score: Mapped[int | None] = mapped_column(Integer)     # 0-100 directory coverage + NAP consistency
     meta_ads: Mapped[bool | None] = mapped_column(Boolean)
 
     # Opportunity (Phase 6)

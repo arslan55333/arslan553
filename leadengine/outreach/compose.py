@@ -133,8 +133,10 @@ def template_drafts(f: OutreachFacts, cfg: dict[str, Any], attach: bool = False)
         detailed_parts.append(ads)
     if f.money_line:
         detailed_parts.append(f"{f.money_line[0].upper()}{f.money_line[1:]}.")
-    if f.review_line:
-        detailed_parts.append(f"One more thing I noticed: {f.review_line}.")
+    extra = [x for x in (f.review_line, f.nap_line) if x]
+    if extra:
+        detailed_parts.append("Two more things I noticed: " + "; and ".join(extra) + "." if len(extra) > 1
+                              else f"One more thing I noticed: {extra[0]}.")
     detailed_parts.append(preview + (f" {offer}" if offer else ""))
     detailed_parts.append("Would you be open to a 10-minute call this week?")
     detailed = "\n\n".join(detailed_parts)

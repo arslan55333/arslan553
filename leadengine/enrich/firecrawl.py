@@ -159,6 +159,14 @@ class Firecrawl:
             self._map_cache[host] = links
         return links
 
+    async def search(self, query: str, *, limit: int = 10) -> list[dict[str, Any]] | None:
+        """Web search: [{"url", "title", "description"}] (about 2 credits per 10 results). Any mode but off."""
+        data = await self._post("search", {"query": query, "limit": limit}, max(1, limit // 5))
+        if not data:
+            return None
+        return [{"url": x.get("url"), "title": x.get("title") or "", "description": x.get("description") or ""}
+                for x in data.get("data") or [] if isinstance(x, dict) and x.get("url")]
+
     async def extract_info(self, url: str) -> dict[str, Any] | None:
         """Structured business facts from the homepage (full mode only; JSON extraction ≈ 5 credits)."""
         if not self.can_extract:

@@ -42,7 +42,9 @@
    <li class="muted">at ${{ '{:,.0f}'.format(m.job_value) }} per job, 30% of clicks call, 40% of calls book</li></ul></div>{% endif %}
  {% if g %}<div><div class="stat"><div class="l">Behind the top 3 on</div><div class="n">{{ g.behind }}<span class="small">/{{ g.measured }}</span></div>
   <div class="small muted">vs {{ g.competitors|map(attribute='name')|join(', ') }}</div></div>
-  {% if g.actions %}<ul class="clean small" style="margin-top:8px">{% for a in g.actions %}<li>✓ {{ a }}</li>{% endfor %}</ul>
+  {% if g.actions %}<ul class="clean small" style="margin-top:8px">{% for a in g.actions %}<li>✓ {{ a }}</li>{% endfor %}</ul>{% endif %}
+  {% if g.category_gap %}<div class="small" style="margin-top:6px"><b>Categories the top 3 use that it doesn't:</b> {{ g.category_gap|join(', ') }}</div>{% endif %}
+  {% if g.actions %}
   {% else %}<p class="small muted" style="margin-top:8px">Already ahead of them on everything measured — they win on distance to the searcher, keywords in their business name, or are spam listings. The fix: service + town pages and Google profile activity.</p>{% endif %}</div>{% endif %}
 </div>
 {% if g and g.rows %}<table class="small" style="margin-top:12px"><tr><th>Ranking signal</th><th>{{ b.name }}</th><th>Top-3 average</th><th></th></tr>
@@ -97,6 +99,22 @@
    <div class="muted" style="margin-top:4px">↳ <i>{{ u.reply }}</i></div></td></tr>{% endfor %}</table>{% endif %}
  <p class="small muted" style="margin-top:8px">Read {{ rv.sampled }} reviews via {{ 'SerpAPI' if rv.source == 'serpapi' else 'Google Maps (free)' }}.</p>
  {% else %}<p class="small muted">Negative reviews, which ones have no reply (with a ready reply for each), review speed and what customers complain about.</p>{% endif %}</div>
+{% set ct = enr.citations %}
+<div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between">
+ <h2 style="margin:0">Citations &amp; NAP {% if ct %}<span class="badge {{ 'Hot' if ct.score < 50 else ('Warm' if ct.score < 75 else 'Cold') }}">{{ ct.score }}/100</span>{% endif %}</h2>
+ <form method="post" action="/leads/{{ b.id }}/citations"><button class="btn ghost" title="2 web searches: Firecrawl (~4 credits) or SerpAPI (2 credits)">{{ 'Check again' if ct else 'Check citations' }}</button></form></div>
+ {% if ct %}
+ <p class="small" style="margin:8px 0">Google listing: <b>{{ b.name }}</b> · {{ b.address or 'no address' }} · {{ b.phone or 'no phone' }}</p>
+ <div class="grid g2"><div>{% if ct.issues %}<b class="small">Problems</b><ul class="clean small">{% for i in ct.issues %}<li>{{ i }}</li>{% endfor %}</ul>{% endif %}
+  <p class="small muted">Check by hand (not searchable): {{ ct.manual|join(', ') }}</p></div>
+  <div>{% if ct.positives %}<b class="small">Good</b><ul class="clean small muted">{% for x in ct.positives %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+  {% if ct.missing_core %}<b class="small">Missing important directories</b><div class="chips">{% for d in ct.missing_core %}<span class="chip" style="background:#fef2f2;color:#991b1b">{{ d }}</span>{% endfor %}</div>{% endif %}</div></div>
+ {% if ct.listings %}<table class="small" style="margin-top:10px"><tr><th>Where</th><th>Phone</th><th>ZIP</th><th>Street</th><th>Note</th></tr>
+ {% for l in ct.listings %}<tr><td><a href="{{ l.url }}" target="_blank" rel="noopener">{{ l.site }}</a>{% if l.core %} <span class="badge Cold">key</span>{% endif %}</td>
+  {% for v in [l.phone_ok, l.zip_ok, l.street_ok] %}<td>{{ '✓' if v else ('✗' if v is sameas false else '–') }}</td>{% endfor %}
+  <td>{{ l.issues|join('; ') }}</td></tr>{% endfor %}</table>{% endif %}
+ <p class="small muted" style="margin-top:6px">{{ ct.total }} listings found with {{ ct.queries }} searches ({{ ct.source }}). ✓ = same as Google, ✗ = different, – = not shown in the search snippet.</p>
+ {% else %}<p class="small muted">Where else the business is listed (Yelp, BBB, Facebook, Yellow Pages, Angi …), which important directories are missing, and which show a different phone or address than Google.</p>{% endif %}</div>
 {% set info = enr.site_info %}{% if b.website or info %}
 <div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Website facts</h2>
  <form method="post" action="/leads/{{ b.id }}/site-facts"><button class="btn ghost" title="Firecrawl reads the site with AI (about 5 credits)">{{ 'Read again' if info else 'Read services / owner / years' }} (Firecrawl)</button></form></div>

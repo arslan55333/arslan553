@@ -68,6 +68,7 @@ class OutreachFacts:
     map_points: int | None = None
     review_line: str | None = None      # e.g. "6 negative Google reviews have no reply yet"
     money_line: str | None = None       # ad waste / calls lost to competitors (estimate)
+    nap_line: str | None = None         # e.g. "Yelp still shows your old address (ZIP 11423)"
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -158,6 +159,7 @@ def gather(session: Session, biz: Business, cfg: dict[str, Any], brand: dict[str
     aud = repo.latest_enrichment(biz.id, "audit", fresh_only=False)
     rank = repo.latest_enrichment(biz.id, "rank", fresh_only=False)
     rank_p = (rank.payload or {}) if rank else {}
+    cit = repo.latest_enrichment(biz.id, "citations", fresh_only=False)
     rev = repo.latest_enrichment(biz.id, "reviews", fresh_only=False)
     rev_p = (rev.payload or {}) if rev else {}
     web_p = (web.payload or {}) if web else {}
@@ -202,7 +204,18 @@ def gather(session: Session, biz: Business, cfg: dict[str, Any], brand: dict[str
         map_top3=rank_p.get("top3"), map_points=rank_p.get("points"),
         review_line=review_line(rev_p),
         money_line=_money_line(session, biz),
+        nap_line=nap_line((cit.payload or {}) if cit else {}),
     )
+
+
+def nap_line(c: dict) -> str | None:
+    bad = [x for x in c.get("listings") or [] if x.get("issues") and x.get("directory")]
+    if bad:
+        x = bad[0]
+        return f"your {x['site']} listing {x['issues'][0].split(' — ')[0]} than your Google listing"
+    if c.get("missing_core") and len(c["missing_core"]) >= 3:
+        return f"I couldn't find you on {', '.join(c['missing_core'][:3])}, which Google uses to confirm your details"
+    return None
 
 
 def _money_line(session: Session, biz: Business) -> str | None:

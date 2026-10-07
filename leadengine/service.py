@@ -1237,6 +1237,45 @@ class LeadService:
             rows.append({"id": bid, "name": biz.name, **audit})
         return rows
 
+    async def citation_audits(self, business_ids: list[int], *, refresh: bool = False,
+                              on_progress: Callable[[str], None] | None = None) -> list[dict]:
+        """Citations / NAP check per business (cached 30 days): where it is listed, which important directories
+        are missing, and which listings show a different phone / address. Firecrawl search (~4 credits) or
+        SerpAPI (2 credits)."""
+        from leadengine.enrich.citations import audit_citations
+
+        say = on_progress or (lambda _m: None)
+        fc = self.firecrawl()
+        rows = []
+        for bid in business_ids:
+            with self._sf() as session:
+                repo = Repository(session)
+                biz = repo.get_business(bid)
+                if biz is None:
+                    continue
+                cached = None if refresh else repo.latest_enrichment(bid, "citations")
+                if cached is not None:
+                    rows.append({"id": bid, "name": biz.name, "cached": True, **cached.payload})
+                    continue
+                session.expunge(biz)
+            say(f"  citations: {biz.name}")
+            try:
+                out = await audit_citations(biz, firecrawl=fc, http=self.http, serp_key=self.settings.serpapi_api_key,
+                                            credits=self.credits)
+            except Exception as exc:
+                say(f"    citations check failed: {str(exc)[:100]}")
+                out = None
+            if out is None:
+                rows.append({"id": bid, "name": biz.name, "error": "add a Firecrawl or SerpAPI key for citations"})
+                continue
+            with self._sf() as session:
+                repo = Repository(session)
+                repo.set_enrichment(bid, "citations", out, ttl_days=30, source=out["source"])
+                repo.get_business(bid).citation_score = out["score"]
+                session.commit()
+            rows.append({"id": bid, "name": biz.name, **out})
+        return rows
+
     async def site_info(self, business_ids: list[int], *, refresh: bool = False, explicit: bool = False,
                         on_progress: Callable[[str], None] | None = None) -> int:
         """Firecrawl 'full' mode: services, service areas, owner, years in business from each website (cached).

@@ -207,7 +207,17 @@ def competitor_gap(session: Session, b: Business, keyword: str | None, rank: dic
         if behind:
             n = max(1, round(avg - (mine or 0)))
             actions.append(action.format(n=n, v=round(avg, 1)))
-    return {"competitors": [{"id": o.id, "name": o.name, "rating": o.rating, "reviews": o.review_count,
+    mine = {c.lower() for c in b.categories or []}
+    counts: dict[str, int] = {}
+    for o in top:
+        for c in {c for c in o.categories or []}:
+            counts[c] = counts.get(c, 0) + 1
+    need = 2 if len(top) >= 2 else 1
+    category_gap = [c for c, n in sorted(counts.items(), key=lambda kv: -kv[1]) if n >= need and c.lower() not in mine][:5]
+    for c in category_gap[:2]:
+        actions.insert(0, f"add the Google category \"{c}\" (the top businesses use it)")
+    return {"category_gap": category_gap,
+            "competitors": [{"id": o.id, "name": o.name, "rating": o.rating, "reviews": o.review_count,
                              "website": o.website} for o in top],
             "rows": rows, "actions": actions[:6], "behind": sum(r["behind"] for r in rows), "measured": len(rows)}
 

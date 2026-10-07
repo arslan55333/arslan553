@@ -568,6 +568,14 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
         job_id = jobs.enqueue(sf, "enrich", {"ids": [business_id], "kinds": ["reviews"], "refresh": True})
         return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
+    @app.post("/leads/{business_id}/citations")
+    def lead_citations(business_id: int):
+        if not (settings.firecrawl_api_key or settings.serpapi_api_key):
+            return RedirectResponse(f"/leads/{business_id}?error=" + "add a Firecrawl or SerpAPI key in Settings first",
+                                    status_code=303)
+        job_id = jobs.enqueue(sf, "enrich", {"ids": [business_id], "kinds": ["citations"], "refresh": True})
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
     @app.post("/leads/{business_id}/site-facts")
     def lead_site_facts(business_id: int):
         if not settings.firecrawl_api_key:
@@ -584,7 +592,7 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             repo = Repository(s)
             enr = {k: (e.payload if (e := repo.latest_enrichment(business_id, k, fresh_only=False)) else None)
                    for k in ("website", "ads", "emails", "maps_activity", "landing", "rank", "seo", "audit", "site_info",
-                             "reviews")}
+                             "reviews", "citations")}
             emails = list(s.scalars(select(Email).where(Email.business_id == business_id)
                                     .order_by(Email.is_guess, Email.confidence.desc().nulls_last())))
             status = crm.current_status(s, business_id)

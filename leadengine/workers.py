@@ -100,6 +100,9 @@ def make_handlers(settings: Settings, sf: sessionmaker[Session]) -> dict[str, Ha
                     elif kind == "reviews":
                         rows = await service.review_audits(ids, refresh=bool(ctx.params.get("refresh")), on_progress=ctx.log)
                         out["reviews_audited"] = sum(1 for r in rows if not r.get("error"))
+                    elif kind == "citations":
+                        rows = await service.citation_audits(ids, refresh=bool(ctx.params.get("refresh")), on_progress=ctx.log)
+                        out["citations_checked"] = sum(1 for r in rows if not r.get("error"))
                     elif kind == "site_info":
                         out["site_facts"] = await service.site_info(ids, refresh=bool(ctx.params.get("refresh")),
                                                                     explicit=bool(ctx.params.get("kinds")),

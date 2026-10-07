@@ -81,6 +81,11 @@ the #1 spot gets about <b>{{ m.calls_top }}</b>. At about ${{ '{:,.0f}'.format(m
 <td>{{ r.you if r.you is not none else '–' }}{{ r.unit if r.you is not none }}{% if r.behind %} <b style="color:var(--bad)">↓</b>{% endif %}</td><td>{{ r.top3 }}{{ r.unit }}</td></tr>{% endfor %}</table>
 {% if g.actions %}<p><b>To catch up:</b> {{ g.actions|join('; ') }}.</p>{% endif %}{% endif %}
 <p class="note">Estimates from typical local-search click rates (top map spot ≈ 18% of clicks, 30% of clicks call, 40% of calls book) and industry averages for your trade.</p></section>{% endif %}
+{% if citations %}<section class="card"><h2>Your business listings across the web {% if citations.score is not none %}<span class="pill">{{ citations.score }}/100</span>{% endif %}</h2>
+<p>Google checks that your <b>name, address and phone</b> are the same on Yelp, BBB, Facebook and other directories. Mismatches
+ (an old address or phone) lower trust — and send real customers to the wrong number.</p>
+<div class="grid2"><div><div class="lbl">Fix first</div><ul class="issues">{% for i in (citations.issues or [])[:6] %}<li>{{ i }}</li>{% endfor %}</ul></div>
+<div><div class="lbl">Working</div><ul class="issues">{% for x in citations.positives or [] %}<li>{{ x }}</li>{% endfor %}</ul></div></div></section>{% endif %}
 {% if reviews %}<section class="card"><h2>Your Google reviews {% if reviews.score is not none %}<span class="pill">{{ reviews.score }}/100</span>{% endif %}</h2>
 <p>{{ reviews.rating or '–' }}★ from {{ reviews.total or '?' }} reviews · {{ reviews.negative }}{{ '' if reviews.negative_exact else '+' }} negative (1–2★) ·
  you replied to {{ reviews.reply_rate if reviews.reply_rate is not none else '?' }}% of recent reviews{% if reviews.last_review_days is not none %} · last review {{ reviews.last_review_days }} days ago{% endif %}</p>
