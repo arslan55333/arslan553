@@ -26,7 +26,7 @@ from leadengine.preview import deploy as deployers
 from leadengine.preview.content import gather_facts, make_copy
 
 log = get_logger("preview")
-STYLES = ("clean", "bold", "warm")
+STYLES = ("pro", "clean", "bold", "warm")      # pro = the full premium landing page (default)
 _env = Environment(loader=FileSystemLoader(str(Path(__file__).parent / "templates")),
                    autoescape=select_autoescape(["html"]))
 
@@ -44,10 +44,32 @@ def slugify(text: str, max_len: int = 40) -> str:
 def pick_style(b: Business, requested: str | None) -> str:
     if requested in STYLES:
         return requested
-    return STYLES[b.id % len(STYLES)]  # spread styles across leads
+    if requested == "rotate":
+        return STYLES[1:][b.id % 3]       # the three simple one-page styles, spread across leads
+    return "pro"
 
 
-def render_page(facts, copy, style: str, brand: dict[str, str]) -> str:
+def schema_ld(facts, copy) -> str:
+    """LocalBusiness + FAQPage JSON-LD (what a real site should have; also shows the owner we know SEO)."""
+    import json
+
+    biz = {"@context": "https://schema.org", "@type": "LocalBusiness", "name": facts.name,
+           "telephone": facts.phone, "address": facts.address, "areaServed": facts.service_area or None}
+    if facts.rating and facts.review_count:
+        biz["aggregateRating"] = {"@type": "AggregateRating", "ratingValue": facts.rating,
+                                  "reviewCount": facts.review_count}
+    faq = {"@context": "https://schema.org", "@type": "FAQPage",
+           "mainEntity": [{"@type": "Question", "name": q["q"], "acceptedAnswer": {"@type": "Answer", "text": q["a"]}}
+                          for q in copy.faq]}
+    data = [{k: v for k, v in biz.items() if v is not None}, faq]
+    return json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+
+
+def render_page(facts, copy, style: str, brand: dict[str, str], current_shot: str | None = None) -> str:
+    if style == "pro":
+        trade_title = re.sub(r"\s+(services?|company|companies|contractors?)$", "", facts.category, flags=re.I)
+        return _env.get_template("pro.html").render(f=facts, c=copy, brand=brand, ld=schema_ld(facts, copy),
+                                                    current_shot=current_shot, trade_title=trade_title)
     return _env.get_template("page.html").render(f=facts, c=copy, style=style, brand=brand)
 
 
@@ -67,15 +89,24 @@ class PreviewBuilder:
                 "email": self.cfg.get("brand_email", "")}
 
     async def build(self, b: Business, activity: dict[str, Any] | None, *, style: str | None = None,
-                    deploy: bool | None = None) -> dict[str, Any]:
-        facts = gather_facts(b, activity)
+                    deploy: bool | None = None, extras: dict[str, Any] | None = None) -> dict[str, Any]:
+        import shutil
+
+        extras = extras or {}
+        facts = gather_facts(b, activity, site_info=extras.get("site_info"), reviews_audit=extras.get("reviews"),
+                             website=extras.get("website"), keyword=extras.get("keyword"))
         copy = await make_copy(facts, self.llm)
         style = pick_style(b, style or self.cfg.get("style"))
         slug = f"{slugify(b.name)}-{slugify(b.city or '', 20)}".strip("-") + f"-{b.id}"
         folder = self.out_dir / slug
         site = folder / "site"
         site.mkdir(parents=True, exist_ok=True)
-        (site / "index.html").write_text(render_page(facts, copy, style, self.brand), encoding="utf-8", newline="\n")
+        shot = None
+        if style == "pro" and facts.current_screenshot and Path(facts.current_screenshot).is_file():
+            shutil.copyfile(facts.current_screenshot, site / "current.jpg")    # "your current homepage" in the notes
+            shot = "current.jpg"
+        (site / "index.html").write_text(render_page(facts, copy, style, self.brand, shot), encoding="utf-8",
+                                         newline="\n")
         (site / "robots.txt").write_text(ROBOTS, encoding="utf-8", newline="\n")
         (site / "_headers").write_text(HEADERS, encoding="utf-8", newline="\n")
         payload: dict[str, Any] = {"slug": slug, "style": style, "path": str(site / "index.html"),

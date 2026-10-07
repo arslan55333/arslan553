@@ -173,7 +173,20 @@ def analyze(*, newest: list[dict], lowest: list[dict], histogram: dict[int, int]
         "score": max(0, min(100, round(score))),
         "issues": [t for _, t in sorted(issues, key=lambda x: -x[0])], "positives": positives,
         "sampled": len(sample),
+        "good_reviews": good_reviews(newest or []),
     }
+
+
+def good_reviews(reviews: list[dict], limit: int = 4) -> list[dict[str, Any]]:
+    """Short 4-5★ quotes for the preview page, author shortened to "First L."."""
+    out = []
+    for r in reviews:
+        text = (r.get("text") or "").strip()
+        if (r.get("rating") or 0) >= 4 and 40 <= len(text) <= 500:
+            parts = (r.get("author") or "").split()
+            name = f"{parts[0]} {parts[-1][0]}." if len(parts) >= 2 else (parts[0] if parts else "Google reviewer")
+            out.append({"text": text, "rating": r.get("rating"), "author": name})
+    return out[:limit]
 
 
 # ── SerpAPI fallback (1 credit per call) ─────────────────────────────

@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>{{ c.headline }} | {{ f.name }} — concept by {{ brand.name }}</title>
+<meta name="description" content="Website concept prepared by {{ brand.name }} for {{ f.name }}. Not the official website.">
+{% set th = {
+  "blue": ("#1d4ed8", "#1e3a8a", "#eff6ff"), "teal": ("#0f766e", "#134e4a", "#f0fdfa"),
+  "red": ("#b91c1c", "#1f2937", "#fef2f2"), "green": ("#15803d", "#14532d", "#f0fdf4"),
+  "amber": ("#b45309", "#1c1917", "#fffbeb"), "violet": ("#6d28d9", "#2e1065", "#f5f3ff"),
+  "slate": ("#334155", "#0f172a", "#f8fafc"), "indigo": ("#4338ca", "#1e1b4b", "#eef2ff")}[f.theme] %}
+<style>
+:root{--brand:{{ th[0] }};--deep:{{ th[1] }};--tint:{{ th[2] }};--ink:#0f172a;--muted:#475569;--line:#e2e8f0;--gold:#f59e0b;
+--r:18px;--shadow:0 18px 40px -18px rgba(15,23,42,.35)}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;font:16px/1.6 "Inter",system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:#fff;-webkit-font-smoothing:antialiased}
+a{color:inherit}img{max-width:100%;display:block}
+.wrap{max-width:1180px;margin:0 auto;padding:0 20px}
+.concept{background:#0b1020;color:#e5e7eb;font-size:13px;padding:8px 14px;text-align:center}
+.concept b{color:#fbbf24}.concept button{margin-left:8px;background:#fbbf24;color:#111;border:0;border-radius:999px;padding:3px 10px;font-weight:700;cursor:pointer;font:inherit;font-size:12px}
+header.top{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.92);backdrop-filter:saturate(1.6) blur(10px);border-bottom:1px solid var(--line)}
+header.top .wrap{display:flex;align-items:center;justify-content:space-between;gap:16px;height:68px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px;letter-spacing:-.3px;text-decoration:none}
+.logo .mark{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--brand),var(--deep));color:#fff;display:grid;place-items:center;font-size:16px}
+nav.menu{display:none;gap:22px;font-weight:600;font-size:15px}nav.menu a{text-decoration:none;color:var(--muted)}nav.menu a:hover{color:var(--ink)}
+@media(min-width:980px){nav.menu{display:flex}}
+.callw{display:none}@media(max-width:620px){header.top .num{display:none}header.top .callw{display:inline}.logo{font-size:16px}}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:12px;padding:13px 20px;font-weight:700;text-decoration:none;border:0;cursor:pointer;font-size:16px;transition:transform .15s,filter .15s}
+.btn:hover{transform:translateY(-1px);filter:brightness(1.06)}
+.btn-brand{background:var(--brand);color:#fff;box-shadow:0 10px 22px -10px var(--brand)}
+.btn-light{background:#fff;color:var(--deep)}.btn-line{border:2px solid rgba(255,255,255,.5);color:#fff;background:transparent}
+.hero{background:radial-gradient(1200px 600px at 85% -10%,rgba(255,255,255,.14),transparent 60%),linear-gradient(140deg,var(--deep),var(--brand));color:#fff;position:relative;overflow:hidden}
+.hero .wrap{display:grid;gap:36px;padding:56px 20px 64px}
+@media(min-width:980px){.hero .wrap{grid-template-columns:1.15fr .85fr;align-items:center;padding:80px 20px 88px}}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:6px 14px;font-size:14px;font-weight:600}
+.hero h1{font-size:clamp(34px,5.4vw,60px);line-height:1.04;letter-spacing:-1.5px;margin:18px 0 14px}
+.hero p.lead{font-size:clamp(17px,2vw,20px);opacity:.9;margin:0 0 26px;max-width:620px}
+.hero .actions{display:flex;flex-wrap:wrap;gap:12px}
+.trust{display:flex;flex-wrap:wrap;gap:18px;margin-top:28px;font-size:14px;font-weight:600;opacity:.95}
+.trust span{display:inline-flex;align-items:center;gap:6px}
+.stars{color:var(--gold);letter-spacing:1px}
+.quote-card{background:#fff;color:var(--ink);border-radius:var(--r);padding:26px;box-shadow:0 30px 60px -20px rgba(0,0,0,.45)}
+.quote-card h2{font-size:22px;margin:0 0 4px;letter-spacing:-.4px}.quote-card p{margin:0 0 16px;color:var(--muted);font-size:15px}
+form.q{display:grid;gap:10px}form.q input,form.q select,form.q textarea{font:inherit;font-size:15px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;width:100%;background:#f8fafc}
+form.q input:focus,form.q select:focus,form.q textarea:focus{outline:2px solid var(--brand);background:#fff}
+.demo{display:none;background:#fef3c7;color:#78350f;border-radius:10px;padding:10px 12px;font-size:14px;font-weight:600}
+.small{font-size:13px;color:var(--muted)}
+.strip{background:var(--tint);border-bottom:1px solid var(--line)}
+.strip .wrap{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;padding:22px 20px}
+@media(min-width:820px){.strip .wrap{grid-template-columns:repeat(4,1fr)}}
+.strip .it{display:flex;gap:12px;align-items:center;font-weight:700;font-size:15px}.strip .it small{display:block;font-weight:500;color:var(--muted);font-size:13px}
+.ic{width:42px;height:42px;flex:none;border-radius:12px;background:#fff;color:var(--brand);display:grid;place-items:center;box-shadow:0 6px 14px -8px rgba(15,23,42,.4)}
+section{padding:76px 0}section.tint{background:var(--tint)}
+.kicker{color:var(--brand);font-weight:800;text-transform:uppercase;font-size:13px;letter-spacing:1.4px}
+h2.h{font-size:clamp(28px,3.6vw,42px);line-height:1.1;letter-spacing:-1px;margin:8px 0 12px}
+.sub{color:var(--muted);margin:0 0 34px;max-width:680px;font-size:17px}
+.grid{display:grid;gap:20px}
+@media(min-width:760px){.g2{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}}
+.card{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:26px;box-shadow:var(--shadow)}
+.svc h3{margin:14px 0 6px;font-size:19px;letter-spacing:-.2px}.svc p{margin:0 0 14px;color:var(--muted)}.svc a{font-weight:700;color:var(--brand);text-decoration:none}
+.svc .ic{background:var(--tint)}
+.steps{counter-reset:s}.step{position:relative;padding-left:62px}.step:before{counter-increment:s;content:counter(s);position:absolute;left:0;top:0;width:44px;height:44px;border-radius:50%;background:var(--brand);color:#fff;display:grid;place-items:center;font-weight:800;font-size:18px}
+.step h3{margin:6px 0 4px}.step p{margin:0;color:var(--muted)}
+.rv{display:flex;flex-direction:column;gap:12px}.rv p{margin:0;font-size:16.5px}.rv footer{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:14px;margin-top:auto}
+.avatar{width:36px;height:36px;border-radius:50%;background:var(--tint);color:var(--brand);display:grid;place-items:center;font-weight:800}
+.gscore{display:flex;align-items:center;gap:18px;margin-bottom:28px}.gscore .big{font-size:52px;font-weight:800;letter-spacing:-2px;line-height:1}
+.chips{display:flex;flex-wrap:wrap;gap:10px}.chip{background:#fff;border:1px solid var(--line);border-radius:999px;padding:9px 16px;font-weight:600;font-size:15px}
+.map{border:0;width:100%;height:340px;border-radius:var(--r);box-shadow:var(--shadow)}
+table.hours{width:100%;border-collapse:collapse;font-size:15px}table.hours td{padding:8px 0;border-bottom:1px solid var(--line)}table.hours td:last-child{text-align:right;color:var(--muted)}
+details{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:12px}
+summary{cursor:pointer;font-weight:700;list-style:none;display:flex;justify-content:space-between;gap:10px}summary:after{content:"+";color:var(--brand);font-size:22px;line-height:1}
+details[open] summary:after{content:"–"}details p{color:var(--muted);margin:10px 0 0}
+.offer{display:flex;gap:10px;align-items:center;background:#fff;border:2px dashed var(--brand);border-radius:14px;padding:14px 18px;font-weight:700}
+.band{background:linear-gradient(135deg,var(--brand),var(--deep));color:#fff;border-radius:24px;padding:44px 28px;text-align:center;box-shadow:var(--shadow)}
+.band h2{font-size:clamp(26px,3.4vw,38px);margin:0 0 10px;letter-spacing:-.8px}.band p{opacity:.9;margin:0 0 22px}
+footer.site{background:#0b1020;color:#cbd5e1;padding:48px 0 110px;font-size:14px}footer.site a{color:#fff}
+footer.site .cols{display:grid;gap:24px}@media(min-width:760px){footer.site .cols{grid-template-columns:2fr 1fr 1fr}}
+footer.site .disc{border-top:1px solid #1f2937;margin-top:28px;padding-top:18px;color:#94a3b8}
+.mbar{position:fixed;left:0;right:0;bottom:0;z-index:40;display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px;background:#fff;border-top:1px solid var(--line);box-shadow:0 -8px 20px rgba(15,23,42,.08)}
+@media(min-width:900px){.mbar{display:none}footer.site{padding-bottom:48px}}
+.notes{position:fixed;right:18px;bottom:84px;z-index:50;width:min(380px,calc(100vw - 36px));background:#0b1020;color:#e5e7eb;border-radius:18px;padding:20px;box-shadow:0 30px 60px -10px rgba(0,0,0,.5);font-size:14px}
+.notes h3{margin:0 0 4px;color:#fbbf24;font-size:16px}.notes ul{margin:10px 0 0;padding-left:18px}.notes li{margin:6px 0}
+.notes .x{position:absolute;right:12px;top:10px;background:none;border:0;color:#94a3b8;font-size:20px;cursor:pointer}
+.notes .score{display:flex;gap:12px;margin-top:10px}.notes .score div{flex:1;background:#111827;border-radius:12px;padding:10px;text-align:center}
+.notes .score b{display:block;font-size:22px}.notes img{border-radius:10px;margin-top:10px;max-height:150px;object-fit:cover;object-position:top;width:100%}
+@media(min-width:900px){.notes{bottom:20px}}
+</style>
+{% if ld %}<script type="application/ld+json">{{ ld|safe }}</script>{% endif %}
+</head>
+<body>
+{% macro icon(name) %}{% set paths = {
+ "phone": "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z",
+ "star": "M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z",
+ "clock": "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2",
+ "shield": "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
+ "pin": "M12 22s7-7.4 7-12a7 7 0 1 0-14 0c0 4.6 7 12 7 12zM12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z",
+ "tag": "M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8zM7 7h.01",
+ "check": "M20 6 9 17l-5-5",
+ "tool": "M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"} %}
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ paths[name] }}"/></svg>{% endmacro %}
+
+<div class="concept" role="note"><b>Website concept</b> prepared for {{ f.name }} by {{ brand.name }} — not the official {{ f.name }} website.
+ <button type="button" onclick="document.getElementById('notes').hidden=false">What's improved?</button></div>
+
+<header class="top"><div class="wrap">
+ <a class="logo" href="#"><span class="mark">{{ f.name[:1] }}</span>{{ f.name }}</a>
+ <nav class="menu"><a href="#services">Services</a><a href="#reviews">Reviews</a><a href="#areas">Areas</a><a href="#faq">FAQ</a></nav>
+ {% if f.phone_href %}<a class="btn btn-brand" href="{{ f.phone_href }}">{{ icon('phone') }}<span class="num">{{ f.phone }}</span><span class="callw">Call</span></a>{% else %}<a class="btn btn-brand" href="#quote">{{ c.cta }}</a>{% endif %}
+</div></header>
+
+<div class="hero"><div class="wrap">
+ <div>
+  <span class="eyebrow">{{ icon('pin') }} {{ f.category }}{% if f.city %} in {{ f.city }}, {{ f.state }}{% endif %}</span>
+  <h1>{{ c.headline }}</h1>
+  <p class="lead">{{ c.subheadline }}</p>
+  <div class="actions">
+   {% if f.phone_href %}<a class="btn btn-light" href="{{ f.phone_href }}">{{ icon('phone') }} Call {{ f.phone }}</a>{% endif %}
+   <a class="btn btn-line" href="#quote">{{ c.cta }}</a>
+  </div>
+  <div class="trust">
+   {% if f.rating and f.review_count %}<span><span class="stars">★★★★★</span> {{ '%.1f'|format(f.rating) }} · {{ f.review_count }} Google reviews</span>{% endif %}
+   {% if f.founded_year %}<span>{{ icon('shield') }} Since {{ f.founded_year }}</span>{% endif %}
+   {% if f.license %}<span>{{ icon('shield') }} License {{ f.license }}</span>{% endif %}
+   <span>{{ icon('clock') }} Fast response</span>
+  </div>
+ </div>
+ <div class="quote-card" id="quote">
+  <h2>{{ c.cta }}</h2><p>Tell us what you need — we reply fast.</p>
+  <form class="q" onsubmit="event.preventDefault();this.querySelector('.demo').style.display='block'">
+   <input placeholder="Full name" autocomplete="off"><input placeholder="Phone number" autocomplete="off">
+   <select>{% for s in c.services %}<option>{{ s.name }}</option>{% endfor %}<option>Something else</option></select>
+   <input placeholder="ZIP code" autocomplete="off">
+   <button class="btn btn-brand" type="submit">{{ c.cta }} →</button>
+   <div class="demo">Concept only — this form doesn't send anything yet.</div>
+   <div class="small">No obligation. {% if f.phone %}Or call <b>{{ f.phone }}</b>.{% endif %}</div>
+  </form>
+ </div>
+</div></div>
+
+<div class="strip"><div class="wrap">
+ <div class="it"><span class="ic">{{ icon('star') }}</span><div>{{ ('%.1f'|format(f.rating) ~ ' stars') if f.rating else 'Real reviews' }}<small>{{ f.review_count or 'Local' }} Google reviews</small></div></div>
+ <div class="it"><span class="ic">{{ icon('clock') }}</span><div>Quick response<small>Call or request online</small></div></div>
+ <div class="it"><span class="ic">{{ icon('tag') }}</span><div>Clear quotes<small>Know the price upfront</small></div></div>
+ <div class="it"><span class="ic">{{ icon('pin') }}</span><div>Local team<small>{{ f.city or 'Your area' }} & nearby</small></div></div>
+</div></div>
+
+<section id="services"><div class="wrap">
+ <div class="kicker">Services</div><h2 class="h">{{ trade_title }} services{% if f.city %} in {{ f.city }}{% endif %}</h2><p class="sub">{{ c.about }}</p>
+ <div class="grid g3">{% for s in c.services %}<div class="card svc"><span class="ic">{{ icon('tool') }}</span><h3>{{ s.name }}</h3><p>{{ s.blurb }}</p><a href="#quote">Get a quote →</a></div>{% endfor %}</div>
+ {% if f.offers %}<div class="grid g2" style="margin-top:22px">{% for o in f.offers %}<div class="offer">{{ icon('tag') }} {{ o }}</div>{% endfor %}</div>{% endif %}
+</div></section>
+
+<section class="tint"><div class="wrap grid g2" style="align-items:center;gap:40px">
+ <div><div class="kicker">How it works</div><h2 class="h">Booked in three simple steps</h2><p class="sub">No back-and-forth. You know the plan and the price before we start.</p>
+  {% if f.phone_href %}<a class="btn btn-brand" href="{{ f.phone_href }}">{{ icon('phone') }} Call now</a>{% endif %}</div>
+ <div class="grid steps" style="gap:26px">
+  <div class="step"><h3>Call or send the form</h3><p>Tell us what you need and where — it takes a minute.</p></div>
+  <div class="step"><h3>Get a clear quote</h3><p>We confirm the details and the price upfront.</p></div>
+  <div class="step"><h3>We get it done</h3><p>On time, cleaned up, and done right.</p></div>
+ </div>
+</div></section>
+
+{% if f.reviews %}<section id="reviews"><div class="wrap">
+ <div class="kicker">Reviews</div><h2 class="h">What {{ f.city or 'local' }} customers say</h2>
+ {% if f.rating and f.review_count %}<div class="gscore"><div class="big">{{ '%.1f'|format(f.rating) }}</div><div><div class="stars" style="font-size:22px">★★★★★</div><div class="small">Based on {{ f.review_count }} Google reviews</div></div></div>{% endif %}
+ <div class="grid g3">{% for r in f.reviews %}<blockquote class="card rv" style="margin:0"><span class="stars">{{ '★' * (r.rating|int) }}</span>
+  <p>“{{ r.text|truncate(260) }}”</p><footer><span class="avatar">{{ (r.author or 'G')[:1] }}</span>{{ r.author }} · Google</footer></blockquote>{% endfor %}</div>
+</div></section>{% endif %}
+
+<section class="tint" id="areas"><div class="wrap grid g2" style="gap:36px">
+ <div><div class="kicker">Service area</div><h2 class="h">Serving {{ f.city or 'your area' }} and nearby towns</h2>
+  <p class="sub">Need {{ f.category|lower }} near you? We cover:</p>
+  <div class="chips">{% for a in f.service_area %}<span class="chip">{{ a }}</span>{% endfor %}</div>
+  {% if f.hours %}<h3 style="margin:30px 0 8px">Hours</h3><table class="hours">{% for day, h in f.hours %}<tr><td>{{ day }}</td><td>{{ h }}</td></tr>{% endfor %}</table>{% endif %}</div>
+ <iframe class="map" loading="lazy" referrerpolicy="no-referrer" title="Map"
+  src="https://www.google.com/maps?q={{ (f.name ~ ' ' ~ (f.address or (f.city ~ ' ' ~ f.state)))|urlencode }}&output=embed"></iframe>
+</div></section>
+
+<section id="faq"><div class="wrap" style="max-width:860px">
+ <div class="kicker">FAQ</div><h2 class="h">Questions, answered</h2><p class="sub">Quick answers before you call.</p>
+ {% for q in c.faq %}<details><summary>{{ q.q }}</summary><p>{{ q.a }}</p></details>{% endfor %}
+</div></section>
+
+<section style="padding-top:0"><div class="wrap"><div class="band">
+ <h2>Ready to get started?</h2><p>Serving {{ f.service_area[:4]|join(', ') or f.city }}. Call now or request a quote in a minute.</p>
+ <div class="actions" style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+  {% if f.phone_href %}<a class="btn btn-light" href="{{ f.phone_href }}">{{ icon('phone') }} {{ f.phone }}</a>{% endif %}<a class="btn btn-line" href="#quote">{{ c.cta }}</a></div>
+</div></div></section>
+
+<footer class="site"><div class="wrap">
+ <div class="cols">
+  <div><div class="logo" style="color:#fff"><span class="mark">{{ f.name[:1] }}</span>{{ f.name }}</div>
+   <p>{{ f.category }}{% if f.city %} in {{ f.city }}, {{ f.state }}{% endif %}.{% if f.address %}<br>{{ f.address }}{% endif %}{% if f.phone %}<br>{{ f.phone }}{% endif %}</p></div>
+  <div><b style="color:#fff">Services</b><p>{% for s in c.services[:5] %}{{ s.name }}<br>{% endfor %}</p></div>
+  <div><b style="color:#fff">Areas</b><p>{% for a in f.service_area[:6] %}{{ a }}<br>{% endfor %}</p></div>
+ </div>
+ <div class="disc">Website concept prepared by {% if brand.url %}<a href="{{ brand.url }}">{{ brand.name }}</a>{% else %}{{ brand.name }}{% endif %} for {{ f.name }}.
+  Not affiliated with or endorsed by {{ f.name }}, and not their official website. Reviews are quoted from public Google reviews.
+  {% if brand.email %}Questions: {{ brand.email }}.{% endif %}</div>
+</div></footer>
+
+<div class="mbar">{% if f.phone_href %}<a class="btn btn-brand" href="{{ f.phone_href }}">{{ icon('phone') }} Call</a>{% endif %}<a class="btn" style="background:var(--tint);color:var(--deep)" href="#quote">Free quote</a></div>
+
+<aside class="notes" id="notes" hidden>
+ <button class="x" type="button" onclick="this.parentElement.hidden=true" aria-label="Close">×</button>
+ <h3>What this concept fixes</h3>
+ <div>For {{ f.name }}{% if f.current_site %} — compared with your current site{% endif %}:</div>
+ {% if f.current_score is not none or f.current_speed is not none %}<div class="score">
+  {% if f.current_score is not none %}<div><span class="small" style="color:#94a3b8">Current site score</span><b style="color:#f87171">{{ f.current_score }}/100</b></div>{% endif %}
+  {% if f.current_speed is not none %}<div><span class="small" style="color:#94a3b8">Mobile speed now</span><b style="color:#f87171">{{ f.current_speed }}/100</b></div>{% endif %}
+ </div>{% endif %}
+ <ul>{% for i in f.improvements %}<li>{{ i }}</li>{% endfor %}</ul>
+ {% if current_shot %}<div class="small" style="color:#94a3b8;margin-top:8px">Your current homepage:</div><img src="{{ current_shot }}" alt="current homepage">{% endif %}
+</aside>
+</body>
+</html>

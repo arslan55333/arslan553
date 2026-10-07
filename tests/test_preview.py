@@ -157,3 +157,34 @@ def test_cloudflare_deploy_creates_project_then_retries(tmp_path):
     url = run(deployers.deploy_cloudflare(tmp_path, "preview-acme", api_token="t", account_id="a", runner=runner))
     assert url == "https://preview-acme.pages.dev"
     assert "create" in seen[1] and seen[2][-5:-3] == ["--project-name", "preview-acme"]
+
+
+def test_pro_page_uses_real_site_facts_schema_and_notes():
+    import json
+
+    b = make_biz(website="https://bobseptic.com", domain="bobseptic.com", website_score=34,
+                 address="1 Main St, Dallas, TX 75201", name='Bob <script>x</script> Septic')
+    info = {"services": ["Septic pumping", "Drain cleaning", "Grease traps"], "service_areas": ["Garland", "Mesquite"],
+            "founded_year": 1998, "offers": ["Free Quote", "Same-Day Service"], "license_number": "TX-12345"}
+    web = {"html": {"viewport": True, "tel_links": 0, "forms": 0, "reviews_section": False},
+           "pagespeed": {"performance": 23}}
+    audit = {"good_reviews": [{"text": "Pumped our tank in an hour and left it spotless. Fair price too!",
+                               "rating": 5, "author": "Ann B."}]}
+    f = gather_facts(b, ACTIVITY, site_info=info, reviews_audit=audit, website=web, keyword="septic pumping")
+    assert f.services[0] == "Septic pumping" and "Garland" in f.service_area and f.founded_year == 1998
+    assert len(f.reviews) == 2 and f.current_speed == 23 and any("23/100" in i for i in f.improvements)
+    c = template_copy(f)
+    assert [s["name"] for s in c.services] == info["services"]
+    assert any(q["q"] == "Are quotes free?" for q in c.faq) and any("1998" in q["a"] for q in c.faq)
+    html = render_page(f, c, "pro", {"name": "Arslan Web Studio", "url": "", "email": "a@b.com"})
+    assert "<script>x</script>" not in html and "Since 1998" in html and "License TX-12345" in html
+    assert '<aside class="notes" id="notes" hidden>' in html and "Septic system services in Dallas" in html
+    ld = json.loads(re.search(r'<script type="application/ld\+json">(.+?)</script>', html, re.S).group(1))
+    assert ld[0]["@type"] == "LocalBusiness" and ld[0]["aggregateRating"]["reviewCount"] == 212
+    assert ld[1]["mainEntity"][0]["@type"] == "Question" and "Free Quote" in html and "Pumped our tank" in html
+
+
+def test_pro_is_default_style():
+    from leadengine.preview.builder import pick_style
+    assert pick_style(make_biz(), None) == "pro" and pick_style(make_biz(), "auto") == "pro"
+    assert pick_style(make_biz(), "rotate") in ("clean", "bold", "warm") and pick_style(make_biz(), "warm") == "warm"

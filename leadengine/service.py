@@ -870,9 +870,13 @@ class LeadService:
                     if biz is None:
                         continue
                     act = repo.latest_enrichment(bid, "maps_activity", fresh_only=False)
+                    extras = {k: (e.payload if (e := repo.latest_enrichment(bid, k, fresh_only=False)) else None)
+                              for k in ("site_info", "reviews", "website")}
+                    extras["keyword"] = next(iter(repo.keywords_for(bid)), None)
                     say(f"  building preview for {biz.name}")
                     try:
-                        payload = await builder.build(biz, act.payload if act else None, style=style, deploy=deploy)
+                        payload = await builder.build(biz, act.payload if act else None, style=style, deploy=deploy,
+                                                      extras=extras)
                     except Exception as exc:
                         log.exception("preview failed", extra={"data": {"name": biz.name}})
                         rows.append({"id": bid, "name": biz.name, "error": str(exc)[:200]})
