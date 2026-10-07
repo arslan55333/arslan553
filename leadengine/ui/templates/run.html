@@ -1,9 +1,10 @@
 {% extends "base.html" %}{% block title %}New scan{% endblock %}{% block body %}
-<h1>New scan</h1><p class="sub">Type a service and a place, like the Google Maps search bar. Pick towns or neighbourhoods around a ZIP to cover a whole area.</p>
+<h1>New scan</h1><p class="sub">Type a service and a place, like the Google Maps search bar. Pick towns or neighbourhoods around a ZIP to cover a whole area —
+or open the <a href="/areas">Area explorer</a> to go State → County → Town and see what you already scanned.</p>
 <form method="post" action="/run" class="card" style="max-width:900px" id="scanform" autocomplete="off">
  <div class="grid g2">
   <div class="ac"><label>What (keyword)</label>
-   <input name="keyword" id="kw" required placeholder="dumpster rental" style="width:100%">
+   <input name="keyword" id="kw" required placeholder="dumpster rental" style="width:100%" value="{{ prefill_kw or '' }}">
    <div class="ac-list" id="kw-list"></div></div>
   <div><label>Source</label><select name="provider" style="width:100%">
    {% for val, text in [('playwright','Browser (free)'),('serpapi','SerpAPI (paid, no captchas)'),('google_places','Google Places API (paid)'),('osm','OpenStreetMap (free, less data)')] %}
@@ -24,7 +25,7 @@
  </div>
 
  <div style="margin-top:12px"><label>ZIP codes to scan <span class="muted small">(filled for you — you can also type)</span></label>
-  <textarea name="zips" id="zips" required placeholder="75201 75202 75204"></textarea></div>
+  <textarea name="zips" id="zips" required placeholder="75201 75202 75204">{{ prefill_zips or '' }}</textarea></div>
 
  <div class="grid g3" style="margin-top:12px">
   {% for key, text in [('emails','Find emails'),('website','Score websites'),('ads','Detect Google Ads'),('activity','Review activity'),('fill','Fill gaps with paid API'),('towns','Also search towns'),('refresh','Ignore cache')] %}
@@ -48,6 +49,7 @@
     $('chips').innerHTML = zips().map(z => `<span class="chip">${z} <a href="#" data-z="${z}" title="remove">×</a> <a href="#" data-areas="${z}" title="towns & neighbourhoods around ${z}">areas</a></span>`).join('');
   }
   zipsBox.addEventListener('input', renderChips);
+  renderChips();
   $('chips').addEventListener('click', e => {
     const a = e.target.closest('a'); if (!a) return; e.preventDefault();
     if (a.dataset.z) { zipsBox.value = zips().filter(z => z !== a.dataset.z).join(' '); renderChips(); }
@@ -106,7 +108,7 @@
       $('areas-title').textContent = `Towns & neighbourhoods around ${zip}${data.label ? ' (' + data.label + ')' : ''}`;
       $('areas-note').textContent = `Within ${data.radius_km} km. Click one to add its ZIP code(s) to the scan.`;
       $('areas-list').innerHTML = currentAreas.map((a, i) => `<button type="button" class="area" data-i="${i}" title="ZIP ${a.zips.join(', ')}">
-          <b>${esc(a.name)}</b><span class="small muted">${esc(a.type || '')} · ${a.km} km · ${a.zips.slice(0, 3).join(', ')}${a.zips.length > 3 ? ' …' : ''}</span></button>`).join('')
+          <b>${esc(a.name)}</b> ${a.wealth_label ? `<span class="small" title="median household income $${(a.income || 0).toLocaleString()}" style="color:#15803d">${a.wealth_label}</span>` : ''}<span class="small muted">${esc(a.type || '')} · ${a.km} km · ${a.zips.slice(0, 3).join(', ')}${a.zips.length > 3 ? ' …' : ''}</span></button>`).join('')
         || '<span class="muted small">No areas found.</span>';
     } catch (e) { $('areas-list').innerHTML = '<span class="muted small">Could not load areas.</span>'; }
   }

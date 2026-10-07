@@ -18,6 +18,7 @@ from leadengine import crm, jobs
 from leadengine.config import Settings
 from leadengine.credits import CreditTracker
 from leadengine.db import Business, Email, Job, OutboundEmail, Repository, Suppression, init_db, make_engine, make_session_factory, utcnow
+from leadengine.db.models import Search
 from leadengine.exporting import lead_rows, to_csv, to_google_sheet, to_xlsx
 from leadengine.http import HttpClient
 from leadengine.normalize import normalize_zip
@@ -37,20 +38,7 @@ def _split_zips(raw: str) -> list[str]:
     return list(dict.fromkeys(out))
 
 
-NO_REAL_SITE = {"no_website", "facebook_only", "social_or_directory_only", "broken", "parked", "server_default_page"}
-
-
-def is_target(b: Business, weak: int = 50) -> bool:
-    """'My targets': pays for Google Ads (or LSA) but has no real website, or a weak site / landing page / local SEO,
-    and isn't a national chain."""
-    if b.lead_label == "Skip" and "chain" in (b.lead_reason or ""):
-        return False
-    if not (b.ads_status in ("Active", "Likely") or b.lsa):
-        return False
-    if not b.website or set(b.website_flags or []) & NO_REAL_SITE:
-        return True
-    return any(v is not None and v < weak for v in (b.website_score, getattr(b, "landing_score", None),
-                                                     getattr(b, "seo_score", None)))
+from leadengine.scoring.targets import NO_REAL_SITE, is_target  # noqa: E402,F401  (re-exported for tests)
 
 
 def create_app(settings: Settings | None = None, *, start_runner: bool = True, handlers=None) -> FastAPI:
@@ -206,10 +194,34 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
                       targets=targets)
 
     @app.get("/run", response_class=HTMLResponse)
-    def run_form(request: Request):
+    def run_form(request: Request, zips: str = "", keyword: str = ""):
         have = {"playwright": True, "osm": True, "serpapi": bool(settings.serpapi_api_key),
                 "google_places": bool(settings.google_places_api_key)}
-        return render(request, "run.html", disc=settings.section("discovery"), have=have)
+        return render(request, "run.html", disc=settings.section("discovery"), have=have,
+                      prefill_zips=" ".join(_split_zips(zips)) if zips else "", prefill_kw=keyword)
+
+    @app.get("/areas", response_class=HTMLResponse)
+    def areas_page(request: Request, state: str = "", county: str = "", keyword: str = "", sort: str = "population"):
+        from leadengine.geo import explorer
+
+        state = state.upper()[:2]
+        all_states = explorer.states()
+        counties, towns = [], []
+        with sf() as s:
+            past = list(dict.fromkeys(s.scalars(select(Search.keyword).order_by(Search.id.desc()).limit(50))))
+            if state:
+                cov = explorer.coverage(s, keyword or None)
+                counties = explorer.with_coverage(explorer.counties(state), cov)
+                if county:
+                    towns = explorer.with_coverage(explorer.towns(state, county), cov)
+        key = {"wealth": lambda x: -(x["wealth"] or -1), "coverage": lambda x: x["coverage"],
+               "targets": lambda x: -x["targets"], "name": lambda x: x["name"]}.get(sort)
+        if key:
+            counties.sort(key=key)
+            towns.sort(key=key)
+        return render(request, "areas.html", states=all_states, state=state, county=county, keyword=keyword,
+                      counties=counties, towns=towns, sort=sort, past=past,
+                      state_name=explorer.US_STATES.get(state, state))
 
     @app.post("/run")
     def run_submit(keyword: str = Form(...), zips: str = Form(...), provider: str = Form("playwright"),

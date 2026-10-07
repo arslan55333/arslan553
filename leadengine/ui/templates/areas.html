@@ -1,0 +1,78 @@
+{% extends "base.html" %}{% block title %}Areas{% endblock %}{% block body %}
+<h1>Area explorer</h1>
+<p class="sub">State → County → Town → ZIP. Small towns and villages are where good businesses with weak websites hide.
+ <b>$–$$$$</b> = how wealthy the area is (Census income + home values). <b>Scanned</b> shows what you already covered for the keyword.</p>
+<form class="filters card" method="get" action="/areas">
+ <div><label>State</label><select name="state" onchange="this.form.county.value='';this.form.submit()"><option value="">Choose…</option>
+  {% for st in states %}<option value="{{ st.code }}" {{ 'selected' if st.code == state }}>{{ st.name }} ({{ st.zips|length }} ZIPs)</option>{% endfor %}</select></div>
+ <input type="hidden" name="county" value="{{ county }}">
+ <div><label>Keyword (for "scanned")</label><input name="keyword" list="pastkw" value="{{ keyword }}" placeholder="junk removal" style="width:180px">
+  <datalist id="pastkw">{% for k in past %}<option value="{{ k }}">{% endfor %}</datalist></div>
+ <div><label>Sort</label><select name="sort">{% for v, t in [('population','Biggest first'),('wealth','Wealthiest first'),('coverage','Not scanned first'),('targets','Most targets'),('name','A–Z')] %}
+  <option value="{{ v }}" {{ 'selected' if sort == v }}>{{ t }}</option>{% endfor %}</select></div>
+ <div><button class="btn">Show</button></div></form>
+
+{% macro bar(pct) %}<div title="{{ pct }}% of ZIPs scanned" style="width:90px;height:8px;border-radius:4px;background:#e5e7eb;display:inline-block;vertical-align:middle">
+ <div style="width:{{ pct }}%;height:8px;border-radius:4px;background:{{ '#16a34a' if pct >= 100 else '#4f46e5' }}"></div></div> <span class="small muted">{{ pct }}%</span>{% endmacro %}
+{% macro money(v) %}{{ ('$' ~ '{:,}'.format(v)) if v else '–' }}{% endmacro %}
+
+{% if state and not county %}
+<div class="card"><h2>{{ state_name }} — {{ counties|length }} counties</h2>
+<table><tr><th>County</th><th>Towns</th><th>ZIPs</th><th>People</th><th>Income</th><th>Wealth</th><th>Scanned{% if keyword %} for "{{ keyword }}"{% endif %}</th><th>Businesses</th><th>🎯 Targets</th></tr>
+{% for c in counties %}<tr>
+ <td><a href="/areas?state={{ state }}&county={{ c.name|urlencode }}&keyword={{ keyword|urlencode }}&sort={{ sort }}"><b>{{ c.name }}</b></a></td>
+ <td>{{ c.towns }}</td><td>{{ c.zips|length }}</td><td>{{ '{:,}'.format(c.population) }}</td><td>{{ money(c.income) }}</td>
+ <td style="color:#15803d;font-weight:700">{{ c.wealth_label }}</td><td>{{ bar(c.coverage) }}</td><td>{{ c.businesses or '' }}</td>
+ <td>{% if c.targets %}<b>{{ c.targets }}</b>{% endif %}</td></tr>{% endfor %}</table></div>
+{% elif county %}
+<p class="small"><a href="/areas?state={{ state }}&keyword={{ keyword|urlencode }}&sort={{ sort }}">← {{ state_name }}</a> / <b>{{ county }} County</b></p>
+<form class="card" method="get" action="/run" id="townform">
+ <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+  <h2 style="margin:0">{{ towns|length }} towns &amp; cities in {{ county }}</h2>
+  <div class="row small" style="gap:10px">Select: <a href="#" data-sel="all">all</a><a href="#" data-sel="none">none</a>
+   <a href="#" data-sel="new">not scanned</a><a href="#" data-sel="rich">$$$ and up</a></div></div>
+ <table style="margin-top:10px"><tr><th></th><th>Town / city</th><th>ZIPs</th><th>People</th><th>Income</th><th>Home value</th><th>Wealth</th>
+  <th>Scanned{% if keyword %} for "{{ keyword }}"{% endif %}</th><th>Businesses</th><th>🎯</th><th></th></tr>
+ {% for t in towns %}<tr data-cov="{{ t.coverage }}" data-w="{{ t.wealth or 0 }}">
+  <td><input type="checkbox" class="pick" value="{{ t.zips|join(' ') }}"></td>
+  <td><b>{{ t.name }}</b></td><td class="small">{{ t.zips|join(', ') }}</td><td>{{ '{:,}'.format(t.population) }}</td>
+  <td>{{ money(t.income) }}</td><td>{{ money(t.home_value) }}</td><td style="color:#15803d;font-weight:700">{{ t.wealth_label }}</td>
+  <td>{% if t.scanned %}{{ bar(t.coverage) }}<div class="small muted">{{ t.last_scan_days }} day(s) ago</div>{% else %}<span class="muted small">not yet</span>{% endif %}</td>
+  <td>{% if t.businesses %}<a href="/leads?zip={{ t.zips[0] }}">{{ t.businesses }}</a>{% endif %}</td>
+  <td>{% if t.targets %}<a href="/leads?targets=1&zip={{ t.zips[0] }}"><b>{{ t.targets }}</b></a>{% endif %}</td>
+  <td><a href="#" class="small" data-villages="{{ t.zips[0] }}">villages ▸</a></td></tr>
+ <tr class="vrow" id="v-{{ t.zips[0] }}" hidden><td></td><td colspan="10"><div class="area-grid"></div></td></tr>{% endfor %}</table>
+ <input type="hidden" name="zips" id="zips">
+ <div class="row" style="margin-top:14px;gap:10px"><input name="keyword" value="{{ keyword }}" placeholder="keyword, e.g. junk removal" required style="width:240px">
+  <button class="btn">Scan selected →</button><span class="small muted" id="selinfo">0 ZIPs selected</span></div>
+</form>
+<script>
+(() => {
+  const picks = [...document.querySelectorAll('.pick')];
+  const update = () => { const z = new Set(); picks.filter(p => p.checked).forEach(p => p.value.split(' ').forEach(x => z.add(x)));
+    document.getElementById('zips').value = [...z].join(' '); document.getElementById('selinfo').textContent = `${z.size} ZIP(s) selected`; };
+  picks.forEach(p => p.addEventListener('change', update));
+  document.querySelectorAll('[data-sel]').forEach(a => a.addEventListener('click', e => { e.preventDefault();
+    const m = a.dataset.sel;
+    picks.forEach(p => { const tr = p.closest('tr'); p.checked = m === 'all' || (m === 'new' && +tr.dataset.cov === 0) || (m === 'rich' && +tr.dataset.w >= 65); });
+    update(); }));
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  document.querySelectorAll('[data-villages]').forEach(a => a.addEventListener('click', async e => { e.preventDefault();
+    const row = document.getElementById('v-' + a.dataset.villages), grid = row.querySelector('.area-grid');
+    row.hidden = !row.hidden; if (row.hidden || grid.dataset.done) return;
+    grid.innerHTML = '<span class="muted small">loading villages & neighbourhoods…</span>';
+    try { const d = await (await fetch('/api/areas?zip=' + a.dataset.villages)).json();
+      grid.innerHTML = (d.areas || []).map(x => `<label class="area" style="cursor:pointer"><span><input type="checkbox" class="vpick" value="${x.zips.join(' ')}"> <b>${esc(x.name)}</b> <span style="color:#15803d">${x.wealth_label || ''}</span></span>
+        <span class="small muted">${esc(x.type || '')} · ${x.km} km · ${x.zips.slice(0, 3).join(', ')}</span></label>`).join('') || '<span class="muted small">none found</span>';
+      grid.dataset.done = 1;
+      grid.querySelectorAll('.vpick').forEach(v => { picks.push(v); v.addEventListener('change', update); });
+    } catch (err) { grid.innerHTML = '<span class="muted small">could not load</span>'; } }));
+  document.getElementById('townform').addEventListener('submit', e => { update(); if (!document.getElementById('zips').value) { e.preventDefault(); alert('Tick at least one town'); } });
+})();
+</script>
+{% else %}
+<div class="card"><p>Pick a state to see its counties. Then open a county to see every town and city with its ZIP codes,
+ how wealthy it is, and whether you already scanned it.</p>
+ <p class="small muted">Tip: start with the wealthy towns ($$$ and up) around a big city — fewer agencies chase them, and owners there pay more.</p></div>
+{% endif %}
+{% endblock %}

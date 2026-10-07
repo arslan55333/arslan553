@@ -5,6 +5,7 @@
 <nav>{% set p = request.url.path %}
 <a href="/" class="{{ 'active' if p == '/' }}">Dashboard</a>
 <a href="/run" class="{{ 'active' if p.startswith('/run') }}">New scan</a>
+<a href="/areas" class="{{ 'active' if p.startswith('/areas') }}">Areas</a>
 <a href="/ads" class="{{ 'active' if p.startswith('/ads') }}">Ads finder</a>
 <a href="/rank" class="{{ 'active' if p.startswith('/rank') }}">Rank map</a>
 <a href="/leads" class="{{ 'active' if p.startswith('/leads') }}">Leads</a>

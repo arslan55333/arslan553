@@ -189,5 +189,12 @@ async def areas_for_zip(zip_code: str, *, http: HttpClient | None = None, repo=N
                 continue
             areas[key] = {"name": e["name"], "type": e["type"], "state": z.state, "zips": zips_near(e["lat"], e["lng"]),
                           "km": round(haversine_km(z.lat, z.lng, e["lat"], e["lng"]), 1), "lat": e["lat"], "lng": e["lng"]}
+    from leadengine.geo.explorer import wealth_label, wealth_score
+    for a in areas.values():
+        zs = [d.get(c) for c in a["zips"] if d.get(c)]
+        inc = next((x.median_household_income for x in zs if x.median_household_income), None)
+        home = next((x.median_home_value for x in zs if x.median_home_value), None)
+        a["income"], a["wealth"] = inc, wealth_score(inc, home)
+        a["wealth_label"] = wealth_label(a["wealth"])
     ordered = sorted(areas.values(), key=lambda a: a["km"])
     return {"zip": zip_code, "label": z.label, "lat": z.lat, "lng": z.lng, "radius_km": round(radius, 1), "areas": ordered}
