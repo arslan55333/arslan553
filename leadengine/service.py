@@ -352,6 +352,17 @@ class LeadService:
         if ads and shortlist_ids:
             say(f"Checking Google Ads for {len(shortlist_ids)} shortlisted businesses...")
             outcome.ads = await self.detect_ads(shortlist_ids, keyword=keyword, on_progress=say)
+        scope = str(self.settings.section("reviews").get("scope", "targets"))
+        if shortlist_ids and scope in ("targets", "shortlist"):
+            from leadengine.scoring.targets import is_target
+
+            self.rescore(shortlist_ids)
+            with self._sf() as session:
+                rv_ids = [b.id for b in (Repository(session).get_business(i) for i in shortlist_ids)
+                          if b and (scope == "shortlist" or is_target(b))]
+            if rv_ids:
+                say(f"Reviews audit for {len(rv_ids)} business(es)...")
+                await self.review_audits(rv_ids, on_progress=say)
         # Opportunity score for everything found in this run (cheap, no network)
         with self._sf() as session:
             ids = [b.id for b, _ in Repository(session).search_results(outcome.search_id)]
@@ -652,6 +663,7 @@ class LeadService:
         cfg = self.settings.section("ads")
         serp_source = str(cfg.get("serp_provider", "auto")).lower()
         budget = {"paid": int(cfg.get("paid_fallback_max", 10))}
+        tc_blocked = {"free": False}
         ttl = self.settings.ttl("ads")
         today = date.today()
         crawler = SiteCrawler(self.http, max_pages=1, timeout=float(cfg.get("timeout_seconds", 15)),
@@ -719,6 +731,29 @@ class LeadService:
                                                                       tc_compute, refresh=refresh, source="serpapi")
                         except LeadEngineError as exc:
                             say(f"  transparency check skipped: {exc}")
+
+                    if transparency is None and cfg.get("transparency_free", True) and (biz.domain or biz.name):
+                        from leadengine.enrich.ads.transparency import (
+                            TransparencyBlocked,
+                            advertiser_by_name,
+                            domain_free,
+                        )
+
+                        async def tcf_compute(b=biz):
+                            if b.domain:
+                                return await domain_free(self.http, b.domain, today=today)
+                            return await advertiser_by_name(self.http, b.name, city=b.city, today=today)
+                        if not tc_blocked["free"]:
+                            try:
+                                transparency, _ = await cached_enrichment(
+                                    repo, biz.id, "ads_transparency", ttl, tcf_compute, refresh=refresh,
+                                    source="transparency_free")
+                            except TransparencyBlocked:
+                                tc_blocked["free"] = True
+                                say("  Ads Transparency Center blocked this connection (captcha) - skipped this run")
+                            except Exception as exc:
+                                log.info("transparency lookup failed", extra={"data": {"name": biz.name,
+                                                                                     "error": str(exc)[:120]}})
 
                     if transparency is None and cfg.get("transparency_browser", False) and biz.domain:
                         from leadengine.enrich.ads.transparency import transparency_browser
@@ -1120,6 +1155,82 @@ class LeadService:
                 b.seo_score = out["score"]
                 session.commit()
             rows.append({"id": bid, "name": biz.name, **out})
+        return rows
+
+    async def review_audits(self, business_ids: list[int], *, refresh: bool = False,
+                            on_progress: Callable[[str], None] | None = None) -> list[dict]:
+        """Google reviews audit per business (cached): negatives, unanswered ones with suggested replies,
+        reply rate, review speed, complaint themes. Free browser first; SerpAPI (2 credits) only as fallback."""
+        from leadengine.enrich.reviews import ai_summary, analyze, serpapi_reviews
+        from leadengine.llm import LLMError, build_llm
+
+        say = on_progress or (lambda _m: None)
+        cfg = self.settings.section("reviews")
+        source = str(cfg.get("source", "auto")).lower()
+        budget = int(cfg.get("serpapi_max", 10))
+        llm = None
+        if cfg.get("ai_summary", True):
+            try:
+                llm = build_llm(self.settings, "llm")
+            except (LLMError, ImportError, Exception):
+                llm = None
+        rows: list[dict] = []
+        for bid in business_ids:
+            with self._sf() as session:
+                repo = Repository(session)
+                biz = repo.get_business(bid)
+                if biz is None:
+                    continue
+                cached = None if refresh else repo.latest_enrichment(bid, "reviews")
+                if cached is not None:
+                    rows.append({"id": bid, "name": biz.name, "cached": True, **cached.payload})
+                    continue
+                session.expunge(biz)
+            data, src = None, None
+            if source in ("auto", "browser") and biz.google_maps_url:
+                try:
+                    say(f"  reviews: {biz.name} (Google Maps)")
+                    data = await self._ready("playwright").review_audit_data(biz.google_maps_url)
+                    src = "browser"
+                    if not (data.get("lowest") or data.get("newest")):
+                        data = None
+                except Exception as exc:
+                    log.info("browser review read failed", extra={"data": {"name": biz.name, "error": str(exc)[:120]}})
+            if data is None and source in ("auto", "serpapi") and self.settings.serpapi_api_key and budget >= 2 \
+                    and (biz.data_id or biz.place_id):
+                say(f"  reviews: {biz.name} (SerpAPI, 2 credits)")
+                try:
+                    lowest, d1 = await serpapi_reviews(self.http, self.settings.serpapi_api_key, data_id=biz.data_id,
+                                                       place_id=biz.place_id, sort_by="ratingLow")
+                    newest, d2 = await serpapi_reviews(self.http, self.settings.serpapi_api_key, data_id=biz.data_id,
+                                                       place_id=biz.place_id, sort_by="newestFirst")
+                    budget -= 2
+                    if self.credits is not None:
+                        self.credits.record("serpapi", "google_maps_reviews", units=2)
+                    info = d1.get("place_info") or d2.get("place_info") or {}
+                    data = {"lowest": lowest, "newest": newest, "histogram": None,
+                            "topics": d1.get("topics") or d2.get("topics") or [],
+                            "rating": info.get("rating"), "total": info.get("reviews")}
+                    src = "serpapi"
+                except Exception as exc:
+                    say(f"    SerpAPI reviews failed: {str(exc)[:100]}")
+            if data is None:
+                rows.append({"id": bid, "name": biz.name, "error": "reviews could not be read"})
+                continue
+            audit = analyze(newest=data.get("newest") or [], lowest=data.get("lowest") or [],
+                            histogram=data.get("histogram"), rating=biz.rating or data.get("rating"),
+                            total=biz.review_count or data.get("total"), topics=data.get("topics"),
+                            phone=biz.phone, source=src)
+            audit["ai_summary"] = await ai_summary(llm, biz.name, audit)
+            with self._sf() as session:
+                repo = Repository(session)
+                repo.set_enrichment(bid, "reviews", audit, ttl_days=self.settings.ttl("activity"), source=src)
+                b = repo.get_business(bid)
+                b.reputation_score = audit["score"]
+                if b.owner_response_rate is None and audit["reply_rate"] is not None:
+                    b.owner_response_rate = audit["reply_rate"] / 100
+                session.commit()
+            rows.append({"id": bid, "name": biz.name, **audit})
         return rows
 
     async def site_info(self, business_ids: list[int], *, refresh: bool = False, explicit: bool = False,

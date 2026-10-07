@@ -113,8 +113,8 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
         n_ids = len(p.get("ids") or [])
         info = {
             "discover": (f"Scan: {p.get('keyword', '')}", ", ".join(p.get("zips") or []), len(p.get("zips") or []), "ZIPs"),
-            "enrich": ("Deep check", f"{n_ids} lead(s): " + ", ".join(p.get("kinds") or ["emails", "website", "ads", "seo"]),
-                       len(p.get("kinds") or [1, 2, 3, 4]), "steps"),
+            "enrich": ("Deep check", f"{n_ids} lead(s): " + ", ".join(p.get("kinds") or ["emails", "website", "ads", "seo", "reviews"]),
+                       len(p.get("kinds") or [1, 2, 3, 4, 5]), "steps"),
             "preview": ("Preview sites", f"{n_ids} lead(s)", 0, ""),
             "outreach": ("Email drafts", f"{n_ids} lead(s)", 0, ""),
             "send": ("Send approved emails", "", 0, ""),
@@ -563,6 +563,11 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
         job_id = jobs.enqueue(sf, "enrich", {"ids": [business_id], "refresh": refresh})
         return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
+    @app.post("/leads/{business_id}/reviews")
+    def lead_reviews(business_id: int):
+        job_id = jobs.enqueue(sf, "enrich", {"ids": [business_id], "kinds": ["reviews"], "refresh": True})
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
     @app.post("/leads/{business_id}/site-facts")
     def lead_site_facts(business_id: int):
         if not settings.firecrawl_api_key:
@@ -578,7 +583,8 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
                 raise HTTPException(404)
             repo = Repository(s)
             enr = {k: (e.payload if (e := repo.latest_enrichment(business_id, k, fresh_only=False)) else None)
-                   for k in ("website", "ads", "emails", "maps_activity", "landing", "rank", "seo", "audit", "site_info")}
+                   for k in ("website", "ads", "emails", "maps_activity", "landing", "rank", "seo", "audit", "site_info",
+                             "reviews")}
             emails = list(s.scalars(select(Email).where(Email.business_id == business_id)
                                     .order_by(Email.is_guess, Email.confidence.desc().nulls_last())))
             status = crm.current_status(s, business_id)

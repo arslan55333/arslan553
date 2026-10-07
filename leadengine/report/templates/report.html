@@ -64,6 +64,16 @@ People searching from the red spots don't see you in the first 20 results.</p>
 {% if shots.site_mobile %}<img class="shot" src="{{ shots.site_mobile }}" alt="website on a phone">{% endif %}</div>{% endif %}
 </section>
 
+{% if reviews %}<section class="card"><h2>Your Google reviews {% if reviews.score is not none %}<span class="pill">{{ reviews.score }}/100</span>{% endif %}</h2>
+<p>{{ reviews.rating or '–' }}★ from {{ reviews.total or '?' }} reviews · {{ reviews.negative }}{{ '' if reviews.negative_exact else '+' }} negative (1–2★) ·
+ you replied to {{ reviews.reply_rate if reviews.reply_rate is not none else '?' }}% of recent reviews{% if reviews.last_review_days is not none %} · last review {{ reviews.last_review_days }} days ago{% endif %}</p>
+{% if reviews.ai_summary %}<p><b>What unhappy customers say:</b> {{ reviews.ai_summary }}</p>{% endif %}
+<div class="grid2"><div><div class="lbl">Fix first</div><ul class="issues">{% for i in (reviews.issues or [])[:5] %}<li>{{ i }}</li>{% endfor %}</ul></div>
+<div><div class="lbl">Working</div><ul class="issues">{% for x in (reviews.positives or [])[:4] %}<li>{{ x }}</li>{% endfor %}</ul></div></div>
+{% if reviews.unanswered_negative %}<div class="lbl" style="margin-top:14px">Reviews still waiting for your reply — and what you could say</div>
+<table>{% for u in reviews.unanswered_negative[:4] %}<tr><td style="width:64px">{{ '★' * (u.rating|int) }}</td><td>{{ (u.text or '(rating only)')[:220] }}
+<div class="note" style="margin-top:4px">Suggested reply: <i>{{ u.reply }}</i></div></td></tr>{% endfor %}</table>
+<p class="note">Replying to negative reviews shows future customers you care — and Google counts owner replies as activity.</p>{% endif %}</section>{% endif %}
 {% if seo %}<section class="card"><h2>Local SEO {% if seo.score is not none %}<span class="pill">{{ seo.score }}/100</span>{% endif %}</h2>
 <div class="grid2"><div><div class="lbl">Fix first</div><ul class="issues">{% for i in (seo.issues or [])[:7] %}<li>{{ i }}</li>{% endfor %}</ul></div>
 <div><div class="lbl">Already working</div><ul class="issues">{% for p in (seo.positives or [])[:7] %}<li>{{ p }}</li>{% endfor %}</ul></div></div>

@@ -149,6 +149,20 @@ REVIEWS_JS = r"""
 }
 """
 
+REVIEW_SUMMARY_JS = r"""
+() => {
+  const hist = {}, topics = [];
+  for (const el of document.querySelectorAll('[aria-label]')) {
+    const l = el.getAttribute('aria-label') || '';
+    let m = l.match(/^([1-5])\s+stars?,\s*([\d,]+)\s+reviews?/i);
+    if (m && !(m[1] in hist)) hist[m[1]] = parseInt(m[2].replace(/,/g, ''), 10);
+    m = l.match(/^(.+?),\s*mentioned in\s+([\d,]+)\s+reviews?/i);
+    if (m && topics.length < 15) topics.push({keyword: m[1].trim(), mentions: parseInt(m[2].replace(/,/g, ''), 10)});
+  }
+  return {histogram: hist, topics};
+}
+"""
+
 SCROLL_REVIEWS_JS = r"""
 () => {
   const first = document.querySelector('div[data-review-id]');
@@ -532,6 +546,48 @@ class PlaywrightMapsProvider(Provider):
             parsed["json"] = items[0] if items else {}
             parsed["url_ids"] = parse_place_url(page.url)
             return parsed
+        finally:
+            await ctx.close()
+
+    async def review_audit_data(self, url: str, *, proxy: Proxy | None = None, limit: int = 30) -> dict[str, Any]:
+        """Reviews tab of a place: star histogram, Google's topic chips, the lowest-rated and the newest reviews."""
+        if getattr(self, "_details_off", False):
+            raise ProviderError(self.name, "place pages unavailable this run (Google shows a limited view)")
+        ctx = await self._new_context(proxy, None)
+        try:
+            page = await ctx.new_page()
+            sep = "&" if "?" in url else "?"
+            await page.goto(url + f"{sep}hl=en", wait_until="domcontentloaded")
+            await self._check_blocked(page)
+            await self._accept_consent(page)
+            try:
+                await page.wait_for_function(
+                    "() => [...document.querySelectorAll('h1')].some(h => (h.innerText || '').trim().length > 1)",
+                    timeout=int(self.opt("details_timeout_ms", 8000)))
+            except Exception:
+                self._details_fails = getattr(self, "_details_fails", 0) + 1
+                if self._details_fails >= 2:
+                    self._details_off = True
+                raise ProviderError(self.name, "place page did not render (limited view)")
+            dom = await page.evaluate(PLACE_JS)
+            await page.get_by_role("tab", name=re.compile(r"^Reviews", re.I)).first.click(timeout=6000)
+            await page.wait_for_timeout(1500)
+            summary = await page.evaluate(REVIEW_SUMMARY_JS)
+            out = {"rating_label": dom.get("rating_label"), "histogram": summary.get("histogram") or {},
+                   "topics": summary.get("topics") or []}
+            for key, label in (("lowest", "Lowest"), ("newest", "Newest")):
+                try:
+                    await page.locator('button[aria-label*="Sort reviews" i], button[aria-label="Sort"]').first.click(timeout=4000)
+                    await page.get_by_role("menuitemradio", name=re.compile(label, re.I)).first.click(timeout=4000)
+                    await page.wait_for_timeout(1500)
+                    for _ in range(4):
+                        await page.evaluate(SCROLL_REVIEWS_JS)
+                        await page.wait_for_timeout(700)
+                    out[key] = await page.evaluate(REVIEWS_JS, limit)
+                except Exception as exc:
+                    log.debug("review sort failed", extra={"data": {"sort": label, "error": str(exc)[:100]}})
+                    out[key] = []
+            return out
         finally:
             await ctx.close()
 

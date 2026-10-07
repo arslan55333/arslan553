@@ -125,6 +125,8 @@ def template_drafts(f: OutreachFacts, cfg: dict[str, Any], attach: bool = False)
                       bullets]
     if ads := _ads_line(f):
         detailed_parts.append(ads)
+    if f.review_line:
+        detailed_parts.append(f"One more thing I noticed: {f.review_line}.")
     detailed_parts.append(preview + (f" {offer}" if offer else ""))
     detailed_parts.append("Would you be open to a 10-minute call this week?")
     detailed = "\n\n".join(detailed_parts)

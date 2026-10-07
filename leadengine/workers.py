@@ -75,7 +75,7 @@ def make_handlers(settings: Settings, sf: sessionmaker[Session]) -> dict[str, Ha
     async def enrich(ctx: JobContext) -> dict[str, Any]:
         """Deep-check chosen leads: emails, website score, Google Ads (each step resumable)."""
         ids = [int(i) for i in ctx.params["ids"]]
-        kinds = ctx.params.get("kinds") or (["emails", "website", "ads", "seo"] + (
+        kinds = ctx.params.get("kinds") or (["emails", "website", "ads", "seo", "reviews"] + (
             ["site_info"] if settings.firecrawl_api_key and settings.section("firecrawl").get("mode") == "full" else []))
         out: dict[str, Any] = {"leads": len(ids)}
         async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
@@ -97,6 +97,9 @@ def make_handlers(settings: Settings, sf: sessionmaker[Session]) -> dict[str, Ha
                     elif kind == "seo":
                         rows = await service.seo_audits(ids, refresh=bool(ctx.params.get("refresh")), on_progress=ctx.log)
                         out["seo_scored"] = len(rows)
+                    elif kind == "reviews":
+                        rows = await service.review_audits(ids, refresh=bool(ctx.params.get("refresh")), on_progress=ctx.log)
+                        out["reviews_audited"] = sum(1 for r in rows if not r.get("error"))
                     elif kind == "site_info":
                         out["site_facts"] = await service.site_info(ids, refresh=bool(ctx.params.get("refresh")),
                                                                     explicit=bool(ctx.params.get("kinds")),

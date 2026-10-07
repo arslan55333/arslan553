@@ -79,10 +79,18 @@ def decide(
         evidence.append(f"Ads Transparency Center: {transparency['creatives']} ads, last shown "
                         f"{transparency['last_shown']} ({days} days ago)")
 
+    if transparency and transparency.get("advertiser") and transparency.get("by_name") \
+            and not transparency.get("last_shown"):
+        n = transparency.get("creatives")
+        evidence.append(f"Google Ads advertiser account found by name: \"{transparency['advertiser']}\""
+                        + (f" ({n} ads in the Ads Transparency Center)" if n else ""))
+
     if search_hits or lsa_hits or maps_sponsored or recent_transparency:
         status, confidence = "Active", 95 if (search_hits or lsa_hits) else 85
     elif transparency and transparency.get("last_shown"):
         status, confidence = "Past", 80
+    elif transparency and transparency.get("advertiser") and transparency.get("by_name"):
+        status, confidence = "Likely", 55
 
     if site is not None:
         if site.google_ads_ids:

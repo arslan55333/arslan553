@@ -52,6 +52,30 @@
   <tr><td><b>{{ b.name }}</b></td><td>{{ site.pages }}</td><td>{{ site.service_pages }}</td><td>{{ site.area_pages }}</td><td>{{ site.blog_posts }}</td></tr>
   {% for c in cs %}<tr><td><a href="{{ c.website }}" target="_blank" rel="noopener">{{ c.name }}</a></td><td>{{ c.pages }}</td><td>{{ c.service_pages }}</td><td>{{ c.area_pages }}</td><td>{{ c.blog_posts }}</td></tr>{% endfor %}
  </table>{% endif %}</div>{% endif %}
+{% set rv = enr.reviews %}
+<div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between">
+ <h2 style="margin:0">Google reviews audit {% if rv %}<span class="badge {{ 'Hot' if rv.score < 50 else ('Warm' if rv.score < 75 else 'Cold') }}">{{ rv.score }}/100</span>{% endif %}</h2>
+ <form method="post" action="/leads/{{ b.id }}/reviews"><button class="btn ghost" title="Free browser; SerpAPI 2 credits only if Google Maps won't show the reviews">{{ 'Check again' if rv else 'Audit reviews' }}</button></form></div>
+ {% if rv %}
+ <div class="grid g4" style="margin-top:10px">
+  <div class="stat"><div class="l">Rating</div><div class="n" style="font-size:22px">{{ rv.rating or '–' }}★</div><div class="small muted">{{ rv.total or '?' }} reviews</div></div>
+  <div class="stat"><div class="l">Negative (1–2★)</div><div class="n" style="font-size:22px">{{ rv.negative }}{{ '' if rv.negative_exact else '+' }}</div><div class="small muted">{% if rv.negative_share is not none and rv.negative_exact %}{{ rv.negative_share }}% of all{% else %}in the lowest reviews{% endif %}</div></div>
+  <div class="stat"><div class="l">No owner reply</div><div class="n" style="font-size:22px;color:{{ 'var(--hot)' if rv.unanswered_negative else 'inherit' }}">{{ rv.unanswered_negative|length }}</div><div class="small muted">negative reviews</div></div>
+  <div class="stat"><div class="l">Review speed</div><div class="n" style="font-size:22px">{{ rv.per_month if rv.per_month is not none else '–' }}</div><div class="small muted">per month · last {{ rv.last_review_days if rv.last_review_days is not none else '?' }} days ago · replies {{ rv.reply_rate if rv.reply_rate is not none else '?' }}%</div></div>
+ </div>
+ {% if rv.histogram %}<div style="margin-top:10px">{% set mx = rv.histogram.values()|max %}{% for st in ['5','4','3','2','1'] %}{% set n = rv.histogram.get(st) or rv.histogram.get(st|int) or 0 %}
+  <div class="row small" style="gap:6px"><span style="width:22px">{{ st }}★</span><div style="flex:1;max-width:320px;height:8px;background:#e5e7eb;border-radius:4px"><div style="height:8px;border-radius:4px;width:{{ (100 * n / (mx or 1))|round }}%;background:{{ '#dc2626' if st in ['1','2'] else '#f59e0b' if st == '3' else '#16a34a' }}"></div></div><span>{{ n }}</span></div>{% endfor %}</div>{% endif %}
+ {% if rv.ai_summary %}<p class="small" style="margin-top:10px"><b>AI summary:</b> {{ rv.ai_summary }}</p>{% endif %}
+ <div class="grid g2" style="margin-top:10px"><div>{% if rv.issues %}<b class="small">Problems</b><ul class="clean small">{% for i in rv.issues %}<li>{{ i }}</li>{% endfor %}</ul>{% endif %}
+  {% if rv.themes %}<b class="small">What customers complain about</b><ul class="clean small">{% for t in rv.themes %}<li><b>{{ t.theme }}</b> ({{ t.count }}) <span class="muted">"{{ t.example[:110] }}…"</span></li>{% endfor %}</ul>{% endif %}</div>
+  <div>{% if rv.positives %}<b class="small">Good</b><ul class="clean small muted">{% for x in rv.positives %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+  {% if rv.google_topics %}<b class="small">Google's review topics</b><div class="chips">{% for t in rv.google_topics %}<span class="chip">{{ t.keyword }} · {{ t.mentions }}</span>{% endfor %}</div>{% endif %}</div></div>
+ {% if rv.unanswered_negative %}<b class="small" style="display:block;margin-top:12px">Negative reviews with no reply — and a reply they could post</b>
+ <table class="small" style="margin-top:6px">{% for u in rv.unanswered_negative %}<tr><td style="width:70px">{{ '★' * (u.rating|int) }}<div class="muted">{{ u.date or '' }}</div></td>
+  <td><b>{{ u.author or 'Google user' }}</b>: {{ u.text or '(rating only, no text)' }}{% if u.themes %} <span class="badge Skip">{{ u.themes|join(', ') }}</span>{% endif %}
+   <div class="muted" style="margin-top:4px">↳ <i>{{ u.reply }}</i></div></td></tr>{% endfor %}</table>{% endif %}
+ <p class="small muted" style="margin-top:8px">Read {{ rv.sampled }} reviews via {{ 'SerpAPI' if rv.source == 'serpapi' else 'Google Maps (free)' }}.</p>
+ {% else %}<p class="small muted">Negative reviews, which ones have no reply (with a ready reply for each), review speed and what customers complain about.</p>{% endif %}</div>
 {% set info = enr.site_info %}{% if b.website or info %}
 <div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Website facts</h2>
  <form method="post" action="/leads/{{ b.id }}/site-facts"><button class="btn ghost" title="Firecrawl reads the site with AI (about 5 credits)">{{ 'Read again' if info else 'Read services / owner / years' }} (Firecrawl)</button></form></div>

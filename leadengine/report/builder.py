@@ -61,8 +61,9 @@ def competitors(session: Session, b: Business, rank_summary: list[dict] | None, 
 def gather(session: Session, b: Business, settings: Settings) -> dict[str, Any]:
     repo = Repository(session)
     enr = {k: (e.payload if (e := repo.latest_enrichment(b.id, k, fresh_only=False)) else None)
-           for k in ("website", "ads", "landing", "seo", "rank", "preview")}
+           for k in ("website", "ads", "landing", "seo", "rank", "preview", "reviews")}
     web, landing, seo, rank = enr["website"] or {}, enr["landing"] or {}, enr["seo"] or {}, enr["rank"]
+    reviews = enr["reviews"] or {}
     website_issues = [plain_issue(r)[1] for r in (web.get("reasons") or [])][:6]
     top: list[str] = []
     if landing.get("issues") and b.ads_status in ("Active", "Likely"):
@@ -70,6 +71,8 @@ def gather(session: Session, b: Business, settings: Settings) -> dict[str, Any]:
     top += [i[0].upper() + i[1:] for i in website_issues[:2]]
     if rank and rank.get("points"):
         top.append(f"Shows in Google's top 3 map results at only {rank['top3']} of {rank['points']} spots in the area")
+    if reviews.get("unanswered_negative"):
+        top.append(f"{len(reviews['unanswered_negative'])} negative Google review(s) with no reply from you")
     top += (seo.get("issues") or [])[:2]
     grid = None
     heat = None
@@ -90,9 +93,13 @@ def gather(session: Session, b: Business, settings: Settings) -> dict[str, Any]:
                    "good" if rank["solv"] >= 50 else "ok" if rank["solv"] >= 20 else "bad"),
          "note": "share of top-3 spots" if rank else "not measured"},
     ]
+    if reviews:
+        cards.append({"label": "Reviews health", "value": reviews.get("score"), "suffix": "/100",
+                      "grade": _grade(reviews.get("score")), "note": "replies, negatives, review speed"})
     return {"b": b, "web": web, "landing": landing, "seo": seo, "rank": rank, "grid": grid, "heat": heat,
             "ads": enr["ads"] or {}, "preview": enr["preview"] or {}, "website_issues": website_issues,
-            "top": [t[0].upper() + t[1:] for t in dict.fromkeys(top) if t][:4], "cards": cards,
+            "reviews": reviews,
+            "top": [t[0].upper() + t[1:] for t in dict.fromkeys(top) if t][:5], "cards": cards,
             "competitors": competitors(session, b, grid.summary if grid else None),
             "today": date.today().strftime("%B %d, %Y")}
 

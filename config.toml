@@ -77,11 +77,20 @@ mode = "smart"            # off | fallback (only when a site can't be read) | sm
 max_per_run = 300         # most credits one run may spend
 timeout_ms = 30000
 
+# Google reviews audit: negative reviews, unanswered ones (+ suggested replies), reply rate, review speed, themes
+[reviews]
+scope = "targets"         # which scanned businesses get it: targets (ads + weak/no site) | shortlist | off
+source = "auto"           # auto = free browser, SerpAPI only if Google Maps won't show the reviews | browser | serpapi
+serpapi_max = 10          # most SerpAPI credits one run may spend on reviews (2 per business)
+ai_summary = true         # 2-sentence summary of complaints when an AI key is set
+
 # Google Ads detection (Phase 5)
 [ads]
 serp_provider = "auto"         # auto = free browser, SerpAPI only when Google shows a captcha | playwright | serpapi | none
 paid_fallback_max = 10         # most SerpAPI credits one run may use as captcha fallback
 gtm = true                     # read the site's Google Tag Manager container for hidden AW- tags
+transparency_free = true       # Ads Transparency Center, free: by website domain, or by business NAME when there is
+                               # no website (finds advertisers who only run LSA / Maps / call-only ads)
 transparency = false           # Ads Transparency Center via SerpAPI (1 credit per business)
 timeout_seconds = 15
 # Ads finder (sweep): many searches -> everyone paying Google in your area

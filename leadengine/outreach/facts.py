@@ -66,6 +66,7 @@ class OutreachFacts:
     audit_url: str | None = None        # published audit report (only when it has a public link)
     map_top3: int | None = None         # rank map: top-3 spots out of map_points
     map_points: int | None = None
+    review_line: str | None = None      # e.g. "6 negative Google reviews have no reply yet"
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -156,6 +157,8 @@ def gather(session: Session, biz: Business, cfg: dict[str, Any], brand: dict[str
     aud = repo.latest_enrichment(biz.id, "audit", fresh_only=False)
     rank = repo.latest_enrichment(biz.id, "rank", fresh_only=False)
     rank_p = (rank.payload or {}) if rank else {}
+    rev = repo.latest_enrichment(biz.id, "reviews", fresh_only=False)
+    rev_p = (rev.payload or {}) if rev else {}
     web_p = (web.payload or {}) if web else {}
     ads_p = (ads.payload or {}) if ads else {}
     prev_p = (prev.payload or {}) if prev else {}
@@ -196,5 +199,22 @@ def gather(session: Session, biz: Business, cfg: dict[str, Any], brand: dict[str
         landing_score=land_p.get("score"),
         audit_url=((aud.payload or {}).get("url") if aud else None),
         map_top3=rank_p.get("top3"), map_points=rank_p.get("points"),
+        review_line=review_line(rev_p),
     )
+
+
+def review_line(audit: dict) -> str | None:
+    """One outreach-ready sentence from the reviews audit (unanswered negatives first)."""
+    un = audit.get("unanswered_negative") or []
+    if un:
+        n = len(un)
+        quote = next((u["text"] for u in un if len(u.get("text") or "") >= 20), None)
+        q = f" (one says \"{quote[:70].rstrip()}…\")" if quote else ""
+        return (f"{n} negative Google review{'s have' if n > 1 else ' has'} no reply from you yet{q} — "
+                "future customers read those before they call")
+    if audit.get("last_review_days") and audit["last_review_days"] > 60:
+        return f"your last Google review was {audit['last_review_days']} days ago, and Google favours fresh reviews"
+    if audit.get("reply_rate") is not None and audit["reply_rate"] < 30:
+        return f"you've replied to only {audit['reply_rate']}% of your recent Google reviews"
+    return None
 
