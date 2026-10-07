@@ -605,10 +605,13 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
                 if g is not None:
                     rank_svg = svg_heatmap(g.points or [], business_id, width=360,
                                            tiles=bool(settings.section("rank").get("map_tiles", True)))
+        from leadengine.insights import insights as money_insights
+        with sf() as s:
+            money = money_insights(s, s.get(Business, business_id), settings)
         return render(request, "lead.html", b=biz, enr=enr, emails=emails, status=status, events=events,
                       keywords=keywords, rank_svg=rank_svg,
                       error=error, preview=previews.payload if previews else None,
-                      drafts=drafts.payload if drafts else None, outbox=outbox)
+                      drafts=drafts.payload if drafts else None, outbox=outbox, money=money)
 
     @app.post("/leads/{business_id}/status")
     def lead_status(business_id: int, status: str = Form(...), note: str = Form(""), force: bool = Form(False)):

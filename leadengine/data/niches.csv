@@ -1,0 +1,39 @@
+niche,match,job_value,cpc,searches_per_1k
+dumpster rental,dumpster|roll off|roll-off|container rental,450,12,1.2
+junk removal,junk|hauling|cleanout|clean out|debris,350,10,1.5
+plumber,plumb|drain|water heater|sewer|rooter,450,25,4
+hvac,hvac|air condition|ac repair|heating|furnace|heat pump,600,30,3.5
+roofing,roof,9000,35,1.5
+electrician,electric,400,20,2.5
+locksmith,locksmith|lock,180,25,1.5
+towing,tow|roadside,150,15,2
+pest control,pest|extermin|termite|bed bug|rodent,300,20,2
+landscaping,landscap|lawn|yard|mowing|hardscap,250,10,2.5
+tree service,tree|stump|arborist,1000,15,1
+painting,paint,3000,15,1.2
+house cleaning,cleaning service|maid|house clean|janitorial,180,12,2
+carpet cleaning,carpet|upholstery,200,12,0.8
+pressure washing,pressure wash|power wash|soft wash,300,10,0.6
+moving,mover|moving|relocation,1200,18,2.5
+garage door,garage door,350,25,0.8
+pool service,pool,150,12,0.6
+fencing,fence,4000,15,0.6
+concrete,concrete|paving|driveway|asphalt,4000,15,0.6
+remodeling,remodel|renovat|kitchen|bathroom|contractor,15000,25,1
+flooring,floor|tile,4000,15,0.8
+window cleaning,window clean,250,8,0.4
+gutter,gutter,300,12,0.4
+appliance repair,appliance,250,15,1
+auto repair,auto repair|mechanic|car repair|brake|transmission,500,12,4
+auto body,body shop|collision|auto body,2500,15,1
+dentist,dentist|dental|orthodont,800,20,3
+personal injury lawyer,injury|accident lawyer|accident attorney,8000,150,1
+lawyer,lawyer|attorney|law firm,3000,40,2
+chiropractor,chiropract,500,10,1
+water damage,water damage|restoration|mold|flood,3000,40,0.6
+septic,septic,500,15,0.4
+solar,solar,20000,30,0.5
+handyman,handyman,300,12,1.5
+masonry,mason|brick|stone,3000,15,0.4
+siding,siding,8000,25,0.3
+windows and doors,window install|door install|replacement window,6000,25,0.5

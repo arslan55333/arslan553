@@ -28,6 +28,27 @@
   <button class="btn">Save</button></form>
   {% if events %}<ul class="clean small" style="margin-top:12px">{% for e in events %}<li><span class="muted">{{ e.at.strftime('%Y-%m-%d %H:%M') }}</span> {% if e.status %}<b>{{ e.status }}</b>{% endif %} {{ e.note or '' }}</li>{% endfor %}</ul>{% endif %}</div>
 </div>
+{% set w = money.ad_waste %}{% set m = money.money %}{% set g = money.gap %}
+{% if w or m or g %}<div class="card" style="margin-top:16px"><h2>💰 Money insights <span class="small muted">estimates — niche: {{ money.niche }}</span></h2>
+<div class="grid g3">
+ {% if w %}<div><div class="stat"><div class="l">Ad budget wasted</div><div class="n" style="color:{{ 'var(--hot)' if w.wasted_share >= 0.2 else 'inherit' }}">~{{ (w.wasted_share * 100)|round|int }}%</div>
+  <div class="small muted">≈ ${{ '{:,.0f}'.format(w.wasted_monthly) }} of a ${{ '{:,.0f}'.format(w.budget) }}/month budget</div></div>
+  {% if w.leaks %}<ul class="clean small" style="margin-top:8px">{% for l in w.leaks %}<li><b>−{{ (l.share * 100)|round|int }}%</b> {{ l.problem }} <span class="muted">→ fix: {{ l.fix }}</span></li>{% endfor %}</ul>
+  {% else %}<p class="small muted">No leaks found on the page their ads use.</p>{% endif %}</div>{% endif %}
+ {% if m %}<div><div class="stat"><div class="l">Work going to competitors</div><div class="n">${{ '{:,.0f}'.format(m.lost_monthly) }}<span class="small">/mo</span></div>
+  <div class="small muted">~{{ m.monthly_searches }} searches/month for "{{ m.keyword }}" around {{ b.city or 'them' }}</div></div>
+  <ul class="clean small" style="margin-top:8px"><li>Best position now: <b>{{ ('#' ~ (m.position|round|int)) if m.position else 'not in the top 20' }}</b> → about {{ m.calls_now }} calls/month</li>
+   <li>At #1 in the map pack: about <b>{{ m.calls_top }} calls/month</b></li>
+   <li class="muted">at ${{ '{:,.0f}'.format(m.job_value) }} per job, 30% of clicks call, 40% of calls book</li></ul></div>{% endif %}
+ {% if g %}<div><div class="stat"><div class="l">Behind the top 3 on</div><div class="n">{{ g.behind }}<span class="small">/{{ g.measured }}</span></div>
+  <div class="small muted">vs {{ g.competitors|map(attribute='name')|join(', ') }}</div></div>
+  {% if g.actions %}<ul class="clean small" style="margin-top:8px">{% for a in g.actions %}<li>✓ {{ a }}</li>{% endfor %}</ul>
+  {% else %}<p class="small muted" style="margin-top:8px">Already ahead of them on everything measured — they win on distance to the searcher, keywords in their business name, or are spam listings. The fix: service + town pages and Google profile activity.</p>{% endif %}</div>{% endif %}
+</div>
+{% if g and g.rows %}<table class="small" style="margin-top:12px"><tr><th>Ranking signal</th><th>{{ b.name }}</th><th>Top-3 average</th><th></th></tr>
+ {% for r in g.rows %}<tr><td>{{ r.label }}</td><td>{{ r.you if r.you is not none else '–' }}{{ r.unit if r.you is not none }}</td><td>{{ r.top3 }}{{ r.unit }}</td>
+ <td>{% if r.behind %}<span class="badge Hot">behind</span>{% else %}<span class="badge Cold">ok</span>{% endif %}</td></tr>{% endfor %}</table>{% endif %}
+</div>{% endif %}
 <div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between">
  <div><h2 style="margin:0">Audit report</h2><p class="small muted" style="margin:4px 0 0">One shareable page with every finding (scores, map, ads, website, SEO, competitors, your concept). Open it and use Print → Save as PDF for a PDF.</p></div>
  <form method="post" action="/leads/{{ b.id }}/audit" class="row"><label style="font-weight:500;margin:0"><input type="checkbox" name="deploy" value="true">Publish</label>

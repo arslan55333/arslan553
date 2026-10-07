@@ -24,6 +24,8 @@ CONVERSION_RE = re.compile(r"googleadservices\.com/pagead/conversion(?:_async)?\
 REMARKETING_RE = re.compile(r"googleads\.g\.doubleclick\.net/pagead/viewthroughconversion|google_remarketing_only", re.I)
 GCLID_RE = re.compile(r"\bgclid\b|_gcl_aw|gclsrc", re.I)
 META_PIXEL_RE = re.compile(r"fbq\(\s*['\"]init['\"]\s*,\s*['\"](\d{10,20})['\"]|connect\.facebook\.net/[\w_]+/fbevents\.js", re.I)
+GA4_RE = re.compile(r"gtag/js\?id=G-[A-Z0-9]{6,12}|['\"]G-[A-Z0-9]{8,12}['\"]|google-analytics\.com/(?:analytics|ga)\.js|"
+                    r"gtag/js\?id=UA-", re.I)
 BING_RE = re.compile(r"bat\.bing\.com/bat\.js|\bti\s*:\s*['\"]?\d{6,}", re.I)
 CALL_TRACKING = {
     "CallRail": re.compile(r"cdn\.callrail\.com|callrail\.com/companies", re.I),
@@ -46,6 +48,7 @@ class SiteAdSignals:
     meta_pixel: bool = False
     meta_pixel_ids: list[str] = field(default_factory=list)
     microsoft_ads: bool = False
+    analytics: bool = False                                        # Google Analytics (GA4 / UA) on the page
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -67,6 +70,7 @@ def scan_html(html: str) -> SiteAdSignals:
     s.meta_pixel = bool(META_PIXEL_RE.search(html))
     s.meta_pixel_ids = sorted({p for p in pixel if p})
     s.microsoft_ads = bool(BING_RE.search(html))
+    s.analytics = bool(GA4_RE.search(html)) or bool(s.gtm_containers)
     return s
 
 

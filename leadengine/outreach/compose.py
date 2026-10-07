@@ -39,6 +39,12 @@ TIPS = {
 
 
 # ── helpers ───────────────────────────────────────────────────────────
+def trade(category: str) -> str:
+    """'Construction company' -> 'construction', 'Waste management service' -> 'waste management'."""
+    c = re.sub(r"\s+(company|companies|service|services|contractor|contractors|business)$", "", category.strip(), flags=re.I)
+    return (c or category).lower()
+
+
 def greeting(f: OutreachFacts) -> str:
     return f"Hi {f.first_name}," if f.first_name else f"Hi {f.name} team,"
 
@@ -113,7 +119,7 @@ def template_drafts(f: OutreachFacts, cfg: dict[str, Any], attach: bool = False)
     if f.no_website:
         subject_topic = "website"
 
-    intro = f"I was looking at {f.category.lower()} companies in {where(f)} and came across {f.name}."
+    intro = f"I was looking at {trade(f.category)} companies in {where(f)} and came across {f.name}."
     short_mid = (f"{rating} - but {issue}." if rating else f"One thing stood out: {issue}.")
     short = "\n\n".join([greeting(f), f"{intro} {short_mid}", preview, "Worth a quick look?"])
 
@@ -125,6 +131,8 @@ def template_drafts(f: OutreachFacts, cfg: dict[str, Any], attach: bool = False)
                       bullets]
     if ads := _ads_line(f):
         detailed_parts.append(ads)
+    if f.money_line:
+        detailed_parts.append(f"{f.money_line[0].upper()}{f.money_line[1:]}.")
     if f.review_line:
         detailed_parts.append(f"One more thing I noticed: {f.review_line}.")
     detailed_parts.append(preview + (f" {offer}" if offer else ""))

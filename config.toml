@@ -77,6 +77,11 @@ mode = "smart"            # off | fallback (only when a site can't be read) | sm
 max_per_run = 300         # most credits one run may spend
 timeout_ms = 30000
 
+# Money insights on lead pages / reports (estimates; niche averages in leadengine/data/niches.csv)
+[money]
+ad_budget = 1500          # assumed monthly Google Ads budget of a local business, for the "ad waste" estimate
+job_value = 0             # your own average job value in $ (0 = use the niche average)
+
 # Google reviews audit: negative reviews, unanswered ones (+ suggested replies), reply rate, review speed, themes
 [reviews]
 scope = "targets"         # which scanned businesses get it: targets (ads + weak/no site) | shortlist | off

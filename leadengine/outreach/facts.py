@@ -67,6 +67,7 @@ class OutreachFacts:
     map_top3: int | None = None         # rank map: top-3 spots out of map_points
     map_points: int | None = None
     review_line: str | None = None      # e.g. "6 negative Google reviews have no reply yet"
+    money_line: str | None = None       # ad waste / calls lost to competitors (estimate)
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -200,7 +201,17 @@ def gather(session: Session, biz: Business, cfg: dict[str, Any], brand: dict[str
         audit_url=((aud.payload or {}).get("url") if aud else None),
         map_top3=rank_p.get("top3"), map_points=rank_p.get("points"),
         review_line=review_line(rev_p),
+        money_line=_money_line(session, biz),
     )
+
+
+def _money_line(session: Session, biz: Business) -> str | None:
+    from leadengine.config import get_settings
+    from leadengine.insights import insights, money_line
+    try:
+        return money_line(insights(session, biz, get_settings()))
+    except Exception:
+        return None
 
 
 def review_line(audit: dict) -> str | None:

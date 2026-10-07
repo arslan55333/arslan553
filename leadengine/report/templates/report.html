@@ -64,6 +64,23 @@ People searching from the red spots don't see you in the first 20 results.</p>
 {% if shots.site_mobile %}<img class="shot" src="{{ shots.site_mobile }}" alt="website on a phone">{% endif %}</div>{% endif %}
 </section>
 
+{% set w = money.ad_waste if money else None %}{% set m = money.money if money else None %}{% set g = money.gap if money else None %}
+{% if w or m or g %}<section class="card"><h2>What this is costing you <span class="note">(estimates)</span></h2>
+<div class="grid2">
+{% if m %}<div><div class="lbl">Customers going to competitors</div>
+<p>About <b>{{ m.monthly_searches }}</b> people a month search for "{{ m.keyword }}" near you. From your current spot
+({{ ('#' ~ (m.position|round|int)) if m.position else 'outside the top 20' }}) that is roughly <b>{{ m.calls_now }}</b> calls a month;
+the #1 spot gets about <b>{{ m.calls_top }}</b>. At about ${{ '{:,.0f}'.format(m.job_value) }} a job, that gap is worth roughly
+<b>${{ '{:,.0f}'.format(m.lost_monthly) }} a month</b>.</p></div>{% endif %}
+{% if w %}<div><div class="lbl">Google Ads budget leaking</div>
+<p>On a ${{ '{:,.0f}'.format(w.budget) }}/month budget, about <b>{{ (w.wasted_share * 100)|round|int }}%</b> (≈ ${{ '{:,.0f}'.format(w.wasted_monthly) }}) is likely wasted:</p>
+<ul class="issues">{% for l in w.leaks[:5] %}<li>{{ l.problem }} — <i>fix: {{ l.fix }}</i></li>{% endfor %}</ul></div>{% endif %}
+</div>
+{% if g and g.rows %}<div class="lbl" style="margin-top:14px">You vs the top 3 on Google Maps</div>
+<table><tr><th>Ranking signal</th><th>You</th><th>Top-3 average</th></tr>{% for r in g.rows %}<tr><td>{{ r.label }}</td>
+<td>{{ r.you if r.you is not none else '–' }}{{ r.unit if r.you is not none }}{% if r.behind %} <b style="color:var(--bad)">↓</b>{% endif %}</td><td>{{ r.top3 }}{{ r.unit }}</td></tr>{% endfor %}</table>
+{% if g.actions %}<p><b>To catch up:</b> {{ g.actions|join('; ') }}.</p>{% endif %}{% endif %}
+<p class="note">Estimates from typical local-search click rates (top map spot ≈ 18% of clicks, 30% of clicks call, 40% of calls book) and industry averages for your trade.</p></section>{% endif %}
 {% if reviews %}<section class="card"><h2>Your Google reviews {% if reviews.score is not none %}<span class="pill">{{ reviews.score }}/100</span>{% endif %}</h2>
 <p>{{ reviews.rating or '–' }}★ from {{ reviews.total or '?' }} reviews · {{ reviews.negative }}{{ '' if reviews.negative_exact else '+' }} negative (1–2★) ·
  you replied to {{ reviews.reply_rate if reviews.reply_rate is not none else '?' }}% of recent reviews{% if reviews.last_review_days is not none %} · last review {{ reviews.last_review_days }} days ago{% endif %}</p>

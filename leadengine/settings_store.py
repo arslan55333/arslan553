@@ -64,6 +64,10 @@ OPTIONS: list[tuple[str, str, str, str, Any]] = [
     ("firecrawl", "mode", "Firecrawl", "choice",
      [("off", "Off"), ("fallback", "Only when a site can't be read normally"), ("smart", "Smart: fallback + site map for SEO (recommended)"),
       ("full", "Full: also read services/owner/years with AI (~5 credits per site)")]),
+    ("money", "ad_budget", "Assumed monthly Google Ads budget of a local business ($) — for the 'ad waste' estimate", "number", ""),
+    ("money", "job_value", "Average job value ($) — leave empty to use the niche average", "number", ""),
+    ("reviews", "scope", "Reviews audit during scans", "choice",
+     [("targets", "Only for My targets (recommended)"), ("shortlist", "Every shortlisted business"), ("off", "Off")]),
     ("llm", "provider", "AI provider", "choice", [("claude", "Claude"), ("gemini", "Gemini"), ("groq", "Groq"), ("ollama", "Ollama (local)")]),
     ("preview", "deploy", "Publish previews/reports to", "choice", [("none", "Don't publish"), ("netlify", "Netlify"), ("cloudflare", "Cloudflare Pages")]),
 ]

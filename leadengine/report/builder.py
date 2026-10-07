@@ -58,6 +58,14 @@ def competitors(session: Session, b: Business, rank_summary: list[dict] | None, 
     return rows[:limit]
 
 
+def _insights(session: Session, b: Business, settings: Settings) -> dict[str, Any]:
+    from leadengine.insights import insights
+    try:
+        return insights(session, b, settings)
+    except Exception:
+        return {}
+
+
 def gather(session: Session, b: Business, settings: Settings) -> dict[str, Any]:
     repo = Repository(session)
     enr = {k: (e.payload if (e := repo.latest_enrichment(b.id, k, fresh_only=False)) else None)
@@ -98,7 +106,7 @@ def gather(session: Session, b: Business, settings: Settings) -> dict[str, Any]:
                       "grade": _grade(reviews.get("score")), "note": "replies, negatives, review speed"})
     return {"b": b, "web": web, "landing": landing, "seo": seo, "rank": rank, "grid": grid, "heat": heat,
             "ads": enr["ads"] or {}, "preview": enr["preview"] or {}, "website_issues": website_issues,
-            "reviews": reviews,
+            "reviews": reviews, "money": _insights(session, b, settings),
             "top": [t[0].upper() + t[1:] for t in dict.fromkeys(top) if t][:5], "cards": cards,
             "competitors": competitors(session, b, grid.summary if grid else None),
             "today": date.today().strftime("%B %d, %Y")}
