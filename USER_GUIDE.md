@@ -135,6 +135,31 @@ You also get a list of **who owns the area** (share of top-3 spots).
 > **Urdu:** Ye wahi cheez hai jiske liye log Local Falcon jaise tools ko har mahine paise dete hain.
 > Client ko ye map dikhao: "aap sirf 5 jagah top 3 mein ho, competitor 40 jagah". Ye bohat convincing hota hai.
 
+## 2d. Area explorer: State → County → Town → ZIP (kuch miss na ho)
+
+Open the dashboard and click **Areas**.
+
+1. Pick a **State** (e.g. New York). Every county is listed with:
+   - how many towns and ZIPs it has;
+   - how many people live there;
+   - the median household income and a wealth label (**$ … $$$$**);
+   - how much you already scanned for your keyword (a progress bar);
+   - how many 🎯 targets it gave you.
+2. Click a **county** (e.g. Nassau). Every town and city in it is listed with:
+   - its ZIP codes;
+   - income, home value and wealth;
+   - "scanned N days ago" or "not yet".
+3. **villages ▸** opens the villages and neighbourhoods inside that town (from OpenStreetMap). You can tick them too.
+4. Tick towns, or use **Select: not scanned / $$$ and up**, type the keyword and click **Scan selected →**.
+   The New scan page opens with those ZIPs filled in.
+
+*Example:* keyword "junk removal", NY → Nassau → sort **Wealthiest first** → tick the $$$$ towns you haven't
+scanned yet (Garden City, Manhasset …) → Scan.
+
+> **Urdu:** Bari city (New York) mein sab already rank karte hain. Areas page se county ke andar ke chhote towns aur
+> villages ek ek kar ke scan karo. "Not yet" wale towns baqi hain, progress bar batata hai kitna cover ho gaya.
+> $$$$ = ameer area (zyada paise wale clients). Is ke liye koi key nahi chahiye: data free hai (US Census).
+
 ## 3. Look at the leads (dashboard)
 
 ```bash
@@ -236,6 +261,107 @@ What you get:
 > **Urdu:** Firecrawl un websites ko bhi parh leta hai jo bots ko block karti hain ya sirf JavaScript se banti
 > hain. "Smart" mode rakho: is se SEO audit mein pata chalta hai ke client ki site par kitne pages hain aur
 > competitors ki site par kitne. Ye client ko dikhane ke liye bohat acha point hai.
+
+## 3d. The lead page, section by section (premium audits)
+
+Open any lead. Click **★ Full audit** at the top to run every check at once, or use each section's own button.
+
+### Google reviews audit
+- **What it shows:**
+  - the star rating and how many 1–2★ reviews there are;
+  - **negative reviews with no reply from the owner**, each with a ready reply the owner could post;
+  - how many reviews come in per month and how many days since the last one;
+  - what customers complain about (late / no-show, price, rude, damage, no call back …);
+  - Google's own review topics, and a 0–100 reputation score.
+- **Example (real test):** Royal Waste scored 43/100. It had 10+ negative reviews, 6 of them with no reply, and the
+  owner replied to 0% of new reviews. Top complaint: rude staff.
+- **Key:** none (free browser). If Google Maps won't show the reviews, SerpAPI is used: 2 credits, at most 10 per
+  run (Settings → reviews). With an AI key you also get a 2-sentence summary.
+
+### 💰 Money insights (estimates)
+- **Ad budget wasted:** for businesses running Google Ads, what on *their* side wastes the money. Each leak has a
+  typical loss:
+  - no conversion tracking;
+  - ads land on the homepage;
+  - no tap-to-call button or no form;
+  - a slow or non-mobile page;
+  - no website at all.
+
+  Example: "~35% of a $1,500/month budget ≈ $520 wasted — the ads have no website to land on."
+- **Work going to competitors:** about how many people search "service + town" near them, their position in
+  our search, and the calls they get now vs the #1 spot. Example: "347 searches/month, you're #16 → under
+  1 call/month; #1 gets ~19 → ≈ $3,280/month".
+- **Behind the top 3 on:** reviews, rating, review speed, photos, categories, website score, service pages,
+  town pages, owner replies — with targets ("get about 188 more reviews", "add the category Garbage collection").
+- **Key:** none. Set your assumed ad budget / job value on **⚙ Settings**. Niche averages:
+  `leadengine/data/niches.csv`.
+
+### Citations & NAP
+- **What it shows:**
+  - where else the business is listed: Yelp, BBB, Facebook, Yellow Pages, Angi, Nextdoor, MapQuest …;
+  - which important directories are **missing**;
+  - which listings show a **different phone or address** than Google.
+- **Example (real test):** Royal Waste's Google address is 168-46 Douglas Ave (11433), but Yelp and the Chamber of
+  Commerce still show the old 187-40 Hollis Ave (11423).
+- **Key:** Firecrawl (~4 credits) or SerpAPI (2 credits). Apple Maps and Bing are listed as "check by hand".
+
+### Full site audit (Ahrefs-style)
+- **What it does:**
+  - checks **every page** of the website: broken pages, titles (missing / duplicate / too long), meta
+    descriptions, H1s, thin pages, *noindex*, canonical, alt text, schema;
+  - lists the **service and town pages the 3 competitors above it have that it doesn't** — the pages you'd build.
+- **Examples (real tests):**
+  - Dumpster Rental Champs: 15 neighbourhood pages are set to *noindex* (hidden from Google).
+  - Ant's Junk Removal: built with JavaScript; checked page by page through Firecrawl.
+- **Key:** Firecrawl for the page list (1 credit per site + 1 per competitor) — or free via sitemap.xml. Pages are
+  fetched free; JavaScript sites use about 1 Firecrawl credit per page (max 15).
+
+### Website facts
+- **What it shows:** services, towns served, owner name, year founded, license, offers — read from their own site by AI.
+- **Key:** Firecrawl (~5 credits).
+
+### Rank map history + weekly tracking
+- **What it shows:** every rank-map run is kept; the lead page shows the history with ▲▼ changes.
+- **Track weekly** re-runs the map every week (free browser). You get an alert when its map-pack share moves 10+ points.
+
+### Agency detector
+- **What it shows:** "Built / managed by an agency: Scorpion / Hibu / Thryv / *Acme Digital*" (from the code or the
+  footer), or "built with Wix / GoDaddy". A business already paying an agency for a weak site is often unhappy with it.
+
+### 🆕 New businesses
+- **What it shows:** a dashboard card and a leads filter for businesses with few reviews and no website, or a website
+  under a year old. New owners say yes to a first website most easily.
+
+### Pro landing page (preview)
+- **What you get:** **Build preview** now makes a full premium page by default.
+- **What's on it:**
+  - their real services, towns, year founded, license, offers and best Google reviews;
+  - a quote form above the fold and a sticky call bar on phones;
+  - a map and FAQ, plus SEO schema.
+- **What's improved?** (button in the top bar): shows the owner their current site score and mobile speed, and what
+  this page fixes. The three simple styles are still in the menu.
+
+> **Urdu:** Lead page par **★ Full audit** dabao. Reviews, citations, poori website, competitors, paisa, sab ek
+> saath check ho jata hai. Phir **Build preview** (pro page) aur **Build audit report** banao. Email draft khud in
+> findings ko use karta hai: "6 negative reviews ka jawab nahi diya", "Yelp par purana address hai",
+> "aap #16 par ho, #1 ko ~19 calls milti hain".
+
+### Which key does what
+
+| Feature | No key | PageSpeed | Firecrawl | SerpAPI | AI key |
+|---|---|---|---|---|---|
+| Google Maps scan, emails, website score | ✅ | mobile speed | protected / JavaScript sites | captcha fallback | — |
+| Google Ads check (search, LSA, Maps ads, site tags, Transparency by domain **or name**) | ✅ | — | — | captcha fallback (max/run) | — |
+| Area explorer, coverage, wealth | ✅ | — | — | — | — |
+| Reviews audit | ✅ (browser) | — | — | fallback, 2/business | 2-line summary |
+| Money insights, competitor gap, categories | ✅ | better (uses speed) | — | — | — |
+| Citations / NAP | — | — | ✅ ~4 credits | ✅ 2 credits | — |
+| Full site audit + content gap | ✅ (sitemap) | — | page list + JS sites | — | — |
+| Website facts | — | — | ✅ ~5 credits | — | — |
+| Local SEO score | ✅ | — | page counts vs competitors | — | — |
+| Pro landing page | ✅ template copy | — | real services / areas | — | AI copy |
+| Rank map + weekly tracking | ✅ | — | — | — | — |
+| Email drafts | ✅ template | — | — | — | AI drafts |
 
 ## 4. Build a preview website for a lead
 

@@ -261,6 +261,46 @@ The leads filter `?targets=1` (dashboard card **🎯 My targets**) shows busines
 - have no real website, or a website, landing page or local SEO score under 50;
 - are not national chains (`leadengine/data/chains.txt`, plus domains seen in 3 or more cities).
 
+## Area explorer
+
+**Areas** page: State → County → Town/City → ZIP for the whole US.
+- Each row shows: population, Census median household income and home value (ACS 2023, bundled for 92% of ZIPs),
+  a $–$$$$ wealth label, scan coverage for a keyword (% of ZIPs, days ago, businesses, targets), and villages /
+  neighbourhoods inside a town (OpenStreetMap).
+- Tick towns, then **Scan selected** opens New scan pre-filled.
+
+## Premium audits on the lead page (★ Full audit)
+
+| Audit | What | Source / cost |
+|---|---|---|
+| Reviews | Histogram, negative count / share, unanswered negatives with a suggested reply, reply rate, reviews/month, days since last, complaint themes, Google topics, 0–100 score | Free browser; SerpAPI `google_maps_reviews` fallback (2 credits, `[reviews] serpapi_max`) |
+| Money insights | Ad-budget waste (conversion tracking, homepage landing, tap-to-call, form, speed, mobile, no site); work lost to competitors (searches × map-pack CTR × call/close rates × job value); gap to the top 3 incl. Google categories | Stored data only; `data/niches.csv` |
+| Citations / NAP | Directory coverage (Yelp, BBB, Facebook, Yellow Pages, Angi, Nextdoor, MapQuest …), listings with a different phone / ZIP / street | 2 web searches: Firecrawl search or SerpAPI |
+| Full site audit | Every page: broken, slow, titles, meta, H1, thin, noindex, canonical, alt, schema; JavaScript sites rendered; content gap vs the 3 competitors (service + town pages) | Firecrawl `/map` (or sitemap); pages fetched free |
+| Website facts | Services, areas, owner, founded, license, offers | Firecrawl JSON extraction |
+| Ads by name | Ads Transparency Center (free JSON endpoint) by domain, or by business **name** when there's no website | Free |
+| Agency detector | Footer credits + agency platform fingerprints; DIY builders told apart | Free |
+| Rank history | Every rank-map run, with changes; weekly rank watch with alerts on 10+ point moves | Free browser |
+
+Findings flow into:
+- the audit report (new sections: costs, reviews, listings, page-by-page);
+- the email drafts (lost calls, unanswered reviews, wrong directory details).
+
+Dashboard cards **🎯 My targets** and **🆕 New businesses** (few reviews + no / young website).
+
+## Pro landing page
+
+`[preview] style = "pro"` (the default) builds a premium one-page site:
+- sticky call header and a hero with the keyword and town;
+- a quote form above the fold;
+- trust strip, services, offers, how-it-works, reviews, service-area chips with a map, hours, FAQ;
+- a closing call band and a sticky mobile call bar;
+- LocalBusiness + FAQPage JSON-LD.
+
+It uses the business's own services, areas, year, license and offers (Firecrawl site facts) and its best reviews.
+A **What's improved?** panel compares it with the current site (score, mobile speed, missing call button / form /
+reviews) and shows a thumbnail of the current homepage.
+
 ## Weekly watch & alerts
 
 Dashboard → **Alerts**: save a keyword + places; every N days the Ads finder runs again and every

@@ -2,7 +2,9 @@
 
 ## Current Status
 - Current phase: **all phases (0–10) built and self-tested**. Remaining: owner's live runs on a real PC/network (see "Next Steps").
-- Last completed step: Round 3: real-world testing with the owner's keys (live Google Maps, live Google SERP, real
+- Last completed step: Round 4 (area explorer, reviews audit, money insights, pro landing page, citations,
+  whole-site audit + content gap, rank tracking, agency detector, new-business radar). 267 tests pass.
+- Previous: Round 3: real-world testing with the owner's keys (live Google Maps, live Google SERP, real
   websites, Firecrawl). Bugs found in those runs are fixed, and the Settings page, live results, Firecrawl and My
   targets are added. 243 tests pass.
 - Owner tested on Windows: dashboard runs; found "–" (unchecked) shown for Google Ads on Prime Dumpster -> fixed (see Round 2)
@@ -45,6 +47,36 @@
 - [x] Phase 10 — Hardening & polish (self-tested; CI on Linux + Windows)
 
 ## Phase Log (newest first)
+### Round 4 — elite local-SEO features, tested with real keys (2026-10-07)
+
+Built in the owner's order:
+1. **Area explorer** (State → County → Town → ZIP, villages inside towns), scan coverage per keyword, and wealth from
+   bundled Census ACS 2023 income / home values (92% of ZIPs, `scripts/add_acs_income.py`).
+2. **Google reviews audit**:
+   - negatives and unanswered ones, with suggested replies;
+   - reply rate, review speed, complaint themes, Google topics.
+
+   Plus a **free Ads Transparency lookup by domain or business name** (for advertisers without a website).
+   - Real test: Royal Waste scored 43/100, with 6 unanswered negative reviews.
+3. **Money insights**: ad-budget waste, work lost to competitors, gap to the top 3 (with Google categories); GA4
+   detection; numbers in the email drafts.
+4. **Pro landing page**:
+   - a premium design built from the business's real data;
+   - schema, map, sticky call bar;
+   - a "What's improved?" panel for the owner.
+5. **Citations / NAP** via 2 web searches.
+   - Real test: Royal Waste's Yelp and Chamber listings still show its old address.
+6. **Whole-site audit + content gap**:
+   - Real test: Dumpster Champs' 15 town pages are noindex; Ant's is a JavaScript site.
+
+   Also: rank history + weekly rank watch, agency detector, new-business radar, and a one-click **Full audit**.
+
+Live test spend this round: SerpAPI 3 credits (2 reviews + 1 Transparency name test), Firecrawl ~60 credits.
+The PageSpeed key works (real mobile score returned). 267 tests pass.
+
+The free Transparency endpoint answers with a captcha from datacenter IPs. It is built for the owner's home
+connection, and the parser is unit-tested.
+
 ### Round 3 — real-world testing with the owner's keys + Settings page + Firecrawl (2026-10-06)
 
 Bugs found in live runs, all fixed with regression tests:
@@ -408,27 +440,19 @@ tests/
 
 ## Next Steps
 - Owner:
-  - pull the latest code (`setup.bat`), then open **⚙ Settings**;
-  - add a free PageSpeed key (and optionally an AI key);
-  - run one scan and one Ads finder sweep in your niche;
-  - check **🎯 My targets**.
-- Owner: pick which features from the list below to build next (not built yet):
-  1. **Google Business Profile audit+**: category gaps vs the top 3, services / products / Q&A / posts present?,
-     photos freshness, review keywords, NAP consistency on Yelp / BBB / Facebook (citations).
-  2. **Review intelligence**: review velocity chart, unanswered negative reviews, AI summary of complaints to use in
-     outreach.
-  3. **Rank history**: re-run the rank map weekly and show "you dropped from 3 to 9", plus an alert.
-  4. **Ads intelligence**:
-     - ad copy library per advertiser (headlines over time);
-     - estimated monthly spend (keyword CPC × impression share);
-     - Meta Ad Library check (Facebook / Instagram ads).
-  5. **Ahrefs-style site crawl** (Firecrawl crawl):
-     - broken links, missing titles / H1 per page, duplicate pages, page speed per page;
-     - keyword volume and CPC for "service + town" (DataForSEO, ~$0.0006 / keyword).
-  6. **Backlink / authority**: referring domains (Open PageRank / Common Crawl) vs competitors.
-  7. **AI one-click pitch**: the audit report + preview + email in one button, with a Loom-style script.
-  8. **Client portal / monthly report** for clients you win: rank map, calls and reviews each month.
-  9. **Email warm-up & sending domain checks** (SPF / DKIM / DMARC), bounce-safe sending limits.
+  - pull the latest code (`setup.bat`), open **Areas**;
+  - scan a few wealthy towns for your keyword;
+  - open 🎯 My targets and run **★ Full audit** on 2–3 leads;
+  - build a pro preview and the audit report, then read the email draft.
+- Next build (owner's choice):
+  - **MailWizz integration**: list + custom fields + template + campaign through its API (needs the MailWizz URL
+    and API key).
+- Later ideas:
+  - auto video audit (screen recording of their site + voice);
+  - keyword volume / CPC from DataForSEO;
+  - backlinks vs competitors;
+  - a monthly client report for won clients;
+  - sending-domain checks (SPF / DKIM / DMARC).
 
 ### Open questions for owner
 1. Which OS and Python version do you use? (Instructions assume Windows + Python 3.11+.)
