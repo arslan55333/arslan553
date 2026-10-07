@@ -352,6 +352,8 @@ class Watch(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     keyword: Mapped[str] = mapped_column(String(200))
     locations: Mapped[Any] = mapped_column(JSON, nullable=True)
+    kind: Mapped[str | None] = mapped_column(String(20), default="ads")         # ads (new advertisers) | rank
+    business_id: Mapped[int | None] = mapped_column(Integer)                   # rank watches: whose rank map
     variations: Mapped[int | None] = mapped_column(Integer, default=4)
     every_days: Mapped[int | None] = mapped_column(Integer, default=7)
     active: Mapped[bool] = mapped_column(Boolean, default=True)

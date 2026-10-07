@@ -69,10 +69,11 @@ def _insights(session: Session, b: Business, settings: Settings) -> dict[str, An
 def gather(session: Session, b: Business, settings: Settings) -> dict[str, Any]:
     repo = Repository(session)
     enr = {k: (e.payload if (e := repo.latest_enrichment(b.id, k, fresh_only=False)) else None)
-           for k in ("website", "ads", "landing", "seo", "rank", "preview", "reviews", "citations")}
+           for k in ("website", "ads", "landing", "seo", "rank", "preview", "reviews", "citations", "site_audit")}
     web, landing, seo, rank = enr["website"] or {}, enr["landing"] or {}, enr["seo"] or {}, enr["rank"]
     reviews = enr["reviews"] or {}
     citations = enr["citations"] or {}
+    site_audit = enr["site_audit"] or {}
     website_issues = [plain_issue(r)[1] for r in (web.get("reasons") or [])][:6]
     top: list[str] = []
     if landing.get("issues") and b.ads_status in ("Active", "Likely"):
@@ -113,7 +114,7 @@ def gather(session: Session, b: Business, settings: Settings) -> dict[str, Any]:
                       "grade": _grade(reviews.get("score")), "note": "replies, negatives, review speed"})
     return {"b": b, "web": web, "landing": landing, "seo": seo, "rank": rank, "grid": grid, "heat": heat,
             "ads": enr["ads"] or {}, "preview": enr["preview"] or {}, "website_issues": website_issues,
-            "reviews": reviews, "money": _insights(session, b, settings), "citations": citations,
+            "reviews": reviews, "money": _insights(session, b, settings), "citations": citations, "site_audit": site_audit,
             "top": [t[0].upper() + t[1:] for t in dict.fromkeys(top) if t][:5], "cards": cards,
             "competitors": competitors(session, b, grid.summary if grid else None),
             "today": date.today().strftime("%B %d, %Y")}

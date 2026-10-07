@@ -85,6 +85,8 @@ class WebsiteAnalyzer:
             flags.append("redirects_elsewhere")
 
         html = analyze_html(page.html, self.today.year)
+        from leadengine.enrich.website.agency import detect_agency
+        agency = detect_agency(page.html)
         if html.parked:
             flags.append("parked")
         if html.default_page:
@@ -143,5 +145,6 @@ class WebsiteAnalyzer:
             "wayback": results.get("wayback"), "sitemap_lastmod": results.get("sitemap"),
             "screenshot": (render or {}).get("screenshot"), "mobile_screenshot": (render or {}).get("mobile_screenshot"),
             "mobile": (render or {}).get("mobile"), "vision": vision, "checked_on": self.today.isoformat(),
+            "agency": agency,
         })
         return payload

@@ -81,6 +81,14 @@ the #1 spot gets about <b>{{ m.calls_top }}</b>. At about ${{ '{:,.0f}'.format(m
 <td>{{ r.you if r.you is not none else '–' }}{{ r.unit if r.you is not none }}{% if r.behind %} <b style="color:var(--bad)">↓</b>{% endif %}</td><td>{{ r.top3 }}{{ r.unit }}</td></tr>{% endfor %}</table>
 {% if g.actions %}<p><b>To catch up:</b> {{ g.actions|join('; ') }}.</p>{% endif %}{% endif %}
 <p class="note">Estimates from typical local-search click rates (top map spot ≈ 18% of clicks, 30% of clicks call, 40% of calls book) and industry averages for your trade.</p></section>{% endif %}
+{% set cg = site_audit.content_gap if site_audit else None %}
+{% if site_audit %}<section class="card"><h2>Your website, page by page <span class="pill">{{ site_audit.score }}/100</span></h2>
+<p>We checked {{ site_audit.checked }} pages of your site.</p>
+<ul class="issues">{% for i in (site_audit.issues or [])[:6] %}<li>{{ i }}</li>{% endfor %}</ul>
+{% if cg and (cg.missing_services or cg.missing_towns) %}<div class="lbl" style="margin-top:14px">Pages your competitors have that you don't</div>
+<ul class="issues">{% for r in (cg.missing_services or [])[:6] %}<li>Service page: <b>{{ r.topic }}</b> ({{ r.competitors }} of the businesses above you have one)</li>{% endfor %}
+{% for r in (cg.missing_towns or [])[:6] %}<li>Town page: <b>{{ r.topic }}</b></li>{% endfor %}</ul>
+<p class="note">Google ranks pages, not websites: each service and each town needs its own page to show up for "service + town" searches.</p>{% endif %}</section>{% endif %}
 {% if citations %}<section class="card"><h2>Your business listings across the web {% if citations.score is not none %}<span class="pill">{{ citations.score }}/100</span>{% endif %}</h2>
 <p>Google checks that your <b>name, address and phone</b> are the same on Yelp, BBB, Facebook and other directories. Mismatches
  (an old address or phone) lower trust — and send real customers to the wrong number.</p>

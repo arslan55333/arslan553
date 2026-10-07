@@ -2,7 +2,8 @@
 {% set web = enr.website or {} %}{% set ads = enr.ads or {} %}
 <div class="row" style="justify-content:space-between"><div><h1>{{ b.name }} {% if b.lead_label %}<span class="badge {{ b.lead_label }}">{{ b.lead_label }} · {{ b.opportunity_score }}</span>{% endif %}</h1>
 <p class="sub">{{ b.lead_reason or '' }}</p></div><div class="row">
-<form method="post" action="/leads/{{ b.id }}/check"><button class="btn" title="emails + website score + Google Ads">Check this lead</button></form>
+<form method="post" action="/leads/{{ b.id }}/check"><button class="btn ghost" title="emails + website score + Google Ads + local SEO + reviews">Check this lead</button></form>
+<form method="post" action="/leads/{{ b.id }}/full"><button class="btn" title="Everything: emails, website, ads, SEO, reviews, whole-site crawl + content gap, citations, site facts">★ Full audit</button></form>
 {% if b.lat is not none %}<form method="post" action="/rank"><input type="hidden" name="business_id" value="{{ b.id }}">
 <input type="hidden" name="keyword" value="{{ (enr.rank.keyword if enr.rank else (keywords[0] if keywords else ((b.categories or ['local service'])[0]))) }}">
 <button class="btn ghost" title="7x7 Google Maps rank grid around this business">Rank map around this business</button></form>{% endif %}
@@ -63,7 +64,14 @@
  <div class="grid g2"><div class="heat">{{ rank_svg|safe if rank_svg else '' }}</div>
  <div><p><b>Top 3 at {{ rk.top3 }} of {{ rk.points }} points</b> — share of local voice <b>{{ rk.solv }}%</b></p>
   <p class="small">Shows up somewhere in the top 20 at {{ rk.found }} points · average position {{ rk.avg_rank }}</p>
-  <p class="small muted">Green = in the map pack (top 3) at that spot, red = not in the top 20. This is what customers see when they search from each part of the area.</p></div></div></div>{% endif %}
+  <p class="small muted">Green = in the map pack (top 3) at that spot, red = not in the top 20. This is what customers see when they search from each part of the area.</p>
+  {% if rank_hist|length > 1 %}<b class="small">History</b><table class="small"><tr><th>Date</th><th>Keyword</th><th>Map-pack share</th><th>Avg position</th></tr>
+   {% for h in rank_hist|reverse %}<tr><td>{{ h.date }}</td><td>{{ h.keyword }}</td>
+   <td>{{ h.solv }}%{% if h.solv_change %} <b style="color:{{ '#16a34a' if h.solv_change > 0 else '#dc2626' }}">{{ '▲' if h.solv_change > 0 else '▼' }}{{ h.solv_change|abs }}</b>{% endif %}</td>
+   <td>{{ h.avg_rank }}{% if h.rank_change %} <b style="color:{{ '#16a34a' if h.rank_change > 0 else '#dc2626' }}">{{ '▲' if h.rank_change > 0 else '▼' }}{{ h.rank_change|abs }}</b>{% endif %}</td></tr>{% endfor %}</table>{% endif %}
+  {% if tracking %}<p class="small"><b>✓ Tracked weekly</b> — you get an alert when its map-pack share moves by 10+ points.</p>
+  {% else %}<form method="post" action="/leads/{{ b.id }}/track-rank" class="row small" style="gap:6px"><input type="hidden" name="keyword" value="{{ rk.keyword }}">
+   <button class="btn ghost" title="Re-runs this rank map every week (free browser) and alerts you on big moves">Track weekly</button></form>{% endif %}</div></div></div>{% endif %}
 {% if enr.seo %}{% set seo = enr.seo %}
 <div class="card" style="margin-top:16px"><h2>Local SEO {% if seo.score is not none %}score {{ seo.score }}/100{% endif %}
  <span class="small muted">{% if seo.onpage is not none %}website {{ seo.onpage }} · {% endif %}{% if seo.gbp is not none %}Google profile {{ seo.gbp }}{% endif %}{% if seo.authority is not none %} · authority {{ seo.authority }}/10{% endif %}</span></h2>
@@ -115,6 +123,20 @@
   <td>{{ l.issues|join('; ') }}</td></tr>{% endfor %}</table>{% endif %}
  <p class="small muted" style="margin-top:6px">{{ ct.total }} listings found with {{ ct.queries }} searches ({{ ct.source }}). ✓ = same as Google, ✗ = different, – = not shown in the search snippet.</p>
  {% else %}<p class="small muted">Where else the business is listed (Yelp, BBB, Facebook, Yellow Pages, Angi …), which important directories are missing, and which show a different phone or address than Google.</p>{% endif %}</div>
+{% set sa = enr.site_audit %}{% if b.website %}
+<div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between">
+ <h2 style="margin:0">Full site audit {% if sa %}<span class="badge {{ 'Hot' if sa.score < 50 else ('Warm' if sa.score < 75 else 'Cold') }}">{{ sa.score }}/100</span>{% endif %}</h2>
+ <form method="post" action="/leads/{{ b.id }}/site-audit"><button class="btn ghost" title="Firecrawl page list: 1 credit + 1 per competitor; pages are fetched free">{{ 'Crawl again' if sa else 'Crawl whole site' }}</button></form></div>
+ {% if sa %}<p class="small muted" style="margin:6px 0">{{ sa.checked }} of {{ sa.pages_known }} pages checked ({{ sa.source }}{{ ', rendered with Firecrawl' if sa.rendered }}) · {{ sa.broken }} broken</p>
+ <div class="grid g2"><div>{% if sa.issues %}<b class="small">Problems</b><ul class="clean small">{% for i in sa.issues %}<li>{{ i }}</li>{% endfor %}</ul>{% else %}<p class="small">No page-level problems found.</p>{% endif %}</div>
+ <div>{% set cg = sa.content_gap or {} %}{% if cg.missing_services or cg.missing_towns %}<b class="small">Pages the competitors have that this site doesn't</b>
+  <ul class="clean small">{% for r in (cg.missing_services or [])[:8] %}<li>🛠 <b>{{ r.topic }}</b> <span class="muted">({{ r.competitors }} competitor{{ 's' if r.competitors > 1 }}, e.g. <a href="{{ r.example }}" target="_blank" rel="noopener">{{ r.example[:50] }}</a>)</span></li>{% endfor %}
+  {% for r in (cg.missing_towns or [])[:8] %}<li>📍 <b>{{ r.topic }}</b> <span class="muted">({{ r.competitors }} competitor{{ 's' if r.competitors > 1 }})</span></li>{% endfor %}</ul>
+  {% elif cg.competitors_checked %}<p class="small muted">The {{ cg.competitors_checked }} competitors above it have no service or town pages it's missing.</p>{% else %}<p class="small muted">No competitor websites to compare with yet.</p>{% endif %}</div></div>
+ <details style="margin-top:8px"><summary class="small">Page by page</summary><table class="small"><tr><th>Page</th><th>Status</th><th>Title</th><th>H1</th><th>Words</th><th>Meta</th><th>Noindex</th></tr>
+  {% for p in sa.pages %}<tr><td><a href="{{ p.url }}" target="_blank" rel="noopener">{{ p.url.split('//')[-1][:60] }}</a></td><td>{{ p.status or p.error }}</td><td>{{ (p.title or '–')[:50] }}</td><td>{{ p.h1 if p.h1 is not none else '' }}</td>
+  <td>{{ p.words or '' }}</td><td>{{ '✓' if p.meta else ('✗' if p.meta is sameas false else '') }}</td><td>{{ '⚠' if p.noindex else '' }}</td></tr>{% endfor %}</table></details>
+ {% else %}<p class="small muted">Checks every page of the website (broken pages, titles, headlines, thin content, noindex, schema) and lists the service and town pages the competitors above it have that it doesn't.</p>{% endif %}</div>{% endif %}
 {% set info = enr.site_info %}{% if b.website or info %}
 <div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Website facts</h2>
  <form method="post" action="/leads/{{ b.id }}/site-facts"><button class="btn ghost" title="Firecrawl reads the site with AI (about 5 credits)">{{ 'Read again' if info else 'Read services / owner / years' }} (Firecrawl)</button></form></div>
@@ -141,6 +163,7 @@
    {% if media_url(land.mobile_screenshot) %}<a href="{{ media_url(land.mobile_screenshot) }}" target="_blank"><img src="{{ media_url(land.mobile_screenshot) }}" alt="landing page on a phone"></a>{% endif %}</div></div></div>{% endif %}
 <div class="card" style="margin-top:16px"><h2>Website {% if b.website_score is not none %}score {{ b.website_score }}/100 · {{ b.website_grade }}{% endif %}</h2>
  {% if web.flags %}<p>{% for f in web.flags %}<span class="badge Skip">{{ f|replace('_',' ') }}</span> {% endfor %}</p>{% endif %}
+ {% if web.agency %}<p class="small">{% if web.agency.kind == 'agency' %}🏢 <b>Built / managed by an agency: {{ web.agency.name }}</b> — they already pay someone for this site (often unhappy with results).{% else %}🧰 Built with <b>{{ web.agency.name }}</b> (do-it-yourself builder).{% endif %} <span class="muted">{{ web.agency.how }}</span></p>{% endif %}
  <div class="grid g2"><div>{% if web.reasons %}<b class="small">Weaknesses</b><ul class="clean small">{% for r in web.reasons %}<li>{{ r }}</li>{% endfor %}</ul>{% endif %}
   {% if web.signals %}<table class="small" style="margin-top:10px">{% for k, v in web.signals.items() %}<tr><td>{{ k }}</td><td class="num">{{ v.points }}/{{ v.max }}</td><td class="muted">{{ v.detail }}</td></tr>{% endfor %}</table>{% endif %}
   {% if web.tech %}<p class="small"><b>Tech:</b> {% for t in web.tech %}{{ t.name }}{{ ' ' ~ t.version if t.version }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}</div>

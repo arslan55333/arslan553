@@ -1276,6 +1276,56 @@ class LeadService:
             rows.append({"id": bid, "name": biz.name, **out})
         return rows
 
+    async def site_audits(self, business_ids: list[int], *, refresh: bool = False,
+                          on_progress: Callable[[str], None] | None = None) -> list[dict]:
+        """Whole-site SEO crawl (page-by-page checks, free fetching) + content gap vs the top-3 competitors'
+        page lists. Firecrawl /map: 1 credit for the site + 1 per competitor (falls back to sitemap.xml)."""
+        from leadengine.enrich.sitecrawl import content_gap, crawl_site, page_list
+        from leadengine.geo.zipdata import zip_directory
+        from leadengine.insights import competitor_gap
+
+        say = on_progress or (lambda _m: None)
+        fc = self.firecrawl()
+        max_pages = int(self.settings.section("site_audit").get("max_pages", 40))
+        rows = []
+        for bid in business_ids:
+            with self._sf() as session:
+                repo = Repository(session)
+                biz = repo.get_business(bid)
+                if biz is None or not biz.website:
+                    continue
+                cached = None if refresh else repo.latest_enrichment(bid, "site_audit")
+                if cached is not None:
+                    rows.append({"id": bid, "name": biz.name, "cached": True, **cached.payload})
+                    continue
+                keyword = next(iter(repo.keywords_for(bid)), None)
+                rank = repo.latest_enrichment(bid, "rank", fresh_only=False)
+                gap = competitor_gap(session, biz, keyword, rank.payload if rank else None) or {}
+                comps = [(c["name"], c["website"]) for c in gap.get("competitors") or [] if c.get("website")][:3]
+                info = repo.latest_enrichment(bid, "site_info", fresh_only=False)
+                z = zip_directory().get(biz.zip_code or "")
+                towns = [o.city for o, _ in zip_directory().nearby(z.lat, z.lng, 20)] if z else []
+                towns += list(((info.payload or {}).get("service_areas") or []) if info else [])
+                session.expunge(biz)
+            say(f"  site audit: {biz.website}")
+            own, source = await page_list(self.http, biz.website, firecrawl=fc)
+            crawl = await crawl_site(self.http, biz.website, urls=own[:max_pages], source=source, max_pages=max_pages,
+                                     firecrawl=fc)
+            crawl["pages_known"] = len(own)
+            comp_urls = {}
+            for name, site in comps:
+                say(f"    competitor pages: {site}")
+                urls, _ = await page_list(self.http, site, firecrawl=fc)
+                if urls:
+                    comp_urls[name] = urls
+            crawl["content_gap"] = content_gap(own, comp_urls, sorted(set(towns)))
+            with self._sf() as session:
+                repo = Repository(session)
+                repo.set_enrichment(bid, "site_audit", crawl, ttl_days=self.settings.ttl("website"), source=source)
+                session.commit()
+            rows.append({"id": bid, "name": biz.name, **crawl})
+        return rows
+
     async def site_info(self, business_ids: list[int], *, refresh: bool = False, explicit: bool = False,
                         on_progress: Callable[[str], None] | None = None) -> int:
         """Firecrawl 'full' mode: services, service areas, owner, years in business from each website (cached).
@@ -1371,6 +1421,10 @@ class LeadService:
                 if w is None:
                     continue
                 keyword, locations, variations = w.keyword, list(w.locations or []), w.variations
+                kind, watch_biz = (w.kind or "ads"), w.business_id
+            if kind == "rank":
+                created += await self._run_rank_watch(wid, keyword, watch_biz, say)
+                continue
             say(f"Watch #{wid}: '{keyword}' in {', '.join(locations)}")
             try:
                 out = await self.ads_sweep(keyword, locations, variations=variations, watch_id=wid, on_progress=say)
@@ -1398,6 +1452,33 @@ class LeadService:
             except Exception as exc:
                 say(f"  alert webhook failed: {exc}")
         return {"watches": len(ids), "alerts": len(created), "link": "/alerts"}
+
+    async def _run_rank_watch(self, wid: int, keyword: str, business_id: int | None, say) -> list[dict]:
+        """Weekly rank map for one business; an Alert when its map-pack share moves by 10+ points."""
+        from leadengine.db.models import Alert, Watch
+        from leadengine.insights import rank_history
+
+        say(f"Rank watch #{wid}: '{keyword}' for business #{business_id}")
+        out: list[dict] = []
+        try:
+            await self.rank_grid(keyword, business_id=business_id, on_progress=say)
+        except LeadEngineError as exc:
+            say(f"  rank watch #{wid} failed: {exc}")
+            return out
+        with self._sf() as session:
+            w = session.get(Watch, wid)
+            w.last_run_at = utcnow()
+            hist = rank_history(session, business_id, keyword) if business_id else []
+            biz = session.get(Business, business_id) if business_id else None
+            last = hist[-1] if hist else None
+            if biz is not None and last and last["solv_change"] is not None and abs(last["solv_change"]) >= 10:
+                up = last["solv_change"] > 0
+                msg = (f"{biz.name}: map-pack share for '{keyword}' {'rose' if up else 'dropped'} from "
+                       f"{last['solv'] - last['solv_change']}% to {last['solv']}% (average position {last['avg_rank']})")
+                session.add(Alert(kind="rank_up" if up else "rank_drop", business_id=business_id, watch_id=wid, message=msg))
+                out.append({"business_id": business_id, "message": msg})
+            session.commit()
+        return out
 
     # ── geo-grid rank heatmap ────────────────────────────────────────
     async def rank_grid(self, keyword: str, *, zip_code: str | None = None, business_id: int | None = None,

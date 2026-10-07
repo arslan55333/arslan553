@@ -77,6 +77,10 @@ mode = "smart"            # off | fallback (only when a site can't be read) | sm
 max_per_run = 300         # most credits one run may spend
 timeout_ms = 30000
 
+# Full site audit (lead page "Crawl whole site"): every page checked, plus the competitors' service/town pages
+[site_audit]
+max_pages = 40            # pages fetched per site (free; Firecrawl only for the page list / JavaScript sites)
+
 # Money insights on lead pages / reports (estimates; niche averages in leadengine/data/niches.csv)
 [money]
 ad_budget = 1500          # assumed monthly Google Ads budget of a local business, for the "ad waste" estimate

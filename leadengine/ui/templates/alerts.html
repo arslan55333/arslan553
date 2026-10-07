@@ -13,7 +13,7 @@ the freshest buyers there are. While the dashboard is open it runs by itself; yo
  <div style="margin-top:10px"><button class="btn">Save watch</button></div></form>
 <div class="card"><h2>Your watches</h2>
  {% if watches %}<table class="small"><tr><th>Keyword</th><th>Places</th><th>Last run</th><th>Next</th><th></th></tr>
- {% for w in watches %}<tr><td><b>{{ w.keyword }}</b>{% if not w.active %} <span class="muted">(paused)</span>{% endif %}</td><td>{{ (w.locations or [])|join(' · ') }}</td>
+ {% for w in watches %}<tr><td><b>{{ w.keyword }}</b>{% if w.kind == 'rank' %} <span class="badge Cold">rank map</span>{% endif %}{% if not w.active %} <span class="muted">(paused)</span>{% endif %}</td><td>{% if w.kind == 'rank' %}<a href="/leads/{{ w.business_id }}">business #{{ w.business_id }}</a>{% else %}{{ (w.locations or [])|join(' · ') }}{% endif %}</td>
   <td>{{ w.last_run_at.strftime('%Y-%m-%d') if w.last_run_at else 'never' }}</td>
   <td>{{ (w.last_run_at + timedelta(days=w.every_days or 7)).strftime('%Y-%m-%d') if w.last_run_at else 'now' }}</td>
   <td class="row" style="gap:4px;flex-wrap:nowrap"><form method="post" action="/alerts/watch/{{ w.id }}/run"><button class="btn ghost">Run</button></form>

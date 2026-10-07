@@ -8,6 +8,8 @@
 </div>
 <a class="card link" href="/leads?targets=1" style="margin-top:16px;display:flex;justify-content:space-between;align-items:center">
  <span><b>🎯 My targets: {{ targets }}</b> <span class="small muted">— running Google Ads but no website, or a weak website / landing page / local SEO (chains left out)</span></span><span>open →</span></a>
+<a class="card link" href="/leads?new=1" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
+ <span><b>🆕 New businesses: {{ new_biz }}</b> <span class="small muted">— few reviews and no website yet (or a site less than a year old): the easiest yes</span></span><span>open →</span></a>
 {% set na = unseen_alerts() %}{% if na %}<a class="card link" href="/alerts" style="margin-top:16px;border-color:#f59e0b;background:#fffbeb">
  <b>{{ na }} new alert{{ 's' if na > 1 }}</b> — businesses that just started advertising in your watched areas →</a>{% endif %}
 <div class="card" style="margin-top:16px"><h2>Pipeline</h2><div class="pipeline">

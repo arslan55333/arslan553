@@ -260,3 +260,25 @@ def money_line(ins: dict[str, Any]) -> str | None:
         return (f"when I searched \"{m['keyword']}\" near you, {spot}. Around {m['monthly_searches']} people a month "
                 f"run that search; that spot brings in {now} a month, while #1 gets about {round(m['calls_top'])}")
     return None
+
+
+def rank_history(session: Session, business_id: int, keyword: str | None = None) -> list[dict[str, Any]]:
+    """Every rank-map run for this business (oldest first) with the change since the previous run."""
+    from leadengine.db.models import Enrichment
+
+    stmt = select(Enrichment).where(Enrichment.business_id == business_id, Enrichment.kind == "rank") \
+        .order_by(Enrichment.fetched_at)
+    rows, prev = [], {}
+    for e in session.scalars(stmt):
+        p = e.payload or {}
+        kw = p.get("keyword")
+        if keyword and kw != keyword:
+            continue
+        before = prev.get(kw)
+        rows.append({"date": e.fetched_at.date().isoformat(), "keyword": kw, "solv": p.get("solv"),
+                     "avg_rank": p.get("avg_rank"), "top3": p.get("top3"), "points": p.get("points"),
+                     "solv_change": None if before is None or p.get("solv") is None else p["solv"] - before["solv"],
+                     "rank_change": None if before is None or p.get("avg_rank") is None
+                     else round(before["avg_rank"] - p["avg_rank"], 1)})
+        prev[kw] = p
+    return rows

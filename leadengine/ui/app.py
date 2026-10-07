@@ -38,7 +38,7 @@ def _split_zips(raw: str) -> list[str]:
     return list(dict.fromkeys(out))
 
 
-from leadengine.scoring.targets import NO_REAL_SITE, is_target  # noqa: E402,F401  (re-exported for tests)
+from leadengine.scoring.targets import NO_REAL_SITE, is_new_business, is_target  # noqa: E402,F401  (re-exported)
 
 
 def create_app(settings: Settings | None = None, *, start_runner: bool = True, handlers=None) -> FastAPI:
@@ -157,6 +157,8 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
 
     def filtered(session, q: dict[str, Any], limit: int | None = 200) -> list[Business]:
         targets = bool(q.get("targets"))
+        if q.get("new"):
+            limit = None
         ads = ["Active", "Likely"] if targets and not q.get("ads") else ([q["ads"]] if q.get("ads") else None)
         rows = Repository(session).list_businesses(
             keyword=q.get("keyword") or None, zip_code=q.get("zip") or None,
@@ -168,6 +170,9 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             order=q.get("sort") or "opportunity", limit=None if targets else limit)
         if targets:
             rows = [b for b in rows if is_target(b)][:limit]
+        if q.get("new"):
+            webs = Repository(session).latest_enrichments([b.id for b in rows], "website")
+            rows = [b for b in rows if is_new_business(b, (webs.get(b.id).payload if webs.get(b.id) else None))][:200]
         return rows
 
     # ── pages ────────────────────────────────────────────────────────
@@ -182,6 +187,10 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             hot = Repository(s).list_businesses(labels=["Hot"], order="opportunity", limit=10)
             targets = sum(1 for b in Repository(s).list_businesses(ads_statuses=["Active", "Likely"], limit=None)
                           if is_target(b))
+            few = Repository(s).list_businesses(limit=None)
+            few = [b for b in few if (b.review_count or 0) <= 15]
+            webs = Repository(s).latest_enrichments([b.id for b in few], "website") if few else {}
+            new_biz = sum(1 for b in few if is_new_business(b, webs.get(b.id).payload if webs.get(b.id) else None))
             recent = list(s.scalars(select(Job).order_by(Job.created_at.desc()).limit(6)))
             pipeline = {st: 0 for st in crm.STATUSES}
             from leadengine.db.models import LeadStatus
@@ -191,7 +200,7 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
         credits = CreditTracker(sf, settings).summary()
         return render(request, "dashboard.html", total=total, by_label=by_label, with_email=with_email,
                       ads_active=ads_active, ads_likely=ads_likely, hot=hot, jobs=recent, credits=credits, pipeline=pipeline,
-                      targets=targets)
+                      targets=targets, new_biz=new_biz)
 
     @app.get("/run", response_class=HTMLResponse)
     def run_form(request: Request, zips: str = "", keyword: str = ""):
@@ -568,6 +577,31 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
         job_id = jobs.enqueue(sf, "enrich", {"ids": [business_id], "kinds": ["reviews"], "refresh": True})
         return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
+    @app.post("/leads/{business_id}/full")
+    def lead_full(business_id: int):
+        kinds = ["emails", "website", "ads", "seo", "reviews", "site_audit"]
+        if settings.firecrawl_api_key or settings.serpapi_api_key:
+            kinds.append("citations")
+        if settings.firecrawl_api_key:
+            kinds.append("site_info")
+        job_id = jobs.enqueue(sf, "enrich", {"ids": [business_id], "kinds": kinds, "refresh": True})
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+    @app.post("/leads/{business_id}/track-rank")
+    def lead_track_rank(business_id: int, keyword: str = Form(...), every_days: int = Form(7)):
+        from leadengine.db.models import Watch
+
+        with sf() as s:
+            s.add(Watch(kind="rank", keyword=keyword.strip()[:200], business_id=business_id, locations=[],
+                        every_days=max(1, every_days), active=True))
+            s.commit()
+        return RedirectResponse(f"/leads/{business_id}", status_code=303)
+
+    @app.post("/leads/{business_id}/site-audit")
+    def lead_site_audit(business_id: int):
+        job_id = jobs.enqueue(sf, "enrich", {"ids": [business_id], "kinds": ["site_audit"], "refresh": True})
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
     @app.post("/leads/{business_id}/citations")
     def lead_citations(business_id: int):
         if not (settings.firecrawl_api_key or settings.serpapi_api_key):
@@ -592,7 +626,7 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             repo = Repository(s)
             enr = {k: (e.payload if (e := repo.latest_enrichment(business_id, k, fresh_only=False)) else None)
                    for k in ("website", "ads", "emails", "maps_activity", "landing", "rank", "seo", "audit", "site_info",
-                             "reviews", "citations")}
+                             "reviews", "citations", "site_audit")}
             emails = list(s.scalars(select(Email).where(Email.business_id == business_id)
                                     .order_by(Email.is_guess, Email.confidence.desc().nulls_last())))
             status = crm.current_status(s, business_id)
@@ -609,17 +643,24 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             from leadengine.db.models import RankGrid
             from leadengine.geo.rankgrid import svg_heatmap
             with sf() as s:
-                g = s.get(RankGrid, enr["rank"].get("grid_id"))
+                gid = enr["rank"].get("grid_id")
+                g = s.get(RankGrid, gid) if gid else None
                 if g is not None:
                     rank_svg = svg_heatmap(g.points or [], business_id, width=360,
                                            tiles=bool(settings.section("rank").get("map_tiles", True)))
+        from leadengine.db.models import Watch
         from leadengine.insights import insights as money_insights
+        from leadengine.insights import rank_history
         with sf() as s:
             money = money_insights(s, s.get(Business, business_id), settings)
+            rank_hist = rank_history(s, business_id)
+            tracking = s.scalars(select(Watch).where(Watch.kind == "rank", Watch.business_id == business_id,
+                                                     Watch.active.is_(True))).first() is not None
         return render(request, "lead.html", b=biz, enr=enr, emails=emails, status=status, events=events,
                       keywords=keywords, rank_svg=rank_svg,
                       error=error, preview=previews.payload if previews else None,
-                      drafts=drafts.payload if drafts else None, outbox=outbox, money=money)
+                      drafts=drafts.payload if drafts else None, outbox=outbox, money=money,
+                      rank_hist=rank_hist, tracking=tracking)
 
     @app.post("/leads/{business_id}/status")
     def lead_status(business_id: int, status: str = Form(...), note: str = Form(""), force: bool = Form(False)):
