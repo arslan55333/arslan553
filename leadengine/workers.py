@@ -168,5 +168,16 @@ def make_handlers(settings: Settings, sf: sessionmaker[Session]) -> dict[str, Ha
             finally:
                 await service.aclose()
 
+    async def market(ctx: JobContext) -> dict[str, Any]:
+        p = ctx.params
+        async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
+            service = LeadService(settings, sf, http, CreditTracker(sf, settings))
+            try:
+                return await service.market_scan(p["keyword"], list(p["zips"]), provider_name=p.get("provider"),
+                                                 refresh=bool(p.get("refresh")), on_progress=ctx.log,
+                                                 on_found=ctx.add_live)
+            finally:
+                await service.aclose()
+
     return {"discover": discover, "preview": preview, "outreach": outreach, "send": send, "enrich": enrich,
-            "sweep": sweep, "rankgrid": rankgrid, "audit": audit, "monitor": monitor}
+            "sweep": sweep, "rankgrid": rankgrid, "audit": audit, "monitor": monitor, "market": market}

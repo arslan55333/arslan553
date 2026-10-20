@@ -1496,6 +1496,37 @@ class LeadService:
             rows.append({"id": bid, "name": biz.name, **prof})
         return rows
 
+    async def market_scan(self, keyword: str, zips: list[str], *, provider_name: str | None = None,
+                          refresh: bool = False, on_progress: Callable[[str], None] | None = None,
+                          on_found: Callable[[list[dict]], None] | None = None) -> dict:
+        """One Google Maps search per ZIP (free browser, cached 14 days) → Market Weakness Index for each town."""
+        from leadengine.geo.market import markets, ranked
+
+        say = on_progress or (lambda _m: None)
+        provider_name = provider_name or "playwright"
+        failed = 0
+        for i, z in enumerate(zips, 1):
+            say(f"[{i}/{len(zips)}] {keyword} in {z}")
+            try:
+                out = await self.search(SearchQuery(keyword, z), provider_name, refresh=refresh)
+            except LeadEngineError as exc:
+                failed += 1
+                say(f"  failed: {exc}")
+                continue
+            self.rescore([b.id for b, _ in out.results])
+            if on_found:
+                with self._sf() as session:
+                    m = markets(session, keyword, [z]).get(z)
+                if m:
+                    on_found([{"key": f"m:{z}", "label": m["label"], "name": f"{m['town']} {z}",
+                               "rating": m["top3_rating"], "reviews": m["top3_reviews"],
+                               "site_score": m["weakness"], "ads": f"{m['advertisers_top10']} ads",
+                               "hits": m["fakes_top5"]}])
+        with self._sf() as session:
+            rows = ranked(list(markets(session, keyword, zips).values()))
+        return {"keyword": keyword, "measured": len(rows), "failed": failed,
+                "easy": sum(1 for r in rows if r["label"] == "easy"), "link": f"/markets?keyword={keyword}"}
+
     async def site_info(self, business_ids: list[int], *, refresh: bool = False, explicit: bool = False,
                         on_progress: Callable[[str], None] | None = None) -> int:
         """Firecrawl 'full' mode: services, service areas, owner, years in business from each website (cached).

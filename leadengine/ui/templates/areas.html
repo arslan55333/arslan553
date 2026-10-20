@@ -8,7 +8,7 @@
  <input type="hidden" name="county" value="{{ county }}">
  <div><label>Keyword (for "scanned")</label><input name="keyword" list="pastkw" value="{{ keyword }}" placeholder="junk removal" style="width:180px">
   <datalist id="pastkw">{% for k in past %}<option value="{{ k }}">{% endfor %}</datalist></div>
- <div><label>Sort</label><select name="sort">{% for v, t in [('population','Biggest first'),('wealth','Wealthiest first'),('coverage','Not scanned first'),('targets','Most targets'),('name','A–Z')] %}
+ <div><label>Sort</label><select name="sort">{% for v, t in [('population','Biggest first'),('wealth','Wealthiest first'),('easy','Easiest market first'),('coverage','Not scanned first'),('targets','Most targets'),('name','A–Z')] %}
   <option value="{{ v }}" {{ 'selected' if sort == v }}>{{ t }}</option>{% endfor %}</select></div>
  <div><button class="btn">Show</button></div></form>
 
@@ -32,7 +32,7 @@
   <div class="row small" style="gap:10px">Select: <a href="#" data-sel="all">all</a><a href="#" data-sel="none">none</a>
    <a href="#" data-sel="new">not scanned</a><a href="#" data-sel="rich">$$$ and up</a></div></div>
  <table style="margin-top:10px"><tr><th></th><th>Town / city</th><th>ZIPs</th><th>People</th><th>Income</th><th>Home value</th><th>Wealth</th>
-  <th>Scanned{% if keyword %} for "{{ keyword }}"{% endif %}</th><th>Businesses</th><th>🎯</th><th></th></tr>
+  <th>Scanned{% if keyword %} for "{{ keyword }}"{% endif %}</th><th>Businesses</th><th>🎯</th>{% if keyword %}<th title="Market Weakness Index: how easy it is to get into the top 3">Market</th>{% endif %}<th></th></tr>
  {% for t in towns %}<tr data-cov="{{ t.coverage }}" data-w="{{ t.wealth or 0 }}">
   <td><input type="checkbox" class="pick" value="{{ t.zips|join(' ') }}"></td>
   <td><b>{{ t.name }}</b></td><td class="small">{{ t.zips|join(', ') }}</td><td>{{ '{:,}'.format(t.population) }}</td>
@@ -40,11 +40,14 @@
   <td>{% if t.scanned %}{{ bar(t.coverage) }}<div class="small muted">{{ t.last_scan_days }} day(s) ago</div>{% else %}<span class="muted small">not yet</span>{% endif %}</td>
   <td>{% if t.businesses %}<a href="/leads?zip={{ t.zips[0] }}">{{ t.businesses }}</a>{% endif %}</td>
   <td>{% if t.targets %}<a href="/leads?targets=1&zip={{ t.zips[0] }}"><b>{{ t.targets }}</b></a>{% endif %}</td>
+  {% if keyword %}<td>{% if t.market %}<span class="badge {{ {'easy':'Cold','medium':'Warm','hard':'Hot'}[t.market.label] }}" title="top 3 avg {{ t.market.top3_reviews }} reviews · {{ t.market.fakes_top5 }} fake · {{ t.market.no_site_top10 }}/10 weak or no website">{{ t.market.label }} {{ t.market.weakness }}</span>{% else %}<span class="muted small">–</span>{% endif %}</td>{% endif %}
   <td><a href="#" class="small" data-villages="{{ t.zips[0] }}">villages ▸</a></td></tr>
  <tr class="vrow" id="v-{{ t.zips[0] }}" hidden><td></td><td colspan="10"><div class="area-grid"></div></td></tr>{% endfor %}</table>
  <input type="hidden" name="zips" id="zips">
  <div class="row" style="margin-top:14px;gap:10px"><input name="keyword" value="{{ keyword }}" placeholder="keyword, e.g. junk removal" required style="width:240px">
-  <button class="btn">Scan selected →</button><span class="small muted" id="selinfo">0 ZIPs selected</span></div>
+  <button class="btn">Scan selected →</button>
+  <button class="btn ghost" type="submit" formmethod="post" formaction="/markets/scan" title="1 free Google Maps search per ZIP — no deep checks">Measure markets (easy / hard)</button>
+  <span class="small muted" id="selinfo">0 ZIPs selected</span></div>
 </form>
 <script>
 (() => {

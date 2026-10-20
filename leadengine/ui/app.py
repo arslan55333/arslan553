@@ -125,6 +125,7 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             "monitor": ("Weekly watch", f"{len(p['watch_ids'])} watch(es)" if p.get("watch_ids") else "all due watches",
                         0, ""),
             "audit": ("Audit reports", f"{n_ids} lead(s)", 0, ""),
+            "market": (f"Market finder: {p.get('keyword', '')}", f"{len(p.get('zips') or [])} ZIPs", 0, ""),
         }.get(job.kind, (job.kind, "", 0, ""))
         return {"title": info[0], "detail": info[1], "total": info[2], "unit": info[3],
                 "done": len(job.done_steps or [])}
@@ -307,6 +308,27 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
         job_id = jobs.enqueue(sf, "enrich", {"ids": [business_id], "kinds": ["domain"], "refresh": True})
         return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
+    @app.get("/markets", response_class=HTMLResponse)
+    def markets_page(request: Request, keyword: str = "", state: str = "", label: str = ""):
+        from leadengine.geo.market import markets, ranked
+
+        with sf() as s:
+            past = list(dict.fromkeys(s.scalars(select(Search.keyword).order_by(Search.id.desc()).limit(50))))
+            rows = ranked(list(markets(s, keyword).values())) if keyword else []
+        if state:
+            rows = [r for r in rows if r.get("state") == state.upper()]
+        if label:
+            rows = [r for r in rows if r["label"] == label]
+        return render(request, "markets.html", rows=rows, keyword=keyword, past=past, state=state, label=label)
+
+    @app.post("/markets/scan")
+    def markets_scan(keyword: str = Form(...), zips: str = Form(...), refresh: bool = Form(False)):
+        zip_list = _split_zips(zips)[:80]
+        if not keyword.strip() or not zip_list:
+            raise HTTPException(400, "keyword and ZIPs needed")
+        job_id = jobs.enqueue(sf, "market", {"keyword": keyword.strip(), "zips": zip_list, "refresh": refresh})
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
     @app.get("/areas", response_class=HTMLResponse)
     def areas_page(request: Request, state: str = "", county: str = "", keyword: str = "", sort: str = "population"):
         from leadengine.geo import explorer
@@ -321,7 +343,14 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
                 counties = explorer.with_coverage(explorer.counties(state), cov)
                 if county:
                     towns = explorer.with_coverage(explorer.towns(state, county), cov)
+                    if keyword:
+                        from leadengine.geo.market import markets
+                        mk = markets(s, keyword, [z for t in towns for z in t["zips"]])
+                        for t in towns:
+                            ms = [mk[z] for z in t["zips"] if z in mk]
+                            t["market"] = max(ms, key=lambda m: m["weakness"]) if ms else None
         key = {"wealth": lambda x: -(x["wealth"] or -1), "coverage": lambda x: x["coverage"],
+               "easy": lambda x: -((x.get("market") or {}).get("weakness") or -1),
                "targets": lambda x: -x["targets"], "name": lambda x: x["name"]}.get(sort)
         if key:
             counties.sort(key=key)

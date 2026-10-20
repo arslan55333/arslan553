@@ -1,0 +1,23 @@
+{% extends "base.html" %}{% block title %}Markets{% endblock %}{% block body %}
+<h1>📈 Market finder</h1>
+<p class="sub">Where is it <b>easiest to rank a client into Google's top 3</b> for a keyword? Each measured ZIP is scored on how strong the
+ top 3 are, how many top listings are fake, how many have no or weak websites, and how much money is in it (demand × job value, wealth).
+ Measure towns from the <a href="/areas">Areas</a> page (tick towns → <b>Measure markets</b>) — 1 free search per ZIP.</p>
+<form class="filters card" method="get" action="/markets">
+ <div><label>Keyword</label><input name="keyword" list="pk" value="{{ keyword }}" required><datalist id="pk">{% for k in past %}<option value="{{ k }}">{% endfor %}</datalist></div>
+ <div><label>State</label><input name="state" value="{{ state }}" style="width:70px" placeholder="NY"></div>
+ <div><label>Show</label><select name="label"><option value="">All</option>{% for l in ['easy','medium','hard'] %}<option {{ 'selected' if label == l }}>{{ l }}</option>{% endfor %}</select></div>
+ <div><button class="btn">Show</button></div></form>
+{% if rows %}<table><tr><th>Market</th><th>Town</th><th>Top-3 reviews</th><th>Fake in top 5</th><th>Weak / no site (top 10)</th><th>Advertisers</th><th>Searches / mo</th><th>#1 spot worth</th><th>Wealth</th><th>Top 3 now</th></tr>
+{% for m in rows %}<tr>
+ <td><span class="badge {{ {'easy':'Cold','medium':'Warm','hard':'Hot'}[m.label] }}">{{ m.label }} {{ m.weakness }}</span></td>
+ <td><a href="/leads?zip={{ m.zip }}&keyword={{ keyword|urlencode }}"><b>{{ m.town }}</b> {{ m.zip }}</a></td>
+ <td>{{ m.top3_reviews }} <span class="muted small">(min {{ m.top3_min_reviews }}{{ ', ' ~ m.top3_rating ~ '★' if m.top3_rating }})</span></td>
+ <td>{{ m.fakes_top5 }}</td><td>{{ m.no_site_top10 }}/10</td><td>{{ m.advertisers_top10 }}</td>
+ <td>{{ m.demand or '–' }}</td><td>{{ ('$' ~ '{:,}'.format(m.top_spot_value)) if m.top_spot_value else '–' }}</td>
+ <td style="color:#15803d;font-weight:700">{{ m.wealth_label }}</td>
+ <td class="small">{% for l in m.leaders %}<a href="/leads/{{ l.id }}">{{ l.name }}</a> ({{ l.reviews or 0 }}){% if l.fake %} ⚠{% endif %}{{ '' if loop.last else ' · ' }}{% endfor %}</td></tr>{% endfor %}</table>
+<p class="small muted">Easy = a new or improved business could reach the top 3 soon. Use it for clients (where to push), or for your own
+ rank-and-rent sites. Estimates: demand from population × typical searches for the trade, #1 spot ≈ 18% of clicks → calls → jobs.</p>
+{% elif keyword %}<div class="card"><p>No measured towns for "{{ keyword }}" yet. Go to <a href="/areas">Areas</a>, open a county, tick towns and click <b>Measure markets</b>.</p></div>{% endif %}
+{% endblock %}
