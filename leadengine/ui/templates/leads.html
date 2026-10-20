@@ -13,6 +13,7 @@
  <div><label>ZIP</label><input name="zip" style="width:80px" value="{{ q.get('zip','') }}"></div>
  <div><label>Keyword</label><input name="keyword" style="width:140px" value="{{ q.get('keyword','') }}"></div>
  <div><label>Status</label><select name="status"><option value="">Any</option>{% for st in STATUSES %}<option {{ 'selected' if q.get('status')==st }}>{{ st }}</option>{% endfor %}</select></div>
+ <div><label style="font-weight:600" title="Hide listings that look fake (spam networks)"><input type="checkbox" name="hide_fake" value="1" {{ 'checked' if q.get('hide_fake') }}> Hide likely fake</label></div>
  <div><label style="font-weight:600" title="Few reviews and no website, or a website less than a year old"><input type="checkbox" name="new" value="1" {{ 'checked' if q.get('new') }}> 🆕 New businesses</label></div>
  <div><label title="Pays for Google Ads but has no real website, or a weak website / landing page / local SEO — and isn't a chain" style="font-weight:600"><input type="checkbox" name="targets" value="1" {{ 'checked' if q.get('targets') }}> 🎯 My targets</label></div>
  <div><button class="btn">Filter</button></div></form>
@@ -28,7 +29,7 @@
  <td><input type="checkbox" name="ids" value="{{ b.id }}"></td>
  <td><span class="badge {{ b.lead_label or 'Skip' }}">{{ b.lead_label or '–' }}</span></td>
  <td class="num score">{{ b.opportunity_score if b.opportunity_score is not none else '–' }}</td>
- <td><a href="/leads/{{ b.id }}"><b>{{ b.name }}</b></a><div class="small muted">{{ b.city or '' }} {{ b.zip_code or '' }}</div></td>
+ <td><a href="/leads/{{ b.id }}"><b>{{ b.name }}</b></a>{% if (b.spam_score or 0) >= 55 %} <span class="badge Hot" title="{{ (b.spam_reasons or [])|join('; ') }}">⚠ likely fake</span>{% elif (b.spam_score or 0) >= 30 %} <span class="badge Skip" title="{{ (b.spam_reasons or [])|join('; ') }}">suspicious</span>{% endif %}{% if b.duplicates %} <span class="badge Skip" title="other listings with the same phone / site">duplicate</span>{% endif %}<div class="small muted">{{ b.city or '' }} {{ b.zip_code or '' }}</div></td>
  <td class="num">{{ '%.1f'|format(b.rating) if b.rating is not none else '–' }}<div class="small muted">{{ b.review_count or 0 }} rev.</div></td>
  <td>{% if b.ads_status %}<span class="badge {{ b.ads_status }}">{{ b.ads_status }}{{ ' +LSA' if b.lsa }}</span>{% elif b.id in checked.ads %}<span class="small muted">None</span>{% elif b.id in checked.ads_failed %}<span class="nc" title="Google could not be checked (captcha / offline) - tick it and Deep-check again">check failed</span>{% else %}<span class="nc" title="{{ nc_title }}">not checked</span>{% endif %}</td>
  <td>{% if b.website_flags and ('no_website' in b.website_flags or 'facebook_only' in b.website_flags) %}<span class="badge Hot">{{ b.website_flags[0]|replace('_',' ') }}</span>

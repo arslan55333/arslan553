@@ -117,7 +117,8 @@ def _reachability(b: Business, emails_checked: bool = True) -> tuple[float, str 
 
 def score_business(b: Business, *, today: date, website_reasons: list[str] | None = None,
                    lead_status: str | None = None, weights: dict | None = None, rules: dict | None = None,
-                   checked: set[str] | None = None, chain: str | None = None) -> Opportunity:
+                   checked: set[str] | None = None, chain: str | None = None,
+                   spam: str | None = None) -> Opportunity:
     """``checked``: which deep checks ran for this lead ({"emails", "website", "ads"}); None = assume all."""
     weights = {**DEFAULT_WEIGHTS, **(weights or {})}
     rules = {**DEFAULT_RULES, **(rules or {})}
@@ -156,6 +157,8 @@ def score_business(b: Business, *, today: date, website_reasons: list[str] | Non
         skip = "business closed"
     elif chain and rules.get("skip_chains", True):
         skip = f"national chain / franchise ({chain})"
+    elif spam and rules.get("skip_spam", True):
+        skip = f"likely fake listing ({spam})"
     elif lead_status in CONTACTED:
         skip = f"already contacted ({lead_status})"
     elif b.rating is not None and b.rating < rules["min_rating"]:

@@ -29,6 +29,13 @@
   <button class="btn">Save</button></form>
   {% if events %}<ul class="clean small" style="margin-top:12px">{% for e in events %}<li><span class="muted">{{ e.at.strftime('%Y-%m-%d %H:%M') }}</span> {% if e.status %}<b>{{ e.status }}</b>{% endif %} {{ e.note or '' }}</li>{% endfor %}</ul>{% endif %}</div>
 </div>
+{% if (b.spam_score or 0) >= 30 or b.duplicates %}
+<div class="card" style="margin-top:16px;border-color:#fca5a5"><h2>⚠ Listing check {% if (b.spam_score or 0) >= 55 %}<span class="badge Hot">likely fake · {{ b.spam_score }}</span>{% elif (b.spam_score or 0) >= 30 %}<span class="badge Skip">suspicious · {{ b.spam_score }}</span>{% endif %}</h2>
+ {% if b.spam_reasons and (b.spam_score or 0) >= 30 %}<ul class="clean small">{% for r in b.spam_reasons %}<li>{{ r }}</li>{% endfor %}</ul>
+ <p class="small muted">A pointer, not a verdict — check the listing yourself. Fake listings are removed by Google after a report through its
+  Business Redressal Complaint Form (or "Suggest an edit" → "Remove this place" on Google Maps).</p>{% endif %}
+ {% if b.duplicates %}<p class="small"><b>Other listings that look like the same business:</b> {% for d in b.duplicates %}<a href="/leads/{{ d }}">#{{ d }}</a> {% endfor %}
+  — duplicate listings split the reviews and hurt ranking; merging them is a quick win for the owner.</p>{% endif %}</div>{% endif %}
 {% set w = money.ad_waste %}{% set m = money.money %}{% set g = money.gap %}
 {% if w or m or g %}<div class="card" style="margin-top:16px"><h2>💰 Money insights <span class="small muted">estimates — niche: {{ money.niche }}</span></h2>
 <div class="grid g3">
@@ -44,6 +51,7 @@
  {% if g %}<div><div class="stat"><div class="l">Behind the top 3 on</div><div class="n">{{ g.behind }}<span class="small">/{{ g.measured }}</span></div>
   <div class="small muted">vs {{ g.competitors|map(attribute='name')|join(', ') }}</div></div>
   {% if g.actions %}<ul class="clean small" style="margin-top:8px">{% for a in g.actions %}<li>✓ {{ a }}</li>{% endfor %}</ul>{% endif %}
+  {% if g.fake_above %}<div class="small" style="margin-top:6px;color:#b91c1c"><b>⚠ {{ g.fake_above|length }} of the listings above it look fake:</b> {{ g.fake_above|map(attribute='name')|join(', ') }} — reporting them to Google can move this business up.</div>{% endif %}
   {% if g.category_gap %}<div class="small" style="margin-top:6px"><b>Categories the top 3 use that it doesn't:</b> {{ g.category_gap|join(', ') }}</div>{% endif %}
   {% if g.actions %}
   {% else %}<p class="small muted" style="margin-top:8px">Already ahead of them on everything measured — they win on distance to the searcher, keywords in their business name, or are spam listings. The fix: service + town pages and Google profile activity.</p>{% endif %}</div>{% endif %}

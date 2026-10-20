@@ -83,6 +83,19 @@ class DiscoverOutcome:
     skipped: int = 0
 
 
+def _places_near(zip_code: str | None) -> set[str]:
+    """Lower-case town names around a ZIP (for spotting place-stuffed business names)."""
+    from leadengine.geo.explorer import US_STATES
+    from leadengine.geo.zipdata import zip_directory
+
+    out = {"nyc", "new york"}
+    z = zip_directory().get(zip_code or "")
+    if z is not None:
+        out |= {o.city.lower() for o, _ in zip_directory().nearby(z.lat, z.lng, 30)}
+        out |= {z.state.lower(), US_STATES.get(z.state, "").lower(), (z.county or "").lower()}
+    return {p for p in out if len(p) > 2}
+
+
 def _phone_on(phone: str, check: dict) -> bool:
     """The guessed site really belongs to the business (its page shows the business phone)."""
     return bool(check.get("phone_match"))
@@ -833,15 +846,34 @@ class LeadService:
                     "ads": {i for i, e in repo.latest_enrichments(ids, "ads").items()
                             if (e.payload or {}).get("status") != "Unknown"}}
             statuses = repo.lead_statuses(ids if len(ids) <= 900 else None)
+            from leadengine.scoring.spam import counts as spam_counts
+            from leadengine.scoring.spam import duplicate_groups, network_sizes, spam_signals, template_key
+            everyone = list(session.scalars(select(Business)))
+            phones, domains = spam_counts(everyone)
+            nets = network_sizes(everyone)
+            dups = duplicate_groups(everyone)
+            doms = repo.latest_enrichments(ids, "domain")
+            places_cache: dict[str | None, set[str]] = {}
             for biz in businesses:
                 fill_location(biz)
                 fix_ad_website(repo, biz)
+                if biz.zip_code not in places_cache:
+                    places_cache[biz.zip_code] = _places_near(biz.zip_code)
+                d = (biz.domain or "").removeprefix("www.")
+                sp = spam_signals(biz, phone_count=phones.get(biz.phone_norm, 1) if biz.phone_norm else 1,
+                                  domain_count=domains.get(d, 1) if d else 1,
+                                  domain_info=(doms[biz.id].payload if biz.id in doms else None),
+                                  places=places_cache[biz.zip_code] | {(biz.city or "").lower()} - {""}, today=today,
+                                  network=nets.get(template_key(biz), 1) if template_key(biz) else 1)
+                biz.spam_score, biz.spam_reasons = sp["score"], sp["reasons"]
+                biz.duplicates = dups.get(biz.id) or None
                 web = webs.get(biz.id)
                 checked = {k for k, have in (("website", webs), ("emails", done["emails"]), ("ads", done["ads"]))
                            if biz.id in have}
                 opp = score_business(biz, today=today, website_reasons=(web.payload or {}).get("reasons") if web else None,
                                      lead_status=statuses.get(biz.id), weights=weights, rules=rules, checked=checked,
-                                     chain=chain_name(biz, domain_cities))
+                                     chain=chain_name(biz, domain_cities),
+                                     spam=(sp["reasons"][0] if sp["label"] == "likely_fake" else None))
                 biz.opportunity_score, biz.lead_label, biz.lead_reason = opp.score, opp.label, opp.reason
                 biz.scored_at = utcnow()
                 out.append({"id": biz.id, "name": biz.name, "score": opp.score, "label": opp.label,

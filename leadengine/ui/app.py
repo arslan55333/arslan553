@@ -170,6 +170,8 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             order=q.get("sort") or "opportunity", limit=None if targets else limit)
         if targets:
             rows = [b for b in rows if is_target(b)][:limit]
+        if q.get("hide_fake"):
+            rows = [b for b in rows if (b.spam_score or 0) < 55]
         if q.get("new"):
             webs = Repository(session).latest_enrichments([b.id for b in rows], "website")
             doms = Repository(session).latest_enrichments([b.id for b in rows], "domain")
@@ -217,7 +219,7 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
                       prefill_zips=" ".join(_split_zips(zips)) if zips else "", prefill_kw=keyword)
 
     @app.get("/rescue", response_class=HTMLResponse)
-    def rescue_page(request: Request, status: str = "", keyword: str = "", min_reviews: int = 0):
+    def rescue_page(request: Request, status: str = "", keyword: str = "", min_reviews: int = 0, show_fake: bool = False):
         from leadengine.db.models import Watch
         from leadengine.enrich.domains import LABELS, rescue_rank
 
@@ -231,6 +233,8 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
                 d = e.payload if e else None
                 if not d or d.get("status") in ("ok", None) or (status and d.get("status") != status):
                     continue
+                if not show_fake and (b.spam_score or 0) >= 55:
+                    continue
                 rows.append({"b": b, "d": d, "checked": e.fetched_at})
             rows.sort(key=lambda r: (rescue_rank(r["d"]), -(r["b"].review_count or 0)))
             checked = sum(1 for b in bizs if b.id in doms)
@@ -242,7 +246,7 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             past = list(dict.fromkeys(s.scalars(select(Search.keyword).order_by(Search.id.desc()).limit(50))))
         return render(request, "rescue.html", rows=rows[:500], labels=LABELS, status=status, keyword=keyword,
                       min_reviews=min_reviews, checked=checked, unchecked=unchecked, counts=counts,
-                      monitoring=monitoring, past=past)
+                      monitoring=monitoring, past=past, show_fake=show_fake)
 
     @app.post("/rescue/check")
     def rescue_check(keyword: str = Form(""), min_reviews: int = Form(0), refresh: bool = Form(False)):
@@ -419,9 +423,11 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             focus = b or grid.focus_business_id or ((grid.summary or [{}])[0].get("business_id"))
             row = next((x for x in grid.summary or [] if x["business_id"] == focus), None)
             biz = s.get(Business, focus) if focus else None
+            ids = [x["business_id"] for x in grid.summary or []]
+            spam = {b.id: b.spam_score or 0 for b in s.scalars(select(Business).where(Business.id.in_(ids)))} if ids else {}
         svg = svg_heatmap(grid.points or [], focus, title=f"{grid.keyword} rank map",
                           tiles=bool(settings.section("rank").get("map_tiles", True)))
-        return render(request, "rank_detail.html", grid=grid, focus=focus, row=row, biz=biz, svg=svg)
+        return render(request, "rank_detail.html", grid=grid, focus=focus, row=row, biz=biz, svg=svg, spam=spam)
 
     # ── settings (keys, proxies, options) ────────────────────────────
     @app.get("/settings", response_class=HTMLResponse)

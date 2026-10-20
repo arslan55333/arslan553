@@ -10,6 +10,7 @@
  <div><label>Keyword</label><input name="keyword" list="pk" value="{{ keyword }}" placeholder="any"><datalist id="pk">{% for k in past %}<option value="{{ k }}">{% endfor %}</datalist></div>
  <div><label>Min reviews</label><input name="min_reviews" type="number" style="width:90px" value="{{ min_reviews or '' }}"></div>
  <div><label>Status</label><select name="status"><option value="">Any problem</option>{% for k, v in labels.items() if k not in ('ok',) %}<option value="{{ k }}" {{ 'selected' if status == k }}>{{ v[0] }}</option>{% endfor %}</select></div>
+ <div><label style="font-weight:500"><input type="checkbox" name="show_fake" value="true" {{ 'checked' if show_fake }}> Show likely-fake listings too</label></div>
  <div><button class="btn">Show</button></div></form>
 <div class="row" style="gap:10px;margin:6px 0 12px;flex-wrap:wrap">
  <form method="post" action="/rescue/check" class="row" style="gap:6px"><input type="hidden" name="keyword" value="{{ keyword }}"><input type="hidden" name="min_reviews" value="{{ min_reviews }}">

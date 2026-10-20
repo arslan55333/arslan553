@@ -79,6 +79,9 @@ class Business(Base):
     reputation_score: Mapped[int | None] = mapped_column(Integer)   # 0-100 reviews health (negatives, replies, speed)
     citation_score: Mapped[int | None] = mapped_column(Integer)     # 0-100 directory coverage + NAP consistency
     domain_status: Mapped[str | None] = mapped_column(String(30))   # Domain Rescue: ok | expiring_soon | expired_grace …
+    spam_score: Mapped[int | None] = mapped_column(Integer)         # 0-100 "looks like a fake listing"
+    spam_reasons: Mapped[Any] = mapped_column(JSON, nullable=True)
+    duplicates: Mapped[Any] = mapped_column(JSON, nullable=True)    # ids of other listings of the same business
     meta_ads: Mapped[bool | None] = mapped_column(Boolean)
 
     # Opportunity (Phase 6)

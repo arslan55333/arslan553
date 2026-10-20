@@ -70,6 +70,7 @@ class OutreachFacts:
     money_line: str | None = None       # ad waste / calls lost to competitors (estimate)
     nap_line: str | None = None         # e.g. "Yelp still shows your old address (ZIP 11423)"
     domain_line: str | None = None      # e.g. "acme.com stopped working — the domain expired on …"
+    fake_line: str | None = None        # e.g. "2 of the listings above you on Google Maps look fake"
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -206,6 +207,7 @@ def gather(session: Session, biz: Business, cfg: dict[str, Any], brand: dict[str
         map_top3=rank_p.get("top3"), map_points=rank_p.get("points"),
         review_line=review_line(rev_p),
         money_line=_money_line(session, biz),
+        fake_line=_fake_line(session, biz),
         nap_line=nap_line((cit.payload or {}) if cit else {}),
         domain_line=domain_line((dom.payload or {}) if dom else {}),
     )
@@ -242,6 +244,21 @@ def nap_line(c: dict) -> str | None:
     if c.get("missing_core") and len(c["missing_core"]) >= 3:
         return f"I couldn't find you on {', '.join(c['missing_core'][:3])}, which Google uses to confirm your details"
     return None
+
+
+def _fake_line(session: Session, biz: Business) -> str | None:
+    from leadengine.config import get_settings
+    from leadengine.insights import competitor_gap
+    try:
+        kw = next(iter(Repository(session).keywords_for(biz.id)), None)
+        g = competitor_gap(session, biz, kw, None) or {}
+    except Exception:
+        return None
+    n = len(g.get("fake_above") or [])
+    if not n or (biz.spam_score or 0) >= 55:
+        return None
+    return (f"{n} of the listings that show above you on Google Maps look fake (no reviews, throw-away websites) — "
+            "once they're reported, Google removes them and you move up")
 
 
 def _money_line(session: Session, biz: Business) -> str | None:

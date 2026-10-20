@@ -168,6 +168,13 @@ def competitor_gap(session: Session, b: Business, keyword: str | None, rank: dic
                     best[o.id] = min(best.get(o.id, 99), r)
         top = [session.get(Business, i) for i, _ in sorted(best.items(), key=lambda kv: kv[1])[:3]]
     top = [o for o in top if o]
+    fake_above = [{"id": o.id, "name": o.name, "score": o.spam_score, "reasons": (o.spam_reasons or [])[:3]}
+                  for o in top if (o.spam_score or 0) >= 55]
+    real = [o for o in top if (o.spam_score or 0) < 55]
+    if fake_above and len(real) < 3:                 # look further down for real competitors to compare with
+        more = _more_competitors(session, b, keyword, exclude={o.id for o in top}, need=3 - len(real))
+        real += more
+    top = real or top
     if not top:
         return None
 
@@ -216,10 +223,29 @@ def competitor_gap(session: Session, b: Business, keyword: str | None, rank: dic
     category_gap = [c for c, n in sorted(counts.items(), key=lambda kv: -kv[1]) if n >= need and c.lower() not in mine][:5]
     for c in category_gap[:2]:
         actions.insert(0, f"add the Google category \"{c}\" (the top businesses use it)")
-    return {"category_gap": category_gap,
+    return {"category_gap": category_gap, "fake_above": fake_above,
             "competitors": [{"id": o.id, "name": o.name, "rating": o.rating, "reviews": o.review_count,
                              "website": o.website} for o in top],
             "rows": rows, "actions": actions[:6], "behind": sum(r["behind"] for r in rows), "measured": len(rows)}
+
+
+def _more_competitors(session: Session, b: Business, keyword: str | None, *, exclude: set[int], need: int) -> list:
+    repo = Repository(session)
+    searches = select(SearchResult.search_id).join(Search, Search.id == SearchResult.search_id).where(
+        SearchResult.business_id == b.id)
+    if keyword:
+        searches = searches.where(Search.keyword == keyword)
+    best: dict[int, int] = {}
+    skip = exclude | set(b.duplicates or [])
+    for sid in session.scalars(searches):
+        results = repo.search_results(sid, limit=20)
+        mine = next((r for o, r in results if o.id == b.id), None)
+        for o, r in results:
+            if mine is not None and r >= mine:
+                break                                   # only businesses that rank above it
+            if o.id != b.id and o.id not in skip and (o.spam_score or 0) < 55:
+                best[o.id] = min(best.get(o.id, 99), r)
+    return [session.get(Business, i) for i, _ in sorted(best.items(), key=lambda kv: kv[1])[:need]]
 
 
 def insights(session: Session, b: Business, settings) -> dict[str, Any]:

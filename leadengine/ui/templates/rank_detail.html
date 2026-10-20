@@ -10,6 +10,6 @@
  <div class="card"><h2>Who owns this area</h2><p class="small muted">Click a business to see its map.</p>
   <div class="scroll"><table class="small"><tr><th>#</th><th>Business</th><th class="num">Top 3</th><th class="num">Share</th><th class="num">Avg pos.</th></tr>
   {% for r in (grid.summary or [])[:40] %}<tr {% if r.business_id == focus %}style="background:#eef2ff"{% endif %}><td>{{ loop.index }}</td>
-   <td><a href="/rank/{{ grid.id }}?b={{ r.business_id }}">{{ r.name }}</a></td><td class="num">{{ r.top3 }}/{{ r.points }}</td>
+   <td><a href="/rank/{{ grid.id }}?b={{ r.business_id }}">{{ r.name }}</a>{% if spam.get(r.business_id, 0) >= 55 %} <span class="badge Hot" title="looks like a fake listing">⚠ fake?</span>{% endif %}</td><td class="num">{{ r.top3 }}/{{ r.points }}</td>
    <td class="num"><b>{{ r.solv }}%</b></td><td class="num">{{ r.avg_rank }}</td></tr>{% endfor %}</table></div></div>
 </div>{% endblock %}
