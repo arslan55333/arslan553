@@ -137,6 +137,15 @@
   {% for p in sa.pages %}<tr><td><a href="{{ p.url }}" target="_blank" rel="noopener">{{ p.url.split('//')[-1][:60] }}</a></td><td>{{ p.status or p.error }}</td><td>{{ (p.title or '–')[:50] }}</td><td>{{ p.h1 if p.h1 is not none else '' }}</td>
   <td>{{ p.words or '' }}</td><td>{{ '✓' if p.meta else ('✗' if p.meta is sameas false else '') }}</td><td>{{ '⚠' if p.noindex else '' }}</td></tr>{% endfor %}</table></details>
  {% else %}<p class="small muted">Checks every page of the website (broken pages, titles, headlines, thin content, noindex, schema) and lists the service and town pages the competitors above it have that it doesn't.</p>{% endif %}</div>{% endif %}
+{% set dm = enr.domain %}{% if b.website or dm %}
+<div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between">
+ <h2 style="margin:0">Domain {% if dm %}<span class="small">{{ dm.icon }} {{ dm.label }}</span>{% endif %}</h2>
+ <form method="post" action="/leads/{{ b.id }}/domain"><button class="btn ghost" title="Free: RDAP / WHOIS + the site itself">{{ 'Check again' if dm else 'Check domain' }}</button></form></div>
+ {% if dm %}<p class="small" style="margin:8px 0"><b>{{ dm.domain }}</b>{% if dm.registrar %} · {{ dm.registrar }}{% endif %}{% if dm.registered %} · registered {{ dm.registered }}{% endif %}{% if dm.expires %} · expires {{ dm.expires }}{% if dm.days_to_expiry is not none %} ({{ dm.days_to_expiry }} days){% endif %}{% endif %}</p>
+ {% if dm.action %}<p class="small">{{ dm.action }}</p>{% endif %}
+ {% if dm.owner_can_renew_until %}<p class="small">Owner can still renew until about <b>{{ dm.owner_can_renew_until }}</b>; after that it drops around {{ dm.drops_around }}.</p>{% endif %}
+ {% if dm.wayback and dm.wayback.snapshot %}<p class="small">Wayback Machine: site seen {{ dm.wayback.captures }} times since {{ dm.wayback.first_year }}, last {{ dm.wayback.last_seen }} — <a href="{{ dm.wayback.snapshot }}" target="_blank" rel="noopener">see the old site</a></p>{% endif %}
+ {% else %}<p class="small muted">Expired, expiring, grabbed by a domainer, or site down? Free check (RDAP / WHOIS).</p>{% endif %}</div>{% endif %}
 {% set info = enr.site_info %}{% if b.website or info %}
 <div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Website facts</h2>
  <form method="post" action="/leads/{{ b.id }}/site-facts"><button class="btn ghost" title="Firecrawl reads the site with AI (about 5 credits)">{{ 'Read again' if info else 'Read services / owner / years' }} (Firecrawl)</button></form></div>

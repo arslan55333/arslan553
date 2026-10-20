@@ -78,6 +78,7 @@ class Settings:
     alert_webhook_url: str = ""
     deploy_keys: dict[str, str] = field(default_factory=dict)
     outreach_keys: dict[str, str] = field(default_factory=dict)
+    porkbun_keys: dict[str, str] = field(default_factory=dict)
 
     def ttl(self, kind: str) -> float:
         """Freshness window in days for a cached data kind."""
@@ -156,6 +157,7 @@ class Settings:
             alert_webhook_url=env.get("ALERT_WEBHOOK_URL", ""),
             deploy_keys={"netlify": env.get("NETLIFY_TOKEN", ""), "cloudflare_token": env.get("CLOUDFLARE_API_TOKEN", ""),
                          "cloudflare_account": env.get("CLOUDFLARE_ACCOUNT_ID", "")},
+            porkbun_keys={"key": env.get("PORKBUN_API_KEY", ""), "secret": env.get("PORKBUN_SECRET_KEY", "")},
             outreach_keys={"smtp_user": env.get("OUTREACH_SMTP_USER", ""),
                            "smtp_password": env.get("OUTREACH_SMTP_PASSWORD", ""),
                            "webhook_url": env.get("OUTREACH_WEBHOOK_URL", "")},

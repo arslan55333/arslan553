@@ -110,7 +110,7 @@ def _ads_line(f: OutreachFacts) -> str | None:
 
 # ── template drafts ──────────────────────────────────────────────────
 def template_drafts(f: OutreachFacts, cfg: dict[str, Any], attach: bool = False) -> dict[str, Any]:
-    issue = _issue_lines(f, 1)[0]
+    issue = f.domain_line or _issue_lines(f, 1)[0]
     rating = _rating_line(f)
     preview = _preview_sentence(f, attach)
     offer = (cfg.get("offer") or "").strip()
@@ -123,7 +123,7 @@ def template_drafts(f: OutreachFacts, cfg: dict[str, Any], attach: bool = False)
     short_mid = (f"{rating} - but {issue}." if rating else f"One thing stood out: {issue}.")
     short = "\n\n".join([greeting(f), f"{intro} {short_mid}", preview, "Worth a quick look?"])
 
-    found = _issue_lines(f, 3)
+    found = ([f.domain_line] if f.domain_line else []) + _issue_lines(f, 3 - bool(f.domain_line))
     bullets = "\n".join(f"- {i}" for i in found)
     things = "a few things that are" if len(found) > 1 else "one thing that's"
     checked = f"I ran a quick check on {f.domain}" if f.domain and not f.no_website else "I took a quick look online"

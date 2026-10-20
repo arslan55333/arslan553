@@ -83,6 +83,11 @@ class DiscoverOutcome:
     skipped: int = 0
 
 
+def _phone_on(phone: str, check: dict) -> bool:
+    """The guessed site really belongs to the business (its page shows the business phone)."""
+    return bool(check.get("phone_match"))
+
+
 class LeadService:
     def __init__(
         self,
@@ -346,6 +351,9 @@ class LeadService:
             if cfg.get("seo", True):
                 say("Local SEO checks...")
                 await self.seo_audits(shortlist_ids, on_progress=say)
+            if self.settings.section("domains").get("enabled", True):
+                say("Domain checks (expired / expiring / for sale)...")
+                await self.domain_checks(shortlist_ids, on_progress=say)
             if str(self.settings.section("firecrawl").get("mode", "smart")) == "full" and self.settings.firecrawl_api_key:
                 say("Reading services / owner / years from websites (Firecrawl)...")
                 await self.site_info(shortlist_ids, on_progress=say)
@@ -1326,6 +1334,65 @@ class LeadService:
             rows.append({"id": bid, "name": biz.name, **crawl})
         return rows
 
+    async def domain_checks(self, business_ids: list[int], *, refresh: bool = False, guesses: bool | None = None,
+                            on_progress: Callable[[str], None] | None = None) -> list[dict]:
+        """Domain Rescue per business (cached 7 days): expired / grace / redemption / pending delete / available /
+        taken by a domainer / expiring soon / site down. Businesses without a website get name-based guesses
+        (antsjunkremoval.com …) that only count when the Wayback Machine shows a site there before."""
+        from leadengine.enrich.domains import check_domain, domain_of_site, name_guesses, rescue_rank
+        from leadengine.normalize import is_shared_domain
+
+        say = on_progress or (lambda _m: None)
+        cfg = self.settings.section("domains")
+        guesses = cfg.get("guesses", True) if guesses is None else guesses
+        min_rev = int(cfg.get("guess_min_reviews", 10))
+        pork = (self.settings.porkbun_keys.get("key", ""), self.settings.porkbun_keys.get("secret", ""))
+        rows = []
+        for bid in business_ids:
+            with self._sf() as session:
+                repo = Repository(session)
+                biz = repo.get_business(bid)
+                if biz is None:
+                    continue
+                cached = None if refresh else repo.latest_enrichment(bid, "domain")
+                if cached is not None:
+                    rows.append({"id": bid, "name": biz.name, "cached": True, **cached.payload})
+                    continue
+                session.expunge(biz)
+            dom = domain_of_site(biz.website)
+            result: dict | None = None
+            if dom and not is_shared_domain(dom):
+                say(f"  domain: {dom}")
+                result = await check_domain(self.http, dom, porkbun=pork, phone=biz.phone)
+                result["source"] = "listing"
+            elif guesses and (biz.review_count or 0) >= min_rev:
+                found = []
+                for g in name_guesses(biz.name, biz.city):
+                    say(f"  domain guess: {g}")
+                    r = await check_domain(self.http, g, porkbun=pork, phone=biz.phone)
+                    wb = r.get("wayback") or {}
+                    if r["status"] in ("available", "for_sale", "pending_delete", "redemption", "expired_grace") \
+                            and wb.get("captures"):
+                        r["source"] = "guess (seen on the Wayback Machine)"
+                        found.append(r)
+                    elif r["status"] in ("ok", "expiring_soon") and (r.get("page") or {}).get("loads") and \
+                            biz.phone and _phone_on(biz.phone, r):
+                        r["source"] = "guess — the business's own site, missing from its Google listing"
+                        r["status"], r["label"], r["icon"] = "missing_from_listing", "Site not linked on Google", "🔗"
+                        r["action"] = "Their site works but the Google listing has no website link — easy quick win."
+                        found.append(r)
+                result = sorted(found, key=rescue_rank)[0] if found else None
+            if result is None:
+                rows.append({"id": bid, "name": biz.name, "status": "none"})
+                continue
+            with self._sf() as session:
+                repo = Repository(session)
+                repo.set_enrichment(bid, "domain", result, ttl_days=7, source="rdap")
+                repo.get_business(bid).domain_status = result["status"]
+                session.commit()
+            rows.append({"id": bid, "name": biz.name, **result})
+        return rows
+
     async def site_info(self, business_ids: list[int], *, refresh: bool = False, explicit: bool = False,
                         on_progress: Callable[[str], None] | None = None) -> int:
         """Firecrawl 'full' mode: services, service areas, owner, years in business from each website (cached).
@@ -1425,6 +1492,9 @@ class LeadService:
             if kind == "rank":
                 created += await self._run_rank_watch(wid, keyword, watch_biz, say)
                 continue
+            if kind == "domains":
+                created += await self._run_domain_watch(wid, say)
+                continue
             say(f"Watch #{wid}: '{keyword}' in {', '.join(locations)}")
             try:
                 out = await self.ads_sweep(keyword, locations, variations=variations, watch_id=wid, on_progress=say)
@@ -1452,6 +1522,35 @@ class LeadService:
             except Exception as exc:
                 say(f"  alert webhook failed: {exc}")
         return {"watches": len(ids), "alerts": len(created), "link": "/alerts"}
+
+    async def _run_domain_watch(self, wid: int, say) -> list[dict]:
+        """Weekly: re-check the domain of every lead you're working on; alert when one starts to expire or dies."""
+        from sqlalchemy import select
+
+        from leadengine.db.models import Alert, LeadStatus, Watch
+
+        bad = {"expiring_soon", "expired_grace", "redemption", "pending_delete", "available", "for_sale", "site_down"}
+        with self._sf() as session:
+            lost = {i for i, st in session.execute(select(LeadStatus.business_id, LeadStatus.status)) if st in ("Lost", "Won")}
+            ids = [b.id for b in session.scalars(select(Business).where(Business.website.is_not(None)))
+                   if b.id not in lost and (b.lead_label in ("Hot", "Warm") or b.ads_status in ("Active", "Likely")
+                                            or b.domain_status)]
+            before = {b.id: b.domain_status for b in session.scalars(select(Business).where(Business.id.in_(ids)))}
+        say(f"Domain monitor: {len(ids)} lead(s)")
+        rows = await self.domain_checks(ids, refresh=True, guesses=False, on_progress=say)
+        out = []
+        with self._sf() as session:
+            for r in rows:
+                st = r.get("status")
+                if st in bad and before.get(r["id"]) != st:
+                    msg = f"{r['name']}: {r.get('domain')} — {r.get('label')}" + (
+                        f" (expires {r['expires']})" if r.get("expires") and st == "expiring_soon" else "")
+                    session.add(Alert(kind="domain", business_id=r["id"], watch_id=wid, message=msg))
+                    out.append({"business_id": r["id"], "message": msg})
+            w = session.get(Watch, wid)
+            w.last_run_at = utcnow()
+            session.commit()
+        return out
 
     async def _run_rank_watch(self, wid: int, keyword: str, business_id: int | None, say) -> list[dict]:
         """Weekly rank map for one business; an Alert when its map-pack share moves by 10+ points."""

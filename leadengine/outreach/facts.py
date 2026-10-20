@@ -69,6 +69,7 @@ class OutreachFacts:
     review_line: str | None = None      # e.g. "6 negative Google reviews have no reply yet"
     money_line: str | None = None       # ad waste / calls lost to competitors (estimate)
     nap_line: str | None = None         # e.g. "Yelp still shows your old address (ZIP 11423)"
+    domain_line: str | None = None      # e.g. "acme.com stopped working — the domain expired on …"
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -159,6 +160,7 @@ def gather(session: Session, biz: Business, cfg: dict[str, Any], brand: dict[str
     aud = repo.latest_enrichment(biz.id, "audit", fresh_only=False)
     rank = repo.latest_enrichment(biz.id, "rank", fresh_only=False)
     rank_p = (rank.payload or {}) if rank else {}
+    dom = repo.latest_enrichment(biz.id, "domain", fresh_only=False)
     cit = repo.latest_enrichment(biz.id, "citations", fresh_only=False)
     rev = repo.latest_enrichment(biz.id, "reviews", fresh_only=False)
     rev_p = (rev.payload or {}) if rev else {}
@@ -205,7 +207,31 @@ def gather(session: Session, biz: Business, cfg: dict[str, Any], brand: dict[str
         review_line=review_line(rev_p),
         money_line=_money_line(session, biz),
         nap_line=nap_line((cit.payload or {}) if cit else {}),
+        domain_line=domain_line((dom.payload or {}) if dom else {}),
     )
+
+
+def domain_line(d: dict) -> str | None:
+    """Outreach-ready fragment about a dead / dying domain (used as the main point of the email)."""
+    st, dom = d.get("status"), d.get("domain")
+    if st == "expired_grace":
+        until = f" — you can still renew it until about {d['owner_can_renew_until']}" if d.get("owner_can_renew_until") else ""
+        return f"your website {dom} is offline because the domain expired{until}"
+    if st == "redemption":
+        return f"your domain {dom} expired and is now in its redemption period — it can still be recovered, but not for long"
+    if st == "pending_delete":
+        return f"your old domain {dom} is about to be deleted and released to the public (around {d.get('drops_around')})"
+    if st == "available" and d.get("source", "listing") != "listing":
+        return f"your old website {dom} is gone — the domain is no longer registered, so anyone could take it"
+    if st == "available":
+        return f"the website on your Google listing ({dom}) no longer exists — the domain isn't registered any more"
+    if st == "for_sale":
+        return f"the domain on your Google listing ({dom}) now belongs to a domain reseller and shows a 'for sale' page"
+    if st == "expiring_soon" and d.get("days_to_expiry") is not None:
+        return f"your domain {dom} expires in {d['days_to_expiry']} days ({d.get('expires')}) — worth renewing before the site goes dark"
+    if st == "site_down":
+        return f"your website {dom} isn't loading right now"
+    return None
 
 
 def nap_line(c: dict) -> str | None:

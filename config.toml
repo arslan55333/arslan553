@@ -81,6 +81,13 @@ timeout_ms = 30000
 [site_audit]
 max_pages = 40            # pages fetched per site (free; Firecrawl only for the page list / JavaScript sites)
 
+# Domain Rescue (Rescue page): expired / expiring / for-sale domains of businesses with good reviews. Free (RDAP + WHOIS)
+[domains]
+enabled = true            # check the domain of every shortlisted business during scans
+guesses = true            # businesses with no website: try name-based domains, kept only if the Wayback Machine saw a site
+guess_min_reviews = 10
+# optional: PORKBUN_API_KEY + PORKBUN_SECRET_KEY (Settings page) confirm "available" + the price
+
 # Money insights on lead pages / reports (estimates; niche averages in leadengine/data/niches.csv)
 [money]
 ad_budget = 1500          # assumed monthly Google Ads budget of a local business, for the "ad waste" estimate

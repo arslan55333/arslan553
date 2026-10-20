@@ -172,7 +172,9 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             rows = [b for b in rows if is_target(b)][:limit]
         if q.get("new"):
             webs = Repository(session).latest_enrichments([b.id for b in rows], "website")
-            rows = [b for b in rows if is_new_business(b, (webs.get(b.id).payload if webs.get(b.id) else None))][:200]
+            doms = Repository(session).latest_enrichments([b.id for b in rows], "domain")
+            rows = [b for b in rows if is_new_business(b, (webs.get(b.id).payload if webs.get(b.id) else None),
+                                                       domain=(doms.get(b.id).payload if doms.get(b.id) else None))][:200]
         return rows
 
     # ── pages ────────────────────────────────────────────────────────
@@ -190,7 +192,12 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             few = Repository(s).list_businesses(limit=None)
             few = [b for b in few if (b.review_count or 0) <= 15]
             webs = Repository(s).latest_enrichments([b.id for b in few], "website") if few else {}
-            new_biz = sum(1 for b in few if is_new_business(b, webs.get(b.id).payload if webs.get(b.id) else None))
+            doms = Repository(s).latest_enrichments([b.id for b in few], "domain") if few else {}
+            new_biz = sum(1 for b in few if is_new_business(b, webs.get(b.id).payload if webs.get(b.id) else None,
+                                                            domain=doms.get(b.id).payload if doms.get(b.id) else None))
+            from leadengine.db.models import Enrichment
+            rescue = s.scalar(select(func.count()).select_from(Business).where(Business.domain_status.in_(
+                ["expired_grace", "redemption", "pending_delete", "available", "for_sale", "site_down"]))) or 0
             recent = list(s.scalars(select(Job).order_by(Job.created_at.desc()).limit(6)))
             pipeline = {st: 0 for st in crm.STATUSES}
             from leadengine.db.models import LeadStatus
@@ -200,7 +207,7 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
         credits = CreditTracker(sf, settings).summary()
         return render(request, "dashboard.html", total=total, by_label=by_label, with_email=with_email,
                       ads_active=ads_active, ads_likely=ads_likely, hot=hot, jobs=recent, credits=credits, pipeline=pipeline,
-                      targets=targets, new_biz=new_biz)
+                      targets=targets, new_biz=new_biz, rescue=rescue)
 
     @app.get("/run", response_class=HTMLResponse)
     def run_form(request: Request, zips: str = "", keyword: str = ""):
@@ -208,6 +215,59 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
                 "google_places": bool(settings.google_places_api_key)}
         return render(request, "run.html", disc=settings.section("discovery"), have=have,
                       prefill_zips=" ".join(_split_zips(zips)) if zips else "", prefill_kw=keyword)
+
+    @app.get("/rescue", response_class=HTMLResponse)
+    def rescue_page(request: Request, status: str = "", keyword: str = "", min_reviews: int = 0):
+        from leadengine.db.models import Watch
+        from leadengine.enrich.domains import LABELS, rescue_rank
+
+        with sf() as s:
+            repo = Repository(s)
+            bizs = repo.list_businesses(keyword=keyword or None, min_reviews=min_reviews or None, limit=None)
+            doms = repo.latest_enrichments([b.id for b in bizs], "domain")
+            rows = []
+            for b in bizs:
+                e = doms.get(b.id)
+                d = e.payload if e else None
+                if not d or d.get("status") in ("ok", None) or (status and d.get("status") != status):
+                    continue
+                rows.append({"b": b, "d": d, "checked": e.fetched_at})
+            rows.sort(key=lambda r: (rescue_rank(r["d"]), -(r["b"].review_count or 0)))
+            checked = sum(1 for b in bizs if b.id in doms)
+            unchecked = len(bizs) - checked
+            monitoring = s.scalars(select(Watch).where(Watch.kind == "domains", Watch.active.is_(True))).first()
+            counts: dict[str, int] = {}
+            for r in rows:
+                counts[r["d"]["status"]] = counts.get(r["d"]["status"], 0) + 1
+            past = list(dict.fromkeys(s.scalars(select(Search.keyword).order_by(Search.id.desc()).limit(50))))
+        return render(request, "rescue.html", rows=rows[:500], labels=LABELS, status=status, keyword=keyword,
+                      min_reviews=min_reviews, checked=checked, unchecked=unchecked, counts=counts,
+                      monitoring=monitoring, past=past)
+
+    @app.post("/rescue/check")
+    def rescue_check(keyword: str = Form(""), min_reviews: int = Form(0), refresh: bool = Form(False)):
+        with sf() as s:
+            ids = [b.id for b in Repository(s).list_businesses(keyword=keyword or None, min_reviews=min_reviews or None,
+                                                               limit=None)]
+        if not ids:
+            return RedirectResponse("/rescue?error=no+businesses+yet", status_code=303)
+        job_id = jobs.enqueue(sf, "enrich", {"ids": ids[:1000], "kinds": ["domain"], "refresh": refresh})
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+    @app.post("/rescue/monitor")
+    def rescue_monitor():
+        from leadengine.db.models import Watch
+
+        with sf() as s:
+            if not s.scalars(select(Watch).where(Watch.kind == "domains", Watch.active.is_(True))).first():
+                s.add(Watch(kind="domains", keyword="domains of my leads", locations=[], every_days=7, active=True))
+                s.commit()
+        return RedirectResponse("/rescue", status_code=303)
+
+    @app.post("/leads/{business_id}/domain")
+    def lead_domain(business_id: int):
+        job_id = jobs.enqueue(sf, "enrich", {"ids": [business_id], "kinds": ["domain"], "refresh": True})
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
     @app.get("/areas", response_class=HTMLResponse)
     def areas_page(request: Request, state: str = "", county: str = "", keyword: str = "", sort: str = "population"):
@@ -434,7 +494,10 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
         key = next((k for k in ss.KEYS if k["test"] == name), None)
         if key is None:
             raise HTTPException(404)
-        ok, msg = await ss.test_key(name, env.get(key["env"], ""))
+        value = env.get(key["env"], "")
+        if name == "porkbun" and value:
+            value = f"{value}|{env.get('PORKBUN_SECRET_KEY', '')}"
+        ok, msg = await ss.test_key(name, value)
         cls = "ok" if ok else "warn"
         return HTMLResponse(f'<span class="{cls}">{"✓" if ok else "✗"} {msg}</span>')
 
@@ -626,7 +689,7 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             repo = Repository(s)
             enr = {k: (e.payload if (e := repo.latest_enrichment(business_id, k, fresh_only=False)) else None)
                    for k in ("website", "ads", "emails", "maps_activity", "landing", "rank", "seo", "audit", "site_info",
-                             "reviews", "citations", "site_audit")}
+                             "reviews", "citations", "site_audit", "domain")}
             emails = list(s.scalars(select(Email).where(Email.business_id == business_id)
                                     .order_by(Email.is_guess, Email.confidence.desc().nulls_last())))
             status = crm.current_status(s, business_id)

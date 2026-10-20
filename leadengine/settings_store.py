@@ -36,6 +36,9 @@ KEYS: list[dict[str, str]] = [
      "url": "https://www.domcop.com/openpagerank/", "help": "Free domain authority (0-10) for the Local SEO score."},
     {"env": "NETLIFY_TOKEN", "label": "Netlify", "test": "netlify", "url": "https://app.netlify.com/user/applications#personal-access-tokens",
      "help": "Publish preview sites and audit reports as links you can email."},
+    {"env": "PORKBUN_API_KEY", "label": "Porkbun API key (domains)", "test": "porkbun", "url": "https://porkbun.com/account/api",
+     "help": "Optional: confirms a lapsed domain is really free to register, with the price (Rescue page)."},
+    {"env": "PORKBUN_SECRET_KEY", "label": "Porkbun secret key", "test": "", "url": "", "help": "Goes with the Porkbun API key."},
     {"env": "OUTREACH_SMTP_USER", "label": "Outreach mailbox user", "test": "", "url": "",
      "help": "Mailbox for 'save drafts to Gmail' / reply checks / opt-in sending (separate outreach domain)."},
     {"env": "OUTREACH_SMTP_PASSWORD", "label": "Outreach mailbox app password", "test": "", "url": "",
@@ -178,6 +181,11 @@ async def test_key(name: str, value: str, client: httpx.AsyncClient | None = Non
             if d.get("success"):
                 return True, f"{d['data'].get('remaining_credits')} credits left"
             return False, d.get("error") or f"HTTP {r.status_code}"
+        if name == "porkbun":
+            key, _, secret = value.partition("|")
+            r = await client.post("https://api.porkbun.com/api/json/v3/ping", json={"apikey": key, "secretapikey": secret})
+            d = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+            return (d.get("status") == "SUCCESS"), ("key works" if d.get("status") == "SUCCESS" else d.get("message") or f"HTTP {r.status_code}")
         if name == "anthropic":
             import anthropic
             try:
