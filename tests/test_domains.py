@@ -116,7 +116,7 @@ def test_service_rescue_page_and_draft(settings, session_factory, make_http):
         assert "Dead Haul" in page and "Expired — grace period" in page and "2026-12-15" in page
         assert "Expired — grace period" in c.get(f"/leads/{bid2}").text
         c.post("/rescue/monitor")
-        assert "Weekly domain monitor is on" in c.get("/rescue").text
+        assert "Weekly domain monitor on" in c.get("/rescue").text
         from leadengine.outreach.compose import template_drafts
         from leadengine.outreach.facts import gather
         with sf() as s:

@@ -69,11 +69,12 @@ def _insights(session: Session, b: Business, settings: Settings) -> dict[str, An
 def gather(session: Session, b: Business, settings: Settings) -> dict[str, Any]:
     repo = Repository(session)
     enr = {k: (e.payload if (e := repo.latest_enrichment(b.id, k, fresh_only=False)) else None)
-           for k in ("website", "ads", "landing", "seo", "rank", "preview", "reviews", "citations", "site_audit")}
+           for k in ("website", "ads", "landing", "seo", "rank", "preview", "reviews", "citations", "site_audit", "place_profile")}
     web, landing, seo, rank = enr["website"] or {}, enr["landing"] or {}, enr["seo"] or {}, enr["rank"]
     reviews = enr["reviews"] or {}
     citations = enr["citations"] or {}
     site_audit = enr["site_audit"] or {}
+    profile = enr["place_profile"] or {}
     website_issues = [plain_issue(r)[1] for r in (web.get("reasons") or [])][:6]
     top: list[str] = []
     if landing.get("issues") and b.ads_status in ("Active", "Likely"):
@@ -81,6 +82,8 @@ def gather(session: Session, b: Business, settings: Settings) -> dict[str, Any]:
     top += [i[0].upper() + i[1:] for i in website_issues[:2]]
     if rank and rank.get("points"):
         top.append(f"Shows in Google's top 3 map results at only {rank['top3']} of {rank['points']} spots in the area")
+    if profile.get("claimed") is False or b.claimed is False:
+        top.insert(0, "Your Google listing isn't claimed — anyone can change your phone number or hours")
     bad_nap = [x for x in citations.get("listings") or [] if x.get("issues") and x.get("directory")]
     if bad_nap:
         top.append(f"{bad_nap[0]['site']} {bad_nap[0]['issues'][0]} — Google trusts businesses whose details match everywhere")
@@ -114,7 +117,7 @@ def gather(session: Session, b: Business, settings: Settings) -> dict[str, Any]:
                       "grade": _grade(reviews.get("score")), "note": "replies, negatives, review speed"})
     return {"b": b, "web": web, "landing": landing, "seo": seo, "rank": rank, "grid": grid, "heat": heat,
             "ads": enr["ads"] or {}, "preview": enr["preview"] or {}, "website_issues": website_issues,
-            "reviews": reviews, "money": _insights(session, b, settings), "citations": citations, "site_audit": site_audit,
+            "reviews": reviews, "money": _insights(session, b, settings), "citations": citations, "site_audit": site_audit, "profile": profile,
             "top": [t[0].upper() + t[1:] for t in dict.fromkeys(top) if t][:5], "cards": cards,
             "competitors": competitors(session, b, grid.summary if grid else None),
             "today": date.today().strftime("%B %d, %Y")}

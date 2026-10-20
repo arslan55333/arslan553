@@ -1261,6 +1261,10 @@ class LeadService:
             if data is None:
                 rows.append({"id": bid, "name": biz.name, "error": "reviews could not be read"})
                 continue
+            if not data.get("histogram"):
+                with self._sf() as session:
+                    pp = Repository(session).latest_enrichment(bid, "place_profile", fresh_only=False)
+                    data["histogram"] = ((pp.payload or {}).get("histogram") if pp else None)
             audit = analyze(newest=data.get("newest") or [], lowest=data.get("lowest") or [],
                             histogram=data.get("histogram"), rating=biz.rating or data.get("rating"),
                             total=biz.review_count or data.get("total"), topics=data.get("topics"),
@@ -1423,6 +1427,73 @@ class LeadService:
                 repo.get_business(bid).domain_status = result["status"]
                 session.commit()
             rows.append({"id": bid, "name": biz.name, **result})
+        return rows
+
+    async def place_profiles(self, business_ids: list[int], *, refresh: bool = False,
+                             on_progress: Callable[[str], None] | None = None) -> list[dict]:
+        """Google listing profile per business (cached 14 days): claimed or not, categories, attributes, posts,
+        description, hours, exact star histogram. Free browser first; SerpAPI place (1 credit) as fallback."""
+        from leadengine.enrich.profile import parse_serp_place, profile_audit
+
+        say = on_progress or (lambda _m: None)
+        cfg = self.settings.section("profile")
+        source = str(cfg.get("source", "auto"))
+        budget = int(cfg.get("serpapi_max", 20))
+        rows = []
+        for bid in business_ids:
+            with self._sf() as session:
+                repo = Repository(session)
+                biz = repo.get_business(bid)
+                if biz is None:
+                    continue
+                cached = None if refresh else repo.latest_enrichment(bid, "place_profile")
+                if cached is not None:
+                    rows.append({"id": bid, "name": biz.name, "cached": True, **cached.payload})
+                    continue
+                session.expunge(biz)
+            prof = None
+            if source in ("auto", "browser") and biz.google_maps_url:
+                try:
+                    d = await self._ready("playwright").place_details(biz.google_maps_url, reviews=False)
+                    if d.get("claimed") is not None or d.get("photo_count") is not None:
+                        prof = {"claimed": d.get("claimed"), "categories": [d["category"]] if d.get("category") else
+                                (biz.categories or []), "description": None, "attributes": None, "posts": None,
+                                "last_post_days": None, "hours": bool(biz.hours), "website": biz.website,
+                                "phone": biz.phone, "photo_count": d.get("photo_count"), "histogram": None,
+                                "source": "browser"}
+                except Exception as exc:
+                    log.info("browser profile failed", extra={"data": {"name": biz.name, "error": str(exc)[:100]}})
+            if (prof is None or prof.get("claimed") is None) and source in ("auto", "serpapi") and budget > 0 \
+                    and self.settings.serpapi_api_key and (biz.place_id or biz.data_id):
+                say(f"  Google profile: {biz.name} (SerpAPI, 1 credit)")
+                params = {"engine": "google_maps", "type": "place", "hl": "en", "api_key": self.settings.serpapi_api_key}
+                params.update({"place_id": biz.place_id} if biz.place_id else {"data": f"!4m5!3m4!1s{biz.data_id}"})
+                try:
+                    r = await self.http.request("GET", "https://serpapi.com/search.json", params=params, retries=1,
+                                                timeout=60)
+                    data = r.json() if r.status_code == 200 else {}
+                    budget -= 1
+                    if self.credits is not None:
+                        self.credits.record("serpapi", "place_profile", success=bool(data.get("place_results")))
+                    if data.get("place_results"):
+                        prof = {**(prof or {}), **parse_serp_place(data["place_results"])}
+                except Exception as exc:
+                    say(f"    SerpAPI place failed: {str(exc)[:80]}")
+            if prof is None:
+                rows.append({"id": bid, "name": biz.name, "error": "Google listing could not be read"})
+                continue
+            prof["audit"] = profile_audit(prof, photo_count=prof.get("photo_count") or biz.photo_count)
+            with self._sf() as session:
+                repo = Repository(session)
+                repo.set_enrichment(bid, "place_profile", prof, ttl_days=14, source=prof["source"])
+                b = repo.get_business(bid)
+                if prof.get("claimed") is not None:
+                    b.claimed = prof["claimed"]
+                if prof.get("categories") and len(prof["categories"]) > len(b.categories or []):
+                    b.categories = prof["categories"]
+                b.profile_score = prof["audit"]["score"]
+                session.commit()
+            rows.append({"id": bid, "name": biz.name, **prof})
         return rows
 
     async def site_info(self, business_ids: list[int], *, refresh: bool = False, explicit: bool = False,

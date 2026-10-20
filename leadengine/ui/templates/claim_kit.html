@@ -1,0 +1,28 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Claim your Google listing — {{ b.name }}</title>
+<style>:root{--ink:#0f172a;--muted:#475569;--brand:#4338ca;--line:#e2e8f0}*{box-sizing:border-box}
+body{margin:0;font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);background:#f8fafc}
+.wrap{max-width:760px;margin:0 auto;padding:32px 18px 60px}.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:24px;margin-top:16px}
+h1{font-size:30px;line-height:1.15;margin:0 0 8px}h2{margin:0 0 8px;font-size:20px}.muted{color:var(--muted)}
+ol li{margin:10px 0}.pill{display:inline-block;background:#fef3c7;color:#92400e;border-radius:999px;padding:4px 12px;font-weight:700;font-size:14px}
+code{background:#eef2ff;padding:2px 6px;border-radius:6px}@media print{.noprint{display:none}}</style></head><body><div class="wrap">
+<span class="pill">🔓 Your Google listing isn't claimed</span>
+<h1>Claim {{ b.name }} on Google — in about 10 minutes</h1>
+<p class="muted">{{ b.name }}{% if b.rating %} has {{ b.rating }}★ from {{ b.review_count }} customers{% endif %} on Google Maps, but nobody has claimed the listing.
+ Until you do, anyone can suggest changes to your phone number, hours or address — and you can't reply to reviews, post updates or add photos.</p>
+<div class="card"><h2>1. Start the claim</h2><ol>
+ <li>Open <b>Google Maps</b> on your phone or computer and search for <b>{{ b.name }}{% if b.city %} {{ b.city }}{% endif %}</b>.</li>
+ <li>On your listing, tap <b>"Own this business?"</b> or <b>"Claim this business"</b>, then <b>Manage now</b>.</li>
+ <li>Sign in with the Google account you want to use for the business (a Gmail is fine).</li></ol></div>
+<div class="card"><h2>2. Verify that it's yours</h2><ol>
+ <li>Google offers one or more ways: a <b>phone call / text</b> to {{ b.phone or 'your business number' }}, an <b>email</b>, a short <b>video</b> of your
+  business (signage, vehicle, tools, the work area), or a <b>postcard</b> by mail.</li>
+ <li>Follow the steps — video verification usually takes a few days to approve.</li></ol></div>
+<div class="card"><h2>3. Add us as a manager (optional)</h2><ol>
+ <li>In your Business Profile, open <b>⋮ → Business Profile settings → People and access → Add</b>.</li>
+ <li>Enter <code>{{ brand.get('brand_email') or 'our email' }}</code> and choose <b>Manager</b>. You stay the owner and can remove us any time.</li></ol>
+ <p class="muted">Then we can fix your categories, hours, photos and posts, and reply to reviews for you.</p></div>
+<p class="muted" style="margin-top:22px">Prepared for {{ b.name }} by {{ brand.get('brand_name') or 'us' }}{% if sender.get('sender_name') %} ({{ sender.get('sender_name') }}){% endif %}.
+ We never claim a business for anyone — you do it yourself, and stay in control.</p>
+<p class="noprint"><button onclick="window.print()">Print / save as PDF</button></p>
+</div></body></html>

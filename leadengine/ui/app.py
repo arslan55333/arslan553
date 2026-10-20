@@ -221,32 +221,66 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
     @app.get("/rescue", response_class=HTMLResponse)
     def rescue_page(request: Request, status: str = "", keyword: str = "", min_reviews: int = 0, show_fake: bool = False):
         from leadengine.db.models import Watch
-        from leadengine.enrich.domains import LABELS, rescue_rank
+        from leadengine.enrich.domains import LABELS
+        from leadengine.enrich.profile import rescue_score
 
         with sf() as s:
             repo = Repository(s)
             bizs = repo.list_businesses(keyword=keyword or None, min_reviews=min_reviews or None, limit=None)
-            doms = repo.latest_enrichments([b.id for b in bizs], "domain")
-            rows = []
+            ids = [b.id for b in bizs]
+            doms = repo.latest_enrichments(ids, "domain")
+            profs = repo.latest_enrichments(ids, "place_profile")
+            rows, counts = [], {}
             for b in bizs:
-                e = doms.get(b.id)
-                d = e.payload if e else None
-                if not d or d.get("status") in ("ok", None) or (status and d.get("status") != status):
+                d = doms[b.id].payload if b.id in doms else None
+                pr = profs[b.id].payload if b.id in profs else None
+                unclaimed = ((pr or {}).get("claimed") is False) or b.claimed is False
+                bad_domain = bool(d) and d.get("status") not in ("ok", None, "unknown")
+                if not (bad_domain or unclaimed):
                     continue
                 if not show_fake and (b.spam_score or 0) >= 55:
                     continue
-                rows.append({"b": b, "d": d, "checked": e.fetched_at})
-            rows.sort(key=lambda r: (rescue_rank(r["d"]), -(r["b"].review_count or 0)))
+                if bad_domain:
+                    counts[d["status"]] = counts.get(d["status"], 0) + 1
+                if unclaimed:
+                    counts["unclaimed"] = counts.get("unclaimed", 0) + 1
+                if status and not ((status == "unclaimed" and unclaimed) or (bad_domain and d.get("status") == status)):
+                    continue
+                score, why = rescue_score(b, domain=d, profile=pr)
+                rows.append({"b": b, "d": d if bad_domain else None, "unclaimed": unclaimed, "score": score, "why": why})
+            rows.sort(key=lambda r: (-r["score"], -(r["b"].review_count or 0)))
             checked = sum(1 for b in bizs if b.id in doms)
-            unchecked = len(bizs) - checked
+            profiled = sum(1 for b in bizs if b.id in profs or b.claimed is not None)
             monitoring = s.scalars(select(Watch).where(Watch.kind == "domains", Watch.active.is_(True))).first()
-            counts: dict[str, int] = {}
-            for r in rows:
-                counts[r["d"]["status"]] = counts.get(r["d"]["status"], 0) + 1
             past = list(dict.fromkeys(s.scalars(select(Search.keyword).order_by(Search.id.desc()).limit(50))))
         return render(request, "rescue.html", rows=rows[:500], labels=LABELS, status=status, keyword=keyword,
-                      min_reviews=min_reviews, checked=checked, unchecked=unchecked, counts=counts,
-                      monitoring=monitoring, past=past, show_fake=show_fake)
+                      min_reviews=min_reviews, checked=checked, unchecked=len(bizs) - checked, profiled=profiled,
+                      total=len(bizs), counts=counts, monitoring=monitoring, past=past, show_fake=show_fake)
+
+    @app.post("/rescue/profiles")
+    def rescue_profiles(keyword: str = Form(""), min_reviews: int = Form(10)):
+        with sf() as s:
+            ids = [b.id for b in Repository(s).list_businesses(keyword=keyword or None, min_reviews=min_reviews or None,
+                                                               min_rating=4.0, limit=None)
+                   if (b.spam_score or 0) < 55]
+        if not ids:
+            return RedirectResponse("/rescue?error=no+businesses+yet", status_code=303)
+        job_id = jobs.enqueue(sf, "enrich", {"ids": ids[:300], "kinds": ["profile"]})
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+    @app.get("/leads/{business_id}/claim-kit", response_class=HTMLResponse)
+    def claim_kit(request: Request, business_id: int):
+        with sf() as s:
+            biz = s.get(Business, business_id)
+            if biz is None:
+                raise HTTPException(404)
+        return render(request, "claim_kit.html", b=biz, brand=settings.section("preview"),
+                      sender=settings.section("outreach"))
+
+    @app.post("/leads/{business_id}/profile")
+    def lead_profile(business_id: int):
+        job_id = jobs.enqueue(sf, "enrich", {"ids": [business_id], "kinds": ["profile"], "refresh": True})
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
     @app.post("/rescue/check")
     def rescue_check(keyword: str = Form(""), min_reviews: int = Form(0), refresh: bool = Form(False)):
@@ -648,7 +682,7 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
 
     @app.post("/leads/{business_id}/full")
     def lead_full(business_id: int):
-        kinds = ["emails", "website", "ads", "seo", "reviews", "site_audit"]
+        kinds = ["emails", "website", "ads", "seo", "profile", "reviews", "site_audit", "domain"]
         if settings.firecrawl_api_key or settings.serpapi_api_key:
             kinds.append("citations")
         if settings.firecrawl_api_key:
@@ -695,7 +729,7 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             repo = Repository(s)
             enr = {k: (e.payload if (e := repo.latest_enrichment(business_id, k, fresh_only=False)) else None)
                    for k in ("website", "ads", "emails", "maps_activity", "landing", "rank", "seo", "audit", "site_info",
-                             "reviews", "citations", "site_audit", "domain")}
+                             "reviews", "citations", "site_audit", "domain", "place_profile")}
             emails = list(s.scalars(select(Email).where(Email.business_id == business_id)
                                     .order_by(Email.is_guess, Email.confidence.desc().nulls_last())))
             status = crm.current_status(s, business_id)

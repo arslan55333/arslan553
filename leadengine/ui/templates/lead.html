@@ -91,6 +91,19 @@
   <tr><td><b>{{ b.name }}</b></td><td>{{ site.pages }}</td><td>{{ site.service_pages }}</td><td>{{ site.area_pages }}</td><td>{{ site.blog_posts }}</td></tr>
   {% for c in cs %}<tr><td><a href="{{ c.website }}" target="_blank" rel="noopener">{{ c.name }}</a></td><td>{{ c.pages }}</td><td>{{ c.service_pages }}</td><td>{{ c.area_pages }}</td><td>{{ c.blog_posts }}</td></tr>{% endfor %}
  </table>{% endif %}</div>{% endif %}
+{% set gp = enr.place_profile %}
+<div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between">
+ <h2 style="margin:0">Google listing {% if gp and gp.audit %}<span class="badge {{ 'Hot' if gp.audit.score < 50 else ('Warm' if gp.audit.score < 75 else 'Cold') }}">{{ gp.audit.score }}/100</span>{% endif %}
+  {% if (gp and gp.claimed is sameas false) or b.claimed is sameas false %}<span class="badge Hot">🔓 NOT claimed</span>{% elif (gp and gp.claimed) or b.claimed %}<span class="badge Cold">claimed</span>{% endif %}</h2>
+ <div class="row" style="gap:6px">{% if (gp and gp.claimed is sameas false) or b.claimed is sameas false %}<a class="btn" href="/leads/{{ b.id }}/claim-kit" target="_blank">Claim kit for the owner</a>{% endif %}
+ <form method="post" action="/leads/{{ b.id }}/profile"><button class="btn ghost" title="free browser; SerpAPI 1 credit as fallback">{{ 'Check again' if gp else 'Check Google listing' }}</button></form></div></div>
+ {% if gp %}<div class="grid g2" style="margin-top:8px"><div>{% if gp.audit.issues %}<b class="small">Fix</b><ul class="clean small">{% for i in gp.audit.issues %}<li>{{ i }}</li>{% endfor %}</ul>{% endif %}</div>
+ <div class="small">{% if gp.categories %}<div><b>Categories:</b> {{ gp.categories|join(', ') }}</div>{% endif %}
+  {% if gp.attributes %}<div><b>Attributes:</b> {{ gp.attributes[:8]|join(', ') }}</div>{% endif %}
+  {% if gp.posts is not none %}<div><b>Google posts:</b> {{ gp.posts }}{% if gp.last_post_days is not none %} · last {{ gp.last_post_days }} days ago{% endif %}</div>{% endif %}
+  {% if gp.histogram %}<div><b>Stars:</b> {% for st in [5,4,3,2,1] %}{{ st }}★ {{ gp.histogram.get(st) or gp.histogram.get(st|string) or 0 }}{{ ' · ' if not loop.last }}{% endfor %}</div>{% endif %}
+  <div class="muted">read via {{ gp.source }}</div></div></div>
+ {% else %}<p class="small muted">Claimed or not, categories, attributes, Google posts, description and the exact star count.</p>{% endif %}</div>
 {% set rv = enr.reviews %}
 <div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between">
  <h2 style="margin:0">Google reviews audit {% if rv %}<span class="badge {{ 'Hot' if rv.score < 50 else ('Warm' if rv.score < 75 else 'Cold') }}">{{ rv.score }}/100</span>{% endif %}</h2>

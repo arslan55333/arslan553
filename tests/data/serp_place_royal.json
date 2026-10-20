@@ -1,0 +1,65 @@
+{
+ "title": "Royal Waste Services",
+ "type": [
+  "Waste management service"
+ ],
+ "rating": 4.4,
+ "reviews": 811,
+ "rating_summary": [
+  {
+   "stars": 1,
+   "amount": 113
+  },
+  {
+   "stars": 2,
+   "amount": 2
+  },
+  {
+   "stars": 3,
+   "amount": 2
+  },
+  {
+   "stars": 4,
+   "amount": 11
+  },
+  {
+   "stars": 5,
+   "amount": 683
+  }
+ ],
+ "extensions": [
+  {
+   "accessibility": [
+    "Wheelchair accessible entrance",
+    "Wheelchair accessible parking lot"
+   ]
+  }
+ ],
+ "hours": [
+  {
+   "tuesday": "6 AM\u20136 PM"
+  },
+  {
+   "wednesday": "6 AM\u20136 PM"
+  },
+  {
+   "thursday": "6 AM\u20136 PM"
+  },
+  {
+   "friday": "6 AM\u20136 PM"
+  },
+  {
+   "saturday": "6 AM\u201312 PM"
+  },
+  {
+   "sunday": "Closed"
+  },
+  {
+   "monday": "6 AM\u20136 PM"
+  }
+ ],
+ "phone": "(718) 526-2623",
+ "website": "https://royalwaste.com/",
+ "address": "168-46 Douglas Ave, Jamaica, NY 11433",
+ "open_state": "Closed \u00b7 Opens 6 AM Wed"
+}

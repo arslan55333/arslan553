@@ -71,6 +71,7 @@ class OutreachFacts:
     nap_line: str | None = None         # e.g. "Yelp still shows your old address (ZIP 11423)"
     domain_line: str | None = None      # e.g. "acme.com stopped working — the domain expired on …"
     fake_line: str | None = None        # e.g. "2 of the listings above you on Google Maps look fake"
+    unclaimed_line: str | None = None   # "your Google listing isn't claimed — anyone can change your phone number"
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -208,6 +209,9 @@ def gather(session: Session, biz: Business, cfg: dict[str, Any], brand: dict[str
         review_line=review_line(rev_p),
         money_line=_money_line(session, biz),
         fake_line=_fake_line(session, biz),
+        unclaimed_line=(f"your Google listing{f' ({biz.rating}★, {biz.review_count} reviews)' if biz.rating else ''} isn't "
+                        "claimed — anyone can suggest a new phone number or hours for it, and you can't reply to reviews"
+                        if biz.claimed is False else None),
         nap_line=nap_line((cit.payload or {}) if cit else {}),
         domain_line=domain_line((dom.payload or {}) if dom else {}),
     )

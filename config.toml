@@ -88,6 +88,11 @@ guesses = true            # businesses with no website: try name-based domains, 
 guess_min_reviews = 10
 # optional: PORKBUN_API_KEY + PORKBUN_SECRET_KEY (Settings page) confirm "available" + the price
 
+# Google listing profile (claimed?, categories, attributes, posts, description, star histogram)
+[profile]
+source = "auto"           # auto = free browser, SerpAPI place (1 credit) when the browser can't read the listing
+serpapi_max = 20          # most SerpAPI credits one run may spend on profiles
+
 # Money insights on lead pages / reports (estimates; niche averages in leadengine/data/niches.csv)
 [money]
 ad_budget = 1500          # assumed monthly Google Ads budget of a local business, for the "ad waste" estimate

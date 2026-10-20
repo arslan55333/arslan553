@@ -92,6 +92,9 @@ the #1 spot gets about <b>{{ m.calls_top }}</b>. At about ${{ '{:,.0f}'.format(m
 <ul class="issues">{% for r in (cg.missing_services or [])[:6] %}<li>Service page: <b>{{ r.topic }}</b> ({{ r.competitors }} of the businesses above you have one)</li>{% endfor %}
 {% for r in (cg.missing_towns or [])[:6] %}<li>Town page: <b>{{ r.topic }}</b></li>{% endfor %}</ul>
 <p class="note">Google ranks pages, not websites: each service and each town needs its own page to show up for "service + town" searches.</p>{% endif %}</section>{% endif %}
+{% if profile and profile.audit %}<section class="card"><h2>Your Google Business Profile <span class="pill">{{ profile.audit.score }}/100</span></h2>
+<div class="grid2"><div><div class="lbl">Fix first</div><ul class="issues">{% for i in profile.audit.issues[:6] %}<li>{{ i }}</li>{% endfor %}</ul></div>
+<div><div class="lbl">Working</div><ul class="issues">{% for x in profile.audit.positives[:6] %}<li>{{ x }}</li>{% endfor %}</ul></div></div></section>{% endif %}
 {% if citations %}<section class="card"><h2>Your business listings across the web {% if citations.score is not none %}<span class="pill">{{ citations.score }}/100</span>{% endif %}</h2>
 <p>Google checks that your <b>name, address and phone</b> are the same on Yelp, BBB, Facebook and other directories. Mismatches
  (an old address or phone) lower trust — and send real customers to the wrong number.</p>

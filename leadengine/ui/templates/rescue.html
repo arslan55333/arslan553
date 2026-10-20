@@ -1,33 +1,37 @@
 {% extends "base.html" %}{% block title %}Rescue{% endblock %}{% block body %}
 <h1>🚑 Rescue leads</h1>
-<p class="sub">Businesses whose website domain expired, is about to expire, was grabbed by a domainer or whose site is down —
- while the business is still getting Google reviews. Your offer: <b>rescue it for them</b> (never hold their name against them).</p>
+<p class="sub">Real businesses with good reviews whose online basics are falling apart: the <b>domain expired / is expiring / was
+ grabbed by a domainer</b>, the <b>website is down</b>, or the <b>Google listing isn't claimed</b>. Your offer: rescue it <i>for</i> them
+ (never hold their name or listing against them).</p>
 <div class="grid g4">
- {% for st in ['expired_grace','redemption','pending_delete','available','for_sale','expiring_soon','site_down','no_own_domain'] %}
+ <a class="card stat link" href="/rescue?status=unclaimed&keyword={{ keyword|urlencode }}"><div class="l">🔓 Unclaimed listing</div><div class="n">{{ counts.get('unclaimed', 0) }}</div></a>
+ {% for st in ['expired_grace','redemption','pending_delete','available','for_sale','expiring_soon','site_down'] %}
  <a class="card stat link" href="/rescue?status={{ st }}&keyword={{ keyword|urlencode }}"><div class="l">{{ labels[st][1] }} {{ labels[st][0] }}</div><div class="n">{{ counts.get(st, 0) }}</div></a>{% endfor %}
 </div>
 <form class="filters card" method="get" action="/rescue" style="margin-top:14px">
  <div><label>Keyword</label><input name="keyword" list="pk" value="{{ keyword }}" placeholder="any"><datalist id="pk">{% for k in past %}<option value="{{ k }}">{% endfor %}</datalist></div>
  <div><label>Min reviews</label><input name="min_reviews" type="number" style="width:90px" value="{{ min_reviews or '' }}"></div>
- <div><label>Status</label><select name="status"><option value="">Any problem</option>{% for k, v in labels.items() if k not in ('ok',) %}<option value="{{ k }}" {{ 'selected' if status == k }}>{{ v[0] }}</option>{% endfor %}</select></div>
+ <div><label>Problem</label><select name="status"><option value="">Any</option><option value="unclaimed" {{ 'selected' if status == 'unclaimed' }}>Unclaimed listing</option>
+  {% for k, v in labels.items() if k not in ('ok','unknown') %}<option value="{{ k }}" {{ 'selected' if status == k }}>{{ v[0] }}</option>{% endfor %}</select></div>
  <div><label style="font-weight:500"><input type="checkbox" name="show_fake" value="true" {{ 'checked' if show_fake }}> Show likely-fake listings too</label></div>
  <div><button class="btn">Show</button></div></form>
 <div class="row" style="gap:10px;margin:6px 0 12px;flex-wrap:wrap">
- <form method="post" action="/rescue/check" class="row" style="gap:6px"><input type="hidden" name="keyword" value="{{ keyword }}"><input type="hidden" name="min_reviews" value="{{ min_reviews }}">
-  <button class="btn">Check domains{{ ' for "' ~ keyword ~ '"' if keyword }}</button><span class="small muted">{{ checked }} checked · {{ unchecked }} not yet · free (RDAP + WHOIS)</span></form>
- {% if monitoring %}<span class="small"><b>✓ Weekly domain monitor is on</b> — alerts when a lead's domain starts to expire or dies.</span>
- {% else %}<form method="post" action="/rescue/monitor"><button class="btn ghost">Monitor my leads' domains weekly</button></form>{% endif %}
+ <form method="post" action="/rescue/check"><input type="hidden" name="keyword" value="{{ keyword }}"><input type="hidden" name="min_reviews" value="{{ min_reviews }}">
+  <button class="btn" title="free: RDAP + WHOIS">Check domains</button></form>
+ <form method="post" action="/rescue/profiles"><input type="hidden" name="keyword" value="{{ keyword }}"><input type="hidden" name="min_reviews" value="{{ min_reviews or 10 }}">
+  <button class="btn ghost" title="free browser; SerpAPI 1 credit per listing only as fallback (max 20 per run)">Check Google listings (claimed?)</button></form>
+ <span class="small muted">{{ total }} businesses · domains checked {{ checked }} · listings checked {{ profiled }}</span>
+ {% if monitoring %}<span class="small"><b>✓ Weekly domain monitor on</b></span>{% else %}<form method="post" action="/rescue/monitor"><button class="btn ghost">Monitor domains weekly</button></form>{% endif %}
 </div>
-{% if rows %}<table><tr><th>Business</th><th>Reviews</th><th>Domain</th><th>Status</th><th>Dates</th><th>What to do</th></tr>
+{% if rows %}<table><tr><th>Rescue</th><th>Business</th><th>Reviews</th><th>Problem</th><th>Details</th><th>What to do</th></tr>
 {% for r in rows %}{% set d = r.d %}{% set b = r.b %}<tr>
+ <td><b style="font-size:18px">{{ r.score }}</b><div class="small muted">{{ r.why|join(' · ') }}</div></td>
  <td><a href="/leads/{{ b.id }}"><b>{{ b.name }}</b></a><div class="small muted">{{ b.city or '' }}{{ ', ' ~ b.state if b.state }}{% if b.phone %} · {{ b.phone }}{% endif %}</div></td>
  <td>{{ b.rating or '–' }}★ · {{ b.review_count or 0 }}</td>
- <td>{{ d.domain }}{% if d.source and d.source != 'listing' %}<div class="small muted">{{ d.source }}</div>{% endif %}</td>
- <td><b>{{ d.icon }} {{ d.label }}</b>{% if d.confirmed_available %}<div class="small">✓ confirmed{{ ' · $' ~ d.price if d.price }}</div>{% endif %}</td>
- <td class="small">{% if d.expires %}expires {{ d.expires }}{% if d.days_to_expiry is not none %} ({{ d.days_to_expiry }} days){% endif %}<br>{% endif %}
+ <td>{% if r.unclaimed %}<div><b>🔓 Unclaimed listing</b></div>{% endif %}{% if d %}<div><b>{{ d.icon }} {{ d.label }}</b></div><div class="small muted">{{ d.domain }}{% if d.source and d.source != 'listing' %} · {{ d.source }}{% endif %}</div>{% endif %}</td>
+ <td class="small">{% if d %}{% if d.expires %}expires {{ d.expires }}{% if d.days_to_expiry is not none %} ({{ d.days_to_expiry }} d){% endif %}<br>{% endif %}
   {% if d.owner_can_renew_until %}owner can renew until ~{{ d.owner_can_renew_until }}<br>{% endif %}{% if d.drops_around %}drops ~{{ d.drops_around }}<br>{% endif %}
-  {% if d.registered %}registered {{ d.registered }}{% endif %}
-  {% if d.wayback and d.wayback.snapshot %}<br><a href="{{ d.wayback.snapshot }}" target="_blank" rel="noopener">old site ({{ d.wayback.last_seen }})</a>{% endif %}</td>
- <td class="small">{{ d.action }}</td></tr>{% endfor %}</table>
-{% else %}<div class="card"><p>No domain problems found yet. Click <b>Check domains</b> to check every business you've scanned (free).</p></div>{% endif %}
+  {% if d.wayback and d.wayback.snapshot %}<a href="{{ d.wayback.snapshot }}" target="_blank" rel="noopener">old site ({{ d.wayback.last_seen }})</a>{% endif %}{% endif %}</td>
+ <td class="small">{% if d %}{{ d.action }}{% endif %}{% if r.unclaimed %}<div>Help the owner claim it and add you as manager — <a href="/leads/{{ b.id }}/claim-kit">claim kit</a></div>{% endif %}</td></tr>{% endfor %}</table>
+{% else %}<div class="card"><p>Nothing to rescue yet. Use <b>Check domains</b> and <b>Check Google listings</b> on the businesses you've scanned.</p></div>{% endif %}
 {% endblock %}
