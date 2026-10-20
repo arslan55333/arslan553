@@ -36,6 +36,16 @@
   Business Redressal Complaint Form (or "Suggest an edit" → "Remove this place" on Google Maps).</p>{% endif %}
  {% if b.duplicates %}<p class="small"><b>Other listings that look like the same business:</b> {% for d in b.duplicates %}<a href="/leads/{{ d }}">#{{ d }}</a> {% endfor %}
   — duplicate listings split the reviews and hurt ranking; merging them is a quick win for the owner.</p>{% endif %}</div>{% endif %}
+{% set p1 = (enr.ads or {}).get('page1') %}{% if p1 %}
+<div class="card" style="margin-top:16px"><h2>Who owns page 1 for “{{ p1.keyword }}” <span class="small muted">{{ p1.location }}</span></h2>
+ <p class="small">{% if p1.my_spots %}<b>{{ b.name }}</b> holds <b>{{ p1.my_spots }}</b> of {{ p1.total_spots }} spots{% else %}<b style="color:#b91c1c">{{ b.name }} isn't on page 1 at all</b> ({{ p1.total_spots }} spots){% endif %}
+  {% if p1.map_position %} · map pack #{{ p1.map_position }}{% endif %}{% if p1.organic_position %} · organic #{{ p1.organic_position }}{% endif %}</p>
+ <div class="grid g2"><table class="small"><tr><th>Business</th><th>Spots</th><th>Where</th></tr>
+  {% for o in p1.owners %}<tr{% if o.mine %} style="background:#ecfdf5"{% endif %}><td>{{ '★ ' if o.mine }}{{ o.name }}</td><td><b>{{ o.spots }}</b></td>
+  <td>{% for x in o.sections %}<span class="badge {{ 'Active' if x in ['search','lsa','places'] else 'Cold' }}">{{ {'search':'Ad','lsa':'LSA','places':'Map ad','map':'Map pack','organic':'Organic'}[x] }}</span> {% endfor %}</td></tr>{% endfor %}</table>
+ <div class="small">{% for sec, label in [('lsa','Local Services Ads'),('search','Google Ads'),('map','Map pack'),('organic','Organic')] %}{% set items = p1.spots|selectattr('section','equalto',sec)|list %}
+  {% if items %}<b>{{ label }}</b><ol style="margin:4px 0 10px 18px;padding:0">{% for it in items %}<li{% if it.mine %} style="font-weight:700;color:#15803d"{% endif %}>{{ it.name }}{% if it.domain %} <span class="muted">{{ it.domain }}</span>{% endif %}{% if it.reviews %} <span class="muted">({{ it.reviews }})</span>{% endif %}</li>{% endfor %}</ol>{% endif %}{% endfor %}
+  {% if p1.directories %}<div class="muted">Directories ranking: {{ p1.directories|join(', ') }}</div>{% endif %}</div></div></div>{% endif %}
 {% set w = money.ad_waste %}{% set m = money.money %}{% set g = money.gap %}
 {% if w or m or g %}<div class="card" style="margin-top:16px"><h2>💰 Money insights <span class="small muted">estimates — niche: {{ money.niche }}</span></h2>
 <div class="grid g3">

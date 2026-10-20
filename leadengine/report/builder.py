@@ -118,6 +118,7 @@ def gather(session: Session, b: Business, settings: Settings) -> dict[str, Any]:
     return {"b": b, "web": web, "landing": landing, "seo": seo, "rank": rank, "grid": grid, "heat": heat,
             "ads": enr["ads"] or {}, "preview": enr["preview"] or {}, "website_issues": website_issues,
             "reviews": reviews, "money": _insights(session, b, settings), "citations": citations, "site_audit": site_audit, "profile": profile,
+            "page1": (enr["ads"] or {}).get("page1"),
             "top": [t[0].upper() + t[1:] for t in dict.fromkeys(top) if t][:5], "cards": cards,
             "competitors": competitors(session, b, grid.summary if grid else None),
             "today": date.today().strftime("%B %d, %Y")}

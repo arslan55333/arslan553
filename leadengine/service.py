@@ -639,7 +639,7 @@ class LeadService:
 
     # ── ads detection (Phase 5) ──────────────────────────────────────
     async def live_serp(self, query: str, city: str, state: str, *, add_city: bool = True, source: str | None = None,
-                        budget: dict | None = None):
+                        budget: dict | None = None, zip_code: str | None = None):
         """One Google results page: free browser first; with serp_provider = "auto" a captcha falls back
         to SerpAPI (if a key is set) while ``budget["paid"]`` allows (credits are precious)."""
         from leadengine.enrich.ads.serp import SerpSnapshot, serp_browser, serp_serpapi
@@ -647,17 +647,21 @@ class LeadService:
         cfg = self.settings.section("ads")
         source = (source or str(cfg.get("serp_provider", "auto"))).lower()
         paid_ok = bool(self.settings.serpapi_api_key) and (budget is None or budget.get("paid", 0) > 0)
+        if zip_code is None and city and state:          # most-populated ZIP of the town: a location Google knows
+            from leadengine.geo.zipdata import zip_directory
+            zs = zip_directory().by_city(city, state)
+            zip_code = zs[0].zip if zs else None
 
         async def paid():
             if budget is not None:
                 budget["paid"] = budget.get("paid", 0) - 1
-            return await serp_serpapi(self._ready("serpapi"), query, city, state, add_city=add_city)
+            return await serp_serpapi(self._ready("serpapi"), query, city, state, add_city=add_city, zip_code=zip_code)
 
         try:
             if source == "serpapi":
                 return await paid()
             prov = self._ready("playwright")
-            snap = await serp_browser(prov, query, city, state, prov.base_url, add_city=add_city)
+            snap = await serp_browser(prov, query, city, state, prov.base_url, add_city=add_city, zip_code=zip_code)
             if snap.error and source == "auto" and paid_ok:
                 try:
                     alt = await paid()
@@ -674,6 +678,8 @@ class LeadService:
         """Live SERP ads + LSA (per keyword/city, cached), website ad tags (per business, cached),
         optional Ads Transparency -> ads_status / lsa on each business."""
         from datetime import date
+
+        from sqlalchemy import select
 
         from leadengine.enrich.ads.serp import SerpSnapshot, match_ads, serp_browser, serp_serpapi
         from leadengine.enrich.ads.site_tags import SiteAdSignals, scan_gtm, scan_html
@@ -793,6 +799,13 @@ class LeadService:
                     payload = {**verdict.as_dict(), "keyword": plan[0] if plan else None,
                                "serp_error": snap.error if snap else None,
                                "serp_ads_seen": len(snap.ads) if snap else None}
+                    if snap and not snap.error and (snap.organic or snap.local_pack):
+                        from leadengine.enrich.page1 import page1
+                        names = [m.get("name") for m in snap.local_pack if m.get("name")]
+                        nd = {b.name: b.domain for b in session.scalars(select(Business).where(
+                            Business.name.in_(names)))} if names else {}
+                        payload["page1"] = page1(snap.as_dict(), name=biz.name, domain=biz.domain, phone=biz.phone,
+                                                 name_domains=nd)
                     unverified = verdict.status == "None" and (snap is None or bool(snap.error))
                     if unverified:
                         # Google could not be checked (captcha / offline / no city): "unknown", never "no ads"

@@ -72,6 +72,7 @@ class OutreachFacts:
     domain_line: str | None = None      # e.g. "acme.com stopped working — the domain expired on …"
     fake_line: str | None = None        # e.g. "2 of the listings above you on Google Maps look fake"
     unclaimed_line: str | None = None   # "your Google listing isn't claimed — anyone can change your phone number"
+    page1_line: str | None = None       # "X holds 3 spots on page 1 (ads + map + organic) — you don't show up"
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -213,6 +214,7 @@ def gather(session: Session, biz: Business, cfg: dict[str, Any], brand: dict[str
                         "claimed — anyone can suggest a new phone number or hours for it, and you can't reply to reviews"
                         if biz.claimed is False else None),
         nap_line=nap_line((cit.payload or {}) if cit else {}),
+        page1_line=_page1_line(ads_p),
         domain_line=domain_line((dom.payload or {}) if dom else {}),
     )
 
@@ -248,6 +250,11 @@ def nap_line(c: dict) -> str | None:
     if c.get("missing_core") and len(c["missing_core"]) >= 3:
         return f"I couldn't find you on {', '.join(c['missing_core'][:3])}, which Google uses to confirm your details"
     return None
+
+
+def _page1_line(ads_p: dict) -> str | None:
+    from leadengine.enrich.page1 import page1_line
+    return page1_line(ads_p.get("page1") or {})
 
 
 def _fake_line(session: Session, biz: Business) -> str | None:

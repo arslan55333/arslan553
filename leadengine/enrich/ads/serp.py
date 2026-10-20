@@ -54,18 +54,25 @@ class SerpSnapshot:
     provider: str
     ads: list[SerpAd] = field(default_factory=list)
     error: str | None = None
+    organic: list[dict[str, Any]] = field(default_factory=list)     # [{position, title, url, domain}]
+    local_pack: list[dict[str, Any]] = field(default_factory=list)  # [{position, name, rating, reviews, domain}]
 
     def as_dict(self) -> dict[str, Any]:
         return {"keyword": self.keyword, "location": self.location, "provider": self.provider,
-                "error": self.error, "ads": [asdict(a) for a in self.ads]}
+                "error": self.error, "ads": [asdict(a) for a in self.ads], "organic": self.organic,
+                "local_pack": self.local_pack}
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "SerpSnapshot":
-        return cls(d["keyword"], d["location"], d["provider"], [SerpAd(**a) for a in d.get("ads", [])], d.get("error"))
+        return cls(d["keyword"], d["location"], d["provider"], [SerpAd(**a) for a in d.get("ads", [])], d.get("error"),
+                   list(d.get("organic") or []), list(d.get("local_pack") or []))
 
 
-def canonical_location(city: str, state: str) -> str:
-    return f"{city},{STATE_NAMES.get(state.upper(), state)},United States"
+def canonical_location(city: str, state: str, zip_code: str | None = None) -> str:
+    """Google's canonical location name. A ZIP ("11372,New York,United States") is the most reliable: Google ignores
+    neighbourhood names it doesn't know and then uses the searcher's IP location instead."""
+    st = STATE_NAMES.get(state.upper(), state)
+    return f"{zip_code},{st},United States" if zip_code else f"{city},{st},United States"
 
 
 def uule(canonical: str) -> str:
@@ -170,6 +177,56 @@ SERP_JS = r"""
 """
 
 
+PAGE1_JS = r"""
+() => {
+  const organic = [], pack = [], seen = new Set();
+  for (const h of document.querySelectorAll('#search a h3, #rso a h3')) {
+    const a = h.closest('a');
+    if (!a || !a.getAttribute('href') || a.closest('[data-text-ad]')) continue;
+    // Google wraps result links (/url?q=, /goto?url=…): the real address is in the result's <cite>
+    let url = a.href || a.getAttribute('href');
+    if (!/^https?:/.test(a.getAttribute('href')) || /^https?:\/\/(www\.)?google\.[a-z.]+\//.test(url)) {
+      const box = h.closest('div.MjjYud, div.g, div[data-hveid]') || a.parentElement;
+      const cite = box ? box.querySelector('cite') : null;
+      const shown = cite ? ((cite.childNodes[0] && cite.childNodes[0].textContent) || cite.innerText || '').trim() : '';
+      if (!/^https?:\/\//.test(shown) && !/^[a-z0-9-]+(\.[a-z0-9-]+)+/i.test(shown)) continue;
+      url = /^https?:/.test(shown) ? shown.split(' ')[0] : 'https://' + shown.split(' ')[0];
+    }
+    const title = (h.innerText || '').slice(0, 160);
+    if (seen.has(url + title)) continue;
+    seen.add(url + title);
+    organic.push({position: organic.length + 1, title, url});
+    if (organic.length >= 10) break;
+  }
+  const names = new Set();
+  for (const el of document.querySelectorAll('[data-cid], .VkpGBb, .rllt__details')) {
+    const h = el.querySelector('[role="heading"], .OSrXXb, .dbg0pd');
+    const name = ((h ? h.innerText : '') || '').trim();
+    if (!name || names.has(name) || el.closest('[data-text-ad]')) continue;
+    names.add(name);
+    const t = el.innerText || '';
+    const rm = t.match(/([0-5][.,]\d)\s*\(([\d.,]+[Kk]?)\)/);
+    pack.push({position: pack.length + 1, name: name.slice(0, 120), rating: rm ? parseFloat(rm[1].replace(',', '.')) : null,
+               reviews: rm ? rm[2] : null, sponsored: /Sponsored/.test(t)});
+    if (pack.length >= 6) break;
+  }
+  return {organic, pack};
+}
+"""
+
+
+def page1_from_dom(raw: dict[str, Any]) -> tuple[list[dict], list[dict]]:
+    organic = [{**o, "domain": normalize_domain(o.get("url"))} for o in raw.get("organic") or [] if o.get("url")]
+
+    def reviews(v):
+        if v is None:
+            return None
+        v = str(v).replace(",", "").strip()
+        return int(float(v[:-1]) * 1000) if v.lower().endswith("k") else int(float(v)) if v.replace(".", "").isdigit() else None
+    pack = [{**p, "reviews": reviews(p.get("reviews"))} for p in raw.get("pack") or []]
+    return organic, pack
+
+
 def _phone_in(text: str | None) -> str | None:
     m = re.search(r"\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}", text or "")
     return m.group(0) if m else None
@@ -196,11 +253,11 @@ def ads_from_dom(raw: list[dict[str, Any]]) -> list[SerpAd]:
 
 
 async def serp_browser(provider, keyword: str, city: str, state: str, base_url: str = "https://www.google.com",
-                       *, add_city: bool = True) -> SerpSnapshot:
+                       *, add_city: bool = True, zip_code: str | None = None) -> SerpSnapshot:
     """Google results page in the Playwright provider's browser (same proxies / stealth / blocking).
     ``add_city=False`` searches the keyword as typed ("dumpster rental near me") from that location."""
-    loc = canonical_location(city, state)
-    q = f"{keyword} {city}" if add_city else keyword
+    loc = canonical_location(city, state, zip_code)
+    q = f"{keyword} {city} {state}" if add_city else keyword
     url = f"{base_url}/search?q={quote_plus(q)}&hl=en&gl=us&pws=0&uule={quote_plus(uule(loc))}"
     snap = SerpSnapshot(keyword, f"{city}, {state}", "playwright")
     proxy = provider.proxies.next()
@@ -212,6 +269,10 @@ async def serp_browser(provider, keyword: str, city: str, state: str, base_url: 
         await provider._accept_consent(page)
         await page.wait_for_timeout(1500)
         snap.ads = ads_from_dom(await page.evaluate(SERP_JS))
+        try:
+            snap.organic, snap.local_pack = page1_from_dom(await page.evaluate(PAGE1_JS))
+        except Exception:
+            pass
         provider.proxies.report(proxy, True)
     except ProviderBlocked:
         provider.proxies.ban(proxy, "captcha")
@@ -241,10 +302,12 @@ def ads_from_serpapi(data: dict[str, Any]) -> list[SerpAd]:
     return [a for a in out if a.title]
 
 
-async def serp_serpapi(provider, keyword: str, city: str, state: str, *, add_city: bool = True) -> SerpSnapshot:
+async def serp_serpapi(provider, keyword: str, city: str, state: str, *, add_city: bool = True,
+                       zip_code: str | None = None) -> SerpSnapshot:
     snap = SerpSnapshot(keyword, f"{city}, {state}", "serpapi")
     r = await provider.http.request("GET", "https://serpapi.com/search.json", params={
-        "engine": "google", "q": f"{keyword} {city}" if add_city else keyword, "location": canonical_location(city, state).replace(",", ", "),
+        "engine": "google", "q": f"{keyword} {city} {state}" if add_city else keyword,
+        "location": canonical_location(city, state, zip_code).replace(",", ", "),
         "gl": "us", "hl": "en", "api_key": provider.settings.serpapi_api_key})
     data = provider._json(r)
     if data.get("error") and "hasn't returned any results" not in data["error"]:
@@ -252,7 +315,21 @@ async def serp_serpapi(provider, keyword: str, city: str, state: str, *, add_cit
         raise ProviderError("serpapi", data["error"])
     provider._record("google_search")
     snap.ads = ads_from_serpapi(data)
+    snap.organic, snap.local_pack = page1_from_serpapi(data)
     return snap
+
+
+def page1_from_serpapi(data: dict[str, Any]) -> tuple[list[dict], list[dict]]:
+    organic = [{"position": o.get("position", i), "title": (o.get("title") or "")[:160], "url": o.get("link"),
+                "domain": normalize_domain(o.get("link") or "")}
+               for i, o in enumerate(data.get("organic_results") or [], 1) if o.get("link")][:10]
+    places = (data.get("local_results") or {}).get("places") if isinstance(data.get("local_results"), dict) \
+        else data.get("local_results") or []
+    pack = [{"position": p.get("position", i), "name": (p.get("title") or "")[:120], "rating": p.get("rating"),
+             "reviews": p.get("reviews"), "sponsored": bool(p.get("sponsored")),
+             "domain": normalize_domain(p.get("links", {}).get("website") or "") if isinstance(p.get("links"), dict) else None}
+            for i, p in enumerate(places or [], 1)][:6]
+    return organic, pack
 
 
 # ── matching ads to a business ───────────────────────────────────────
