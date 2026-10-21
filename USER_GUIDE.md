@@ -160,6 +160,142 @@ scanned yet (Garden City, Manhasset …) → Scan.
 > villages ek ek kar ke scan karo. "Not yet" wale towns baqi hain, progress bar batata hai kitna cover ho gaya.
 > $$$$ = ameer area (zyada paise wale clients). Is ke liye koi key nahi chahiye: data free hai (US Census).
 
+## 2e. 🎯 Lead Hunter and the lead-finding tools (sab se tez tareeqa)
+
+### Lead Hunter: one click, one call list
+Open **🎯 Hunt** (top menu, or the first card on the Dashboard).
+
+1. Pick a **State** and a **County**. The page picks the main towns for you: the biggest ZIP of each town, ranked by
+   people × wealth. Tiny villages are skipped because too few people search there.
+2. Type the service (e.g. **junk removal**) and click **Hunt →**.
+3. The Hunter then:
+   - measures each town (1 free Google Maps search per town);
+   - drops fake listings and chains;
+   - keeps real businesses with **10+ reviews and 4.0★+**;
+   - checks their domain and website for free;
+   - checks Google Ads (free browser);
+   - ranks them by a **Hunt score** (0–100).
+4. Tick the best ones and click **Deep check selected →**. From each lead page you can then build the preview site,
+   the audit report and the email draft.
+
+**Hunt score:** a lead only gets onto the list if there is something to sell it.
+
+| Signal | Points |
+|---|---|
+| Runs Google Ads | +30 |
+| No real website | +25 |
+| Weak website | +18 |
+| Domain expired / for sale / site down | +20 |
+| Google listing unclaimed | +12 |
+| 4.3★ or more with 20+ reviews | +10 |
+| Easy market | up to +10 |
+
+A business with a good website, no ads and a healthy domain is dropped ("nothing to pitch").
+
+*Example (real test, dumpster rental, Corona + Jackson Heights, Queens):* 7 real businesses checked, 4 leads.
+- **#1 S & M Prompt Rubbish Removal (73):** runs Google Ads, no website, 5.0★ (22), easy market.
+- **#2 Capital Industries (59):** runs Ads, no website.
+
+**Key:** none. SerpAPI is used only if Google shows a captcha during the ads check (capped per run).
+
+> **Urdu:** County chuno, service likho, Hunt dabao. 10–20 minute mein aik list milti hai: asli businesses jin ke
+> reviews achay hain, jo Google Ads par paisa laga rahe hain lekin website nahi ya kamzor hai. Upar wale ko pehle call karo.
+
+### 📈 Markets: where is it easy to rank?
+For every measured town it shows a **Market Weakness Index (0–100)**:
+
+| Label | Score | Meaning |
+|---|---|---|
+| **easy** | 60+ | a client can reach the top 3 soon |
+| **medium** | 35+ | |
+| **hard** | below 35 | |
+
+It is built from:
+- how many reviews the top 3 have;
+- how many of the top 5 are fake;
+- how many of the top 10 have no or a weak website;
+- how many advertise.
+
+It also shows searches per month and what the #1 spot is worth.
+
+*Example:* Corona (11368) dumpster rental = **easy**, Queens junk removal = **hard**.
+
+**"What wins the map pack here"** compares the listings of your own searches and tells you which signals go with a
+better position in that market. Examples:
+- for junk removal: the keyword in the name / category, and reviews;
+- for dumpster rental: distance first.
+
+Measure towns from **Areas** (tick towns → **Measure markets**) or let the Hunter do it. **Key:** none.
+
+### 🚑 Rescue: dying domains and unclaimed listings
+- **Domain check** (free, RDAP):
+  - expired but the owner can still renew (with the date);
+  - redemption / pending delete;
+  - taken by a domain seller;
+  - expiring soon;
+  - site down.
+
+  Pitch: *"your domain expired on …, you can still renew it until …, your Google listing sends customers to a dead page"*.
+- **Unclaimed Google listing:** the claim kit is a step-by-step page **for the owner** (Google → "Own this
+  business?" → verify).
+- **Rescue score** ranks them. **Weekly domain monitor** alerts you when a lead's domain starts to expire.
+
+> **Rule:** this is to help the real owner get it back. Never register a business's domain for yourself and never
+> claim someone else's listing.
+
+**Keys:**
+- none for the domain check;
+- Porkbun API key + secret (free) only to see if a dropped domain is available;
+- SerpAPI (1 credit) only as a fallback for the Google listing check, max 20 per run.
+
+### ⚠ Fake listing check
+Every listing gets a spam score from these signs:
+- cheap domain (.us, .xyz …) or a free builder site;
+- the name doesn't match the domain;
+- a keyword-stuffed name;
+- no reviews, or a sudden burst of reviews;
+- a phone or website shared with other listings;
+- the same site template across many listings.
+
+Fake listings are marked **Skip** (hide them with "hide fakes" on Leads). They also show in the pitch: *"3 of the 5
+businesses above you look like fake listings — they can be reported."*
+
+*Example:* NYC dumpster rental: Stratum Lab, Cascade Cool and Luminary Works scored 100 (fake).
+
+**Key:** none.
+
+### 🥇 Who owns page 1
+The ads check also reads Google's first page:
+- ads;
+- Local Services Ads;
+- the map pack;
+- organic results.
+
+It groups them by business. The pitch sentence reads like: *"on Google's first page for 'junk removal Corona NY',
+<competitor> holds 3 spots (ads + the map pack + the normal results) — you don't show up at all"*.
+
+**Key:** none (SerpAPI only on captcha).
+
+### 🆕 Radar: companies that registered with the state this month
+Open **Radar**, type the service, pick states and click Fetch. It shows new companies before they have a website or a
+Google listing. **Find online** looks for their website and phone; **Add to leads** makes them normal leads.
+
+States: New York, Colorado, Oregon, Connecticut (free state open data).
+
+*Example:* 126 junk / hauling companies registered in NY in 30 days. Tonys Junk Removal had no website.
+
+**Key:**
+- none to fetch;
+- "Find online" uses Firecrawl search (~2 credits per company), or SerpAPI (1 credit) without a Firecrawl key.
+
+### Citation gap
+On the lead page, Citations also checks the 3 businesses above it. It lists the sites they are on and your lead is
+not.
+
+*Example:* Flat Rate Junk Removal Queens is only on Yelp; its rivals are on Facebook, Instagram and MapQuest.
+
+**Key:** Firecrawl or SerpAPI, as for Citations.
+
 ## 3. Look at the leads (dashboard)
 
 ```bash
@@ -362,6 +498,14 @@ Open any lead. Click **★ Full audit** at the top to run every check at once, o
 | Pro landing page | ✅ template copy | — | real services / areas | — | AI copy |
 | Rank map + weekly tracking | ✅ | — | — | — | — |
 | Email drafts | ✅ template | — | — | — | AI drafts |
+| 🎯 Lead Hunter, Markets, "what wins here" | ✅ | — | — | captcha fallback | — |
+| Domain Rescue + weekly domain monitor | ✅ (RDAP) | — | — | — | — |
+| Google listing / unclaimed + claim kit | ✅ (browser) | — | — | fallback, 1/business (max 20) | — |
+| Fake listing check, page-1 owners | ✅ | — | — | — | — |
+| Radar (new state registrations) | ✅ fetch | — | "Find online" ~2/company | "Find online" 1/company | — |
+| Citation gap vs top 3 | — | — | ✅ | ✅ | — |
+
+Porkbun (free API key + secret, ⚙ Settings) is optional: it only tells you if a dropped domain can be bought.
 
 ## 4. Build a preview website for a lead
 

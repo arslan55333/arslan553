@@ -13,6 +13,16 @@ Google Maps heatmap) → Opportunity Score with Hot / Warm / Cold labels → das
 site + **audit report** per lead → personalised cold email drafts (drafts only unless you opt in) →
 **weekly watch** that alerts you when a business starts advertising. Everything is cached so you never pay twice.
 
+Lead finding (Round 5):
+- **🎯 Lead Hunter**: county + service → one ranked call list.
+- **Market Weakness Index** per town, plus "what wins the map pack here".
+- **Domain Rescue**: expired / expiring / for-sale domains, with a weekly monitor.
+- **Unclaimed Google listings** + an owner claim kit.
+- **Fake listing hunter.**
+- **Who owns page 1.**
+- **New-business radar** from state registries.
+- **Citation gap** vs the top 3.
+
 Windows, no typing: install Python, download the ZIP, double-click **`setup.bat`** once, then
 **`start.bat`** every day (see USER_GUIDE.md).
 

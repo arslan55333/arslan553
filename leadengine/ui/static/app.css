@@ -64,3 +64,5 @@ button.area.added{background:#ecfdf5;border-color:#10b981}
 .keyrow{display:grid;grid-template-columns:1fr auto;gap:6px 16px;align-items:center;padding-bottom:12px;border-bottom:1px solid var(--line)}
 .keyrow > div:last-child{grid-column:1 / -1}
 @media(max-width:760px){.keyrow{grid-template-columns:1fr}.keyrow input[type=password]{width:100%!important}}
+@media(max-width:900px){header.top{height:auto;flex-wrap:wrap;gap:4px 16px;padding:10px 16px}
+ header.top nav{display:flex;overflow-x:auto;white-space:nowrap;max-width:100%;padding-bottom:6px;-webkit-overflow-scrolling:touch}}

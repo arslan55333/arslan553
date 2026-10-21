@@ -30,7 +30,7 @@
   {{ cur.result.checked if cur.result else 0 }} businesses checked · <a href="/jobs/{{ cur.id }}">log</a>
   · <a href="/markets?keyword={{ cur.params.keyword|urlencode }}&state={{ cur.params.state or '' }}">markets</a></span></div>
 {% if leads %}<form method="post" action="/leads/check" style="margin-top:10px">
-<table><tr><th><input type="checkbox" onclick="document.querySelectorAll('.hpick').forEach(c=>c.checked=this.checked)"></th>
+<div class="scroll"><table><tr><th><input type="checkbox" onclick="document.querySelectorAll('.hpick').forEach(c=>c.checked=this.checked)"></th>
  <th>Hunt</th><th>Business</th><th>Why call</th><th>Reviews</th><th>Website</th><th>Ads</th><th>Phone</th><th>ZIP</th></tr>
 {% for r in leads %}<tr><td><input type="checkbox" class="hpick" name="ids" value="{{ r.id }}"></td>
  <td><span class="badge {{ 'Hot' if r.score >= 60 else 'Warm' if r.score >= 40 else 'Cold' }}">{{ r.score }}</span></td>
@@ -38,7 +38,7 @@
  <td class="small">{{ r.why|join(' · ') }}</td>
  <td>{{ r.rating or '–' }}★ ({{ r.reviews or 0 }})</td>
  <td class="small">{% if r.website %}<a href="{{ r.website }}" target="_blank" rel="noopener">{{ r.website|replace('https://','')|replace('http://','')|truncate(28, True, '…') }}</a>{% else %}<span class="muted">none</span>{% endif %}</td>
- <td>{{ r.ads or '–' }}</td><td class="small">{{ r.phone or '' }}</td><td class="small">{{ r.zip }}</td></tr>{% endfor %}</table>
+ <td>{{ r.ads or '–' }}</td><td class="small">{{ r.phone or '' }}</td><td class="small">{{ r.zip }}</td></tr>{% endfor %}</table></div>
 <div class="row" style="margin-top:10px;gap:10px"><button class="btn">Deep check selected →</button>
  <span class="small muted">Deep check = emails, website, SEO, Google listing, reviews, site audit, domain — then preview site + audit report + email draft from each lead page.</span></div></form>
 {% else %}<p class="muted">{% if cur.status == 'done' %}No leads passed the filters — try lower min reviews or more towns.{% else %}Still running… <a href="/jobs/{{ cur.id }}">watch the log</a>.{% endif %}</p>{% endif %}
@@ -46,10 +46,10 @@
  Google listing unclaimed +12 · 4.3★ with 20+ reviews +10 · easy market up to +10. Fake listings and chains are dropped.</p></div>
 {% endif %}
 
-{% if hunts %}<div class="card"><h2>Past hunts</h2><table class="small">{% for h in hunts %}<tr>
+{% if hunts %}<div class="card"><h2>Past hunts</h2><div class="scroll"><table class="small">{% for h in hunts %}<tr>
  <td><a href="/hunt?job={{ h.id }}&state={{ state }}&county={{ county|urlencode }}">{{ job_info(h).title }}</a></td><td>{{ job_info(h).detail }}</td>
  <td>{{ h.status }}</td><td>{{ (h.result.leads|length ~ ' leads') if h.result and h.result.leads is defined else '' }}</td>
- <td class="muted">{{ h.created_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>{% endfor %}</table></div>
+ <td class="muted">{{ h.created_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>{% endfor %}</table></div></div>
 {% elif not state %}<div class="card"><p>Pick a state, then a county, type the service (e.g. <b>junk removal</b>) and click <b>Hunt</b>.
  In ~10–20 minutes you get one ranked list: real businesses with good reviews that pay for Google Ads but have no or a weak
  website, a dying domain or an unclaimed listing — the easiest people to sell to.</p></div>{% endif %}

@@ -1,7 +1,8 @@
 # PROGRESS
 
 ## Current Status
-- Current phase: **all phases (0–10) built and self-tested**. Remaining: owner's live runs on a real PC/network (see "Next Steps").
+- Current phase: **all phases (0–10) + Rounds 2–5 built and self-tested**. Remaining: owner's live runs on a real PC/network (see "Next Steps").
+- Latest: Round 5 (lead-finding engine L1–L8, Lead Hunter). 294 tests pass.
 - Last completed step: Round 4 (area explorer, reviews audit, money insights, pro landing page, citations,
   whole-site audit + content gap, rank tracking, agency detector, new-business radar). 267 tests pass.
 - Previous: Round 3: real-world testing with the owner's keys (live Google Maps, live Google SERP, real
@@ -47,6 +48,27 @@
 - [x] Phase 10 — Hardening & polish (self-tested; CI on Linux + Windows)
 
 ## Phase Log (newest first)
+### Round 5 — lead-finding engine, built autonomously and tested live (2026-10-21)
+
+| Step | What | Tested live on |
+|---|---|---|
+| L1 | **Domain Rescue** (RDAP + WHOIS fallback): grace / redemption / pending delete / for sale / expiring / site down; renew-until and drop dates; weekly domain monitor; optional Porkbun availability | 3 NYC dumpster listings on lapsed `.us` domains |
+| L2 | **Fake listing hunter**: cheap TLD, builder site, name/domain mismatch, stuffed name, review burst, shared phone/site, template networks, duplicates → Skip + pitch line | Stratum Lab / Cascade Cool / Luminary Works = 100 |
+| L3 | **Google listing profile** + **unclaimed** + Rescue score + owner claim kit | — |
+| L4 | **Market Weakness Index** per ZIP + market scan job + Markets page + Areas column | Corona dumpster = easy, Queens junk removal = hard |
+| L5 | **Page 1 owners** (ads, LSA, map pack, organic); Google searches use a ZIP location + state (fixed wrong-city results) | — |
+| L6 | **Radar**: new registrations NY / CO / OR / CT + find online + add to leads | 126 NY junk/hauling companies in 30 days |
+| L7 | **What wins the map pack** (Spearman per signal) + levers per lead + citation gap vs top 3 | junk removal = name/category/reviews, dumpster = distance |
+| L8 | **🎯 Lead Hunter**: county → markets → real businesses → domain + ads → Hunt score list | Queens dumpster rental: 7 checked → 4 leads, #1 S & M Prompt Rubbish Removal |
+
+Fixes found while testing:
+- Radar fetch / add-to-leads buttons crashed (missing import) → fixed, now covered by a test.
+- An empty Google Maps list is retried once.
+- Listings with nothing to pitch are dropped from hunts.
+- On phones, the top menu overlapped the page → it now scrolls sideways.
+
+294 tests pass.
+
 ### Round 4 — elite local-SEO features, tested with real keys (2026-10-07)
 
 Built in the owner's order:
