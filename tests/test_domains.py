@@ -73,7 +73,14 @@ def handler_for(state):
     return handler
 
 
-def test_check_domain_end_to_end(make_http):
+def test_check_domain_end_to_end(make_http, monkeypatch):
+    from leadengine.enrich import domains
+
+    async def no_whois(domain, **kw):
+        return None                                    # never reach a real WHOIS server from tests (port 43)
+
+    monkeypatch.setattr(domains, "whois_registered", no_whois)
+
     async def go():
         async with make_http(handler_for({})) as http:
             return (await check_domain(http, "dead.com", now=NOW), await check_domain(http, "free.com", now=NOW),
