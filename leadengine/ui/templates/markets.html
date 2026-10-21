@@ -1,4 +1,11 @@
 {% extends "base.html" %}{% block title %}Markets{% endblock %}{% block body %}
+{% macro winbox(win, keyword) %}{% if win %}<div class="card" style="margin-top:14px"><h2>What wins the map pack for “{{ keyword }}” here</h2>
+<p class="small muted">From {{ win.observations }} Google Maps positions of {{ win.listings }} real listings (fakes left out). Strength 0–1 = how closely the signal goes with a better position.</p>
+<table class="small">{% for sg in win.signals %}<tr{% if not sg.expected %} style="opacity:.55"{% endif %}><td style="width:38%">{{ sg.label }}</td>
+<td style="width:40%"><div style="height:9px;border-radius:5px;background:#e5e7eb"><div style="height:9px;border-radius:5px;width:{{ (sg.strength * 100)|round }}%;background:{{ '#4f46e5' if sg.expected else '#9ca3af' }}"></div></div></td>
+<td>{{ sg.strength }}{% if sg.share %} · {{ sg.share }}%{% endif %}</td><td class="muted">{{ sg.direction }}{% if not sg.expected and sg.strength >= 0.1 %} (unexpected — probably coincidence){% endif %}</td></tr>{% endfor %}</table>
+<p class="small muted">A statistical pointer from a few dozen listings, not Google's algorithm. Distance can't be changed; the rest can.</p></div>{% endif %}{% endmacro %}
+
 <h1>📈 Market finder</h1>
 <p class="sub">Where is it <b>easiest to rank a client into Google's top 3</b> for a keyword? Each measured ZIP is scored on how strong the
  top 3 are, how many top listings are fake, how many have no or weak websites, and how much money is in it (demand × job value, wealth).
@@ -17,6 +24,7 @@
  <td>{{ m.demand or '–' }}</td><td>{{ ('$' ~ '{:,}'.format(m.top_spot_value)) if m.top_spot_value else '–' }}</td>
  <td style="color:#15803d;font-weight:700">{{ m.wealth_label }}</td>
  <td class="small">{% for l in m.leaders %}<a href="/leads/{{ l.id }}">{{ l.name }}</a> ({{ l.reviews or 0 }}){% if l.fake %} ⚠{% endif %}{{ '' if loop.last else ' · ' }}{% endfor %}</td></tr>{% endfor %}</table>
+{{ winbox(win, keyword) }}
 <p class="small muted">Easy = a new or improved business could reach the top 3 soon. Use it for clients (where to push), or for your own
  rank-and-rent sites. Estimates: demand from population × typical searches for the trade, #1 spot ≈ 18% of clicks → calls → jobs.</p>
 {% elif keyword %}<div class="card"><p>No measured towns for "{{ keyword }}" yet. Go to <a href="/areas">Areas</a>, open a county, tick towns and click <b>Measure markets</b>.</p></div>{% endif %}

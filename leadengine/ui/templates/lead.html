@@ -66,6 +66,10 @@
   {% if g.actions %}
   {% else %}<p class="small muted" style="margin-top:8px">Already ahead of them on everything measured — they win on distance to the searcher, keywords in their business name, or are spam listings. The fix: service + town pages and Google profile activity.</p>{% endif %}</div>{% endif %}
 </div>
+{% if money.win %}<div class="small" style="margin-top:12px"><b>What decides rank for “{{ money.keyword }}” in this market:</b>
+ {% for sg in money.win.signals if sg.expected and sg.strength >= 0.1 %}{{ sg.label|lower }} ({{ sg.share }}%){{ ', ' if not loop.last }}{% endfor %}
+ <span class="muted">— from {{ money.win.observations }} map positions</span>
+ {% if money.levers %}<div style="margin-top:4px"><b>Biggest levers for this business:</b> {% for l in money.levers %}{{ l.action }}{{ '; ' if not loop.last }}{% endfor %}</div>{% endif %}</div>{% endif %}
 {% if g and g.rows %}<table class="small" style="margin-top:12px"><tr><th>Ranking signal</th><th>{{ b.name }}</th><th>Top-3 average</th><th></th></tr>
  {% for r in g.rows %}<tr><td>{{ r.label }}</td><td>{{ r.you if r.you is not none else '–' }}{{ r.unit if r.you is not none }}</td><td>{{ r.top3 }}{{ r.unit }}</td>
  <td>{% if r.behind %}<span class="badge Hot">behind</span>{% else %}<span class="badge Cold">ok</span>{% endif %}</td></tr>{% endfor %}</table>{% endif %}
@@ -147,6 +151,7 @@
  <div class="grid g2"><div>{% if ct.issues %}<b class="small">Problems</b><ul class="clean small">{% for i in ct.issues %}<li>{{ i }}</li>{% endfor %}</ul>{% endif %}
   <p class="small muted">Check by hand (not searchable): {{ ct.manual|join(', ') }}</p></div>
   <div>{% if ct.positives %}<b class="small">Good</b><ul class="clean small muted">{% for x in ct.positives %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+  {% if ct.gap %}<b class="small">Where its competitors are listed and it isn't</b><ul class="clean small">{% for gp_ in ct.gap %}<li><b>{{ gp_.site }}</b> — {{ gp_.who|join(', ') }}</li>{% endfor %}</ul>{% endif %}
   {% if ct.missing_core %}<b class="small">Missing important directories</b><div class="chips">{% for d in ct.missing_core %}<span class="chip" style="background:#fef2f2;color:#991b1b">{{ d }}</span>{% endfor %}</div>{% endif %}</div></div>
  {% if ct.listings %}<table class="small" style="margin-top:10px"><tr><th>Where</th><th>Phone</th><th>ZIP</th><th>Street</th><th>Note</th></tr>
  {% for l in ct.listings %}<tr><td><a href="{{ l.url }}" target="_blank" rel="noopener">{{ l.site }}</a>{% if l.core %} <span class="badge Cold">key</span>{% endif %}</td>

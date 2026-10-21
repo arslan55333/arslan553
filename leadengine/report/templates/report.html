@@ -99,7 +99,9 @@ the #1 spot gets about <b>{{ m.calls_top }}</b>. At about ${{ '{:,.0f}'.format(m
 <p>Google checks that your <b>name, address and phone</b> are the same on Yelp, BBB, Facebook and other directories. Mismatches
  (an old address or phone) lower trust — and send real customers to the wrong number.</p>
 <div class="grid2"><div><div class="lbl">Fix first</div><ul class="issues">{% for i in (citations.issues or [])[:6] %}<li>{{ i }}</li>{% endfor %}</ul></div>
-<div><div class="lbl">Working</div><ul class="issues">{% for x in citations.positives or [] %}<li>{{ x }}</li>{% endfor %}</ul></div></div></section>{% endif %}
+<div><div class="lbl">Working</div><ul class="issues">{% for x in citations.positives or [] %}<li>{{ x }}</li>{% endfor %}</ul></div></div>
+{% if citations.gap %}<div class="lbl" style="margin-top:12px">Your competitors are listed here — you aren't</div>
+<ul class="issues">{% for g_ in citations.gap %}<li><b>{{ g_.site }}</b> ({{ g_.who|join(', ') }})</li>{% endfor %}</ul>{% endif %}</section>{% endif %}
 {% if page1 %}<section class="card"><h2>Who owns Google's first page for “{{ page1.keyword }}”</h2>
 <p>{% if page1.my_spots %}You hold <b>{{ page1.my_spots }}</b> of {{ page1.total_spots }} spots.{% else %}<b>You don't appear on page 1</b> ({{ page1.total_spots }} spots: ads, map pack and normal results).{% endif %}</p>
 <table><tr><th>Business</th><th>Spots</th><th>Where</th></tr>{% for o in page1.owners[:6] %}<tr><td>{{ '★ ' if o.mine }}{{ o.name }}</td><td>{{ o.spots }}</td>

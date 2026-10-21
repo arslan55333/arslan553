@@ -1294,7 +1294,7 @@ class LeadService:
             rows.append({"id": bid, "name": biz.name, **audit})
         return rows
 
-    async def citation_audits(self, business_ids: list[int], *, refresh: bool = False,
+    async def citation_audits(self, business_ids: list[int], *, refresh: bool = False, competitors: bool = True,
                               on_progress: Callable[[str], None] | None = None) -> list[dict]:
         """Citations / NAP check per business (cached 30 days): where it is listed, which important directories
         are missing, and which listings show a different phone / address. Firecrawl search (~4 credits) or
@@ -1325,6 +1325,9 @@ class LeadService:
             if out is None:
                 rows.append({"id": bid, "name": biz.name, "error": "add a Firecrawl or SerpAPI key for citations"})
                 continue
+            n_comp = int(self.settings.section("citations").get("competitors", 3))
+            if n_comp and competitors:
+                out["gap"] = await self._citation_gap(bid, out, n_comp, fc, say)
             with self._sf() as session:
                 repo = Repository(session)
                 repo.set_enrichment(bid, "citations", out, ttl_days=30, source=out["source"])
@@ -1332,6 +1335,53 @@ class LeadService:
                 session.commit()
             rows.append({"id": bid, "name": biz.name, **out})
         return rows
+
+    async def _citation_gap(self, bid: int, mine: dict, n: int, fc, say) -> list[dict]:
+        """Directories where the real competitors above it are listed and it isn't (Whitespark-style)."""
+        from leadengine.enrich.citations import audit_citations
+        from leadengine.insights import competitor_gap
+
+        with self._sf() as session:
+            repo = Repository(session)
+            biz = repo.get_business(bid)
+            kw = next(iter(repo.keywords_for(bid)), None)
+            g = competitor_gap(session, biz, kw, None) or {}
+            comps = []
+            for c in (g.get("competitors") or [])[:n]:
+                cb = repo.get_business(c["id"])
+                if cb is None:
+                    continue
+                cached = repo.latest_enrichment(cb.id, "citations")
+                if cached is not None:
+                    comps.append((cb.name, cached.payload))
+                else:
+                    session.expunge(cb)
+                    comps.append((cb, None))
+        found: dict[str, list[str]] = {}
+        for item, payload in comps:
+            if payload is None:
+                say(f"    competitor citations: {item.name}")
+                try:
+                    payload = await audit_citations(item, firecrawl=fc, http=self.http,
+                                                    serp_key=self.settings.serpapi_api_key, credits=self.credits)
+                except Exception:
+                    payload = None
+                if payload is None:
+                    continue
+                with self._sf() as session:
+                    Repository(session).set_enrichment(item.id, "citations", payload, ttl_days=30, source=payload["source"])
+                    session.commit()
+                name = item.name
+            else:
+                name = item
+            for row in payload.get("listings") or []:
+                if row.get("directory"):
+                    found.setdefault(row["site"], []).append(name)
+        have = {x["site"] for x in mine.get("listings") or []}
+        need = 2 if len(comps) >= 3 else 1
+        return sorted(({"site": site, "competitors": len(set(who)), "who": sorted(set(who))}
+                       for site, who in found.items() if site not in have and len(set(who)) >= need),
+                      key=lambda r: (-r["competitors"], r["site"]))
 
     async def site_audits(self, business_ids: list[int], *, refresh: bool = False,
                           on_progress: Callable[[str], None] | None = None) -> list[dict]:

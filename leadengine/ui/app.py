@@ -359,14 +359,17 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
     def markets_page(request: Request, keyword: str = "", state: str = "", label: str = ""):
         from leadengine.geo.market import markets, ranked
 
+        from leadengine.geo.ranking import formula, observations
         with sf() as s:
             past = list(dict.fromkeys(s.scalars(select(Search.keyword).order_by(Search.id.desc()).limit(50))))
             rows = ranked(list(markets(s, keyword).values())) if keyword else []
+            zips = [r["zip"] for r in rows if not state or r.get("state") == state.upper()] if keyword else []
+            win = formula(observations(s, keyword, zips or None)) if keyword else None
         if state:
             rows = [r for r in rows if r.get("state") == state.upper()]
         if label:
             rows = [r for r in rows if r["label"] == label]
-        return render(request, "markets.html", rows=rows, keyword=keyword, past=past, state=state, label=label)
+        return render(request, "markets.html", rows=rows, keyword=keyword, past=past, state=state, label=label, win=win)
 
     @app.post("/markets/scan")
     def markets_scan(keyword: str = Form(...), zips: str = Form(...), refresh: bool = Form(False)):
@@ -830,8 +833,16 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
         from leadengine.db.models import Watch
         from leadengine.insights import insights as money_insights
         from leadengine.insights import rank_history
+        from leadengine.geo.ranking import formula as rank_formula
+        from leadengine.geo.ranking import levers as rank_levers
+        from leadengine.geo.ranking import observations as rank_obs
         with sf() as s:
             money = money_insights(s, s.get(Business, business_id), settings)
+            kw0 = money.get("keyword")
+            obs = rank_obs(s, kw0) if kw0 else []
+            win = rank_formula(obs)
+            money["win"] = win
+            money["levers"] = rank_levers(s.get(Business, business_id), kw0, obs, win) if win else []
             rank_hist = rank_history(s, business_id)
             tracking = s.scalars(select(Watch).where(Watch.kind == "rank", Watch.business_id == business_id,
                                                      Watch.active.is_(True))).first() is not None
