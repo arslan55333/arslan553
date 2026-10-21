@@ -179,6 +179,20 @@ def make_handlers(settings: Settings, sf: sessionmaker[Session]) -> dict[str, Ha
             finally:
                 await service.aclose()
 
+    async def hunt(ctx: JobContext) -> dict[str, Any]:
+        p = ctx.params
+        async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
+            service = LeadService(settings, sf, http, CreditTracker(sf, settings))
+            try:
+                out = await service.hunt(p["keyword"], list(p["zips"]), ads=bool(p.get("ads", True)),
+                                         min_reviews=int(p.get("min_reviews", 10)),
+                                         min_rating=float(p.get("min_rating", 4.0)),
+                                         max_leads=int(p.get("max_leads", 60)), on_progress=ctx.log,
+                                         on_found=ctx.add_live)
+                return {**out, "link": f"/hunt?job={ctx.job_id}"}
+            finally:
+                await service.aclose()
+
     async def radar_contacts(ctx: JobContext) -> dict[str, Any]:
         async with HttpClient(settings.http, user_agent=settings.user_agent) as http:
             service = LeadService(settings, sf, http, CreditTracker(sf, settings))
@@ -190,4 +204,4 @@ def make_handlers(settings: Settings, sf: sessionmaker[Session]) -> dict[str, Ha
 
     return {"discover": discover, "preview": preview, "outreach": outreach, "send": send, "enrich": enrich,
             "sweep": sweep, "rankgrid": rankgrid, "audit": audit, "monitor": monitor, "market": market,
-            "radar_contacts": radar_contacts}
+            "radar_contacts": radar_contacts, "hunt": hunt}

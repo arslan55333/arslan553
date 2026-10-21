@@ -308,3 +308,44 @@ def rank_history(session: Session, business_id: int, keyword: str | None = None)
                      else round(before["avg_rank"] - p["avg_rank"], 1)})
         prev[kw] = p
     return rows
+
+
+def hunt_score(b, *, domain: dict | None, profile: dict | None, market: dict | None) -> tuple[int, list[str]]:
+    """One number for 'call this one first' in the owner's niche: pays for ads + weak/no site, broken basics,
+    good reviews (a real business with money), weak market."""
+    if (b.spam_score or 0) >= 55 or (b.lead_label == "Skip" and "chain" in (b.lead_reason or "")):
+        return 0, ["fake or chain"]
+    score, why = 0, []
+    flags = set(b.website_flags or [])
+    if b.ads_status in ("Active", "Likely") or b.lsa:
+        score += 30
+        why.append("runs Google Ads" if b.ads_status == "Active" or b.lsa else "likely runs Google Ads")
+    if not b.website or flags & {"no_website", "facebook_only", "social_or_directory_only", "broken", "parked"}:
+        score += 25
+        why.append("no real website")
+    elif b.website_score is not None and b.website_score < 50:
+        score += 18
+        why.append(f"weak website ({b.website_score})")
+    elif getattr(b, "landing_score", None) is not None and b.landing_score < 50:
+        score += 15
+        why.append(f"weak ad landing page ({b.landing_score})")
+    st = (domain or {}).get("status")
+    if st in ("expired_grace", "redemption", "pending_delete", "available", "for_sale", "site_down"):
+        score += 20
+        why.append((domain or {}).get("label", st).lower())
+    elif st == "expiring_soon":
+        score += 8
+        why.append("domain expiring soon")
+    if ((profile or {}).get("claimed") is False) or b.claimed is False:
+        score += 12
+        why.append("Google listing unclaimed")
+    if not score:
+        return 0, ["nothing to pitch (own good website, no ads, healthy domain)"]
+    if (b.rating or 0) >= 4.3 and (b.review_count or 0) >= 20:
+        score += 10
+        why.append(f"{b.rating}★ · {b.review_count} reviews")
+    if market:
+        score += round(10 * market["weakness"] / 100)
+        if market["label"] == "easy":
+            why.append("easy market")
+    return min(100, score), why

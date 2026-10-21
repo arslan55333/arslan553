@@ -1,0 +1,56 @@
+{% extends "base.html" %}{% block title %}Lead Hunter{% endblock %}{% block body %}
+<h1>🎯 Lead Hunter</h1>
+<p class="sub">One click for a whole county: it measures every main town (1 free Google Maps search each), keeps the <b>real</b>
+ businesses with good reviews, checks their domain and Google Ads, and ranks them by <b>Hunt score</b> — who to call first.
+ Free: browser search, domain (RDAP) and website checks. SerpAPI is only used as a fallback when Google shows a captcha.</p>
+<form class="filters card" method="get" action="/hunt">
+ <div><label>State</label><select name="state" onchange="this.form.county.value='';this.form.submit()"><option value="">Choose…</option>
+  {% for st in states %}<option value="{{ st.code }}" {{ 'selected' if st.code == state }}>{{ st.name }}</option>{% endfor %}</select></div>
+ <div><label>County</label><select name="county" onchange="this.form.submit()"><option value="">Whole state</option>
+  {% for c in counties %}<option value="{{ c.name }}" {{ 'selected' if c.name == county }}>{{ c.name }} ({{ c.towns }} towns)</option>{% endfor %}</select></div>
+ <noscript><div><button class="btn ghost">Show</button></div></noscript></form>
+
+{% if state %}<form class="card" method="post" action="/hunt/run">
+ <input type="hidden" name="state" value="{{ state }}"><input type="hidden" name="county" value="{{ county }}">
+ <div class="row" style="gap:12px;flex-wrap:wrap;align-items:flex-end">
+  <div><label>Keyword</label><input name="keyword" list="pk" required placeholder="junk removal" style="width:200px">
+   <datalist id="pk">{% for k in past %}<option value="{{ k }}">{% endfor %}</datalist></div>
+  <div><label>Towns</label><input name="max_zips" type="number" min="1" max="40" value="10" style="width:70px"></div>
+  <div><label>Min reviews</label><input name="min_reviews" type="number" min="0" value="10" style="width:70px"></div>
+  <div><label>Min rating</label><input name="min_rating" type="number" min="0" max="5" step="0.1" value="4.0" style="width:70px"></div>
+  <div><label><input type="checkbox" name="ads" value="true" checked> Check Google Ads</label></div>
+  <div><button class="btn">Hunt →</button></div></div>
+ <p class="small muted" style="margin-top:8px">Towns picked (biggest ZIP of each, by people × wealth): {{ picked|join(', ') or '–' }}.
+  Or type your own ZIPs: <input name="zips" placeholder="11368 11372" style="width:200px"></p></form>
+{% endif %}
+
+{% if cur %}<div class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap">
+ <h2 style="margin:0">“{{ cur.params.keyword }}” — {{ job_info(cur).detail }}</h2>
+ <span class="small muted">{{ cur.result.markets if cur.result else 0 }} markets ({{ cur.result.easy_markets if cur.result else 0 }} easy) ·
+  {{ cur.result.checked if cur.result else 0 }} businesses checked · <a href="/jobs/{{ cur.id }}">log</a>
+  · <a href="/markets?keyword={{ cur.params.keyword|urlencode }}&state={{ cur.params.state or '' }}">markets</a></span></div>
+{% if leads %}<form method="post" action="/leads/check" style="margin-top:10px">
+<table><tr><th><input type="checkbox" onclick="document.querySelectorAll('.hpick').forEach(c=>c.checked=this.checked)"></th>
+ <th>Hunt</th><th>Business</th><th>Why call</th><th>Reviews</th><th>Website</th><th>Ads</th><th>Phone</th><th>ZIP</th></tr>
+{% for r in leads %}<tr><td><input type="checkbox" class="hpick" name="ids" value="{{ r.id }}"></td>
+ <td><span class="badge {{ 'Hot' if r.score >= 60 else 'Warm' if r.score >= 40 else 'Cold' }}">{{ r.score }}</span></td>
+ <td><a href="/leads/{{ r.id }}"><b>{{ r.name }}</b></a>{% if r.status and r.status|lower != 'new' %} <span class="small muted">({{ r.status }})</span>{% endif %}</td>
+ <td class="small">{{ r.why|join(' · ') }}</td>
+ <td>{{ r.rating or '–' }}★ ({{ r.reviews or 0 }})</td>
+ <td class="small">{% if r.website %}<a href="{{ r.website }}" target="_blank" rel="noopener">{{ r.website|replace('https://','')|replace('http://','')|truncate(28, True, '…') }}</a>{% else %}<span class="muted">none</span>{% endif %}</td>
+ <td>{{ r.ads or '–' }}</td><td class="small">{{ r.phone or '' }}</td><td class="small">{{ r.zip }}</td></tr>{% endfor %}</table>
+<div class="row" style="margin-top:10px;gap:10px"><button class="btn">Deep check selected →</button>
+ <span class="small muted">Deep check = emails, website, SEO, Google listing, reviews, site audit, domain — then preview site + audit report + email draft from each lead page.</span></div></form>
+{% else %}<p class="muted">{% if cur.status == 'done' %}No leads passed the filters — try lower min reviews or more towns.{% else %}Still running… <a href="/jobs/{{ cur.id }}">watch the log</a>.{% endif %}</p>{% endif %}
+<p class="small muted">Hunt score: runs Google Ads +30 · no real website +25 (weak site +18) · domain expired / for sale / site down +20 ·
+ Google listing unclaimed +12 · 4.3★ with 20+ reviews +10 · easy market up to +10. Fake listings and chains are dropped.</p></div>
+{% endif %}
+
+{% if hunts %}<div class="card"><h2>Past hunts</h2><table class="small">{% for h in hunts %}<tr>
+ <td><a href="/hunt?job={{ h.id }}&state={{ state }}&county={{ county|urlencode }}">{{ job_info(h).title }}</a></td><td>{{ job_info(h).detail }}</td>
+ <td>{{ h.status }}</td><td>{{ (h.result.leads|length ~ ' leads') if h.result and h.result.leads is defined else '' }}</td>
+ <td class="muted">{{ h.created_at.strftime('%Y-%m-%d %H:%M') }}</td></tr>{% endfor %}</table></div>
+{% elif not state %}<div class="card"><p>Pick a state, then a county, type the service (e.g. <b>junk removal</b>) and click <b>Hunt</b>.
+ In ~10–20 minutes you get one ranked list: real businesses with good reviews that pay for Google Ads but have no or a weak
+ website, a dying domain or an unclaimed listing — the easiest people to sell to.</p></div>{% endif %}
+{% endblock %}

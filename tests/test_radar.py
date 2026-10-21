@@ -70,7 +70,13 @@ def test_fetch_service_page_and_leads(settings, make_http):
             rid = s.query(Registration).one().id
         page = c.get("/radar?keyword=junk+removal").text
         assert "Tonys Junk Removal" in page and "no website found" in page and "6315785280" in page
-        made = LeadService(settings, sf, None).radar_add_to_leads([rid])
+        r = c.post("/radar/leads", data={"ids": [str(rid)]}, follow_redirects=False)     # the page's own button
+        assert r.status_code == 303 and "1%20added" in r.headers["location"]
         with sf() as s:
-            b = s.get(Business, made[0])
+            b = s.query(Business).one()
             assert b.name == "Tonys Junk Removal Llc" and b.phone and s.query(Registration).one().business_id == b.id
+        assert LeadService(settings, sf, None).radar_add_to_leads([rid]) in ([], [b.id])
+        app.state.http_factory = lambda: make_http(handler)
+        r = c.post("/radar/fetch", data={"keyword": "junk removal", "states": ["NY"], "days": "30"},
+                   follow_redirects=False)
+        assert r.status_code == 303 and "/radar?" in r.headers["location"]

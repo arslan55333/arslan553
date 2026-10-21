@@ -126,6 +126,8 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
                         0, ""),
             "audit": ("Audit reports", f"{n_ids} lead(s)", 0, ""),
             "market": (f"Market finder: {p.get('keyword', '')}", f"{len(p.get('zips') or [])} ZIPs", 0, ""),
+            "hunt": (f"Lead Hunter: {p.get('keyword', '')}", (f"{p.get('county')} County, " if p.get("county") else "")
+                     + f"{p.get('state') or ''} · {len(p.get('zips') or [])} ZIPs", 0, ""),
             "radar_contacts": ("Find new companies online", f"{n_ids} compan{'y' if n_ids == 1 else 'ies'}", 0, ""),
         }.get(job.kind, (job.kind, "", 0, ""))
         return {"title": info[0], "detail": info[1], "total": info[2], "unit": info[3],
@@ -199,7 +201,6 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
             doms = Repository(s).latest_enrichments([b.id for b in few], "domain") if few else {}
             new_biz = sum(1 for b in few if is_new_business(b, webs.get(b.id).payload if webs.get(b.id) else None,
                                                             domain=doms.get(b.id).payload if doms.get(b.id) else None))
-            from leadengine.db.models import Enrichment
             rescue = s.scalar(select(func.count()).select_from(Business).where(Business.domain_status.in_(
                 ["expired_grace", "redemption", "pending_delete", "available", "for_sale", "site_down"]))) or 0
             recent = list(s.scalars(select(Job).order_by(Job.created_at.desc()).limit(6)))
@@ -331,6 +332,7 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
     async def radar_fetch(keyword: str = Form(...), states: list[str] = Form(...), days: int = Form(60),
                           weekly: bool = Form(False)):
         from leadengine.db.models import Watch
+        from leadengine.service import LeadService
 
         async with app.state.http_factory() as http:
             out = await LeadService(settings, sf, http).radar_fetch(keyword.strip(), states, days=days)
@@ -352,6 +354,8 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
     async def radar_leads(request: Request):
         form = await request.form()
         ids = [int(i) for i in form.getlist("ids") if str(i).isdigit()]
+        from leadengine.service import LeadService
+
         made = LeadService(settings, sf, None).radar_add_to_leads(ids)
         return RedirectResponse(f"/radar?msg={len(made)} added to leads", status_code=303)
 
@@ -377,6 +381,46 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
         if not keyword.strip() or not zip_list:
             raise HTTPException(400, "keyword and ZIPs needed")
         job_id = jobs.enqueue(sf, "market", {"keyword": keyword.strip(), "zips": zip_list, "refresh": refresh})
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+    @app.get("/hunt", response_class=HTMLResponse)
+    def hunt_page(request: Request, state: str = "", county: str = "", job: int | None = None):
+        from leadengine.geo import explorer
+
+        state = state.upper()[:2]
+        with sf() as s:
+            past = list(dict.fromkeys(s.scalars(select(Search.keyword).order_by(Search.id.desc()).limit(50))))
+            stmt = select(Job).where(Job.kind == "hunt").order_by(Job.created_at.desc())
+            hunts = list(s.scalars(stmt.limit(10)))
+            cur = s.get(Job, job) if job else next((h for h in hunts if h.status == "done"), None)
+            if cur is not None and cur.kind != "hunt":
+                cur = None
+            leads = list((cur.result or {}).get("leads") or []) if cur else []
+            lead_ids = [r["id"] for r in leads]
+            fresh = {b.id: b for b in s.scalars(select(Business).where(Business.id.in_(lead_ids)))}
+            crm_status = Repository(s).lead_statuses(lead_ids) if lead_ids else {}
+            for r in leads:
+                b = fresh.get(r["id"])
+                if b is not None:
+                    r.update(status=crm_status.get(b.id), label=b.lead_label, domain_status=b.domain_status)
+        counties = explorer.counties(state) if state else []
+        return render(request, "hunt.html", states=explorer.states(), state=state, county=county, counties=counties,
+                      past=past, hunts=hunts, cur=cur, leads=leads,
+                      picked=explorer.hunt_zips(state, county or None, 10) if state else [])
+
+    @app.post("/hunt/run")
+    def hunt_run(keyword: str = Form(...), state: str = Form(""), county: str = Form(""), zips: str = Form(""),
+                 max_zips: int = Form(10), ads: bool = Form(False), min_reviews: int = Form(10),
+                 min_rating: float = Form(4.0)):
+        from leadengine.geo import explorer
+
+        zip_list = _split_zips(zips) if zips.strip() else (
+            explorer.hunt_zips(state, county or None, max(1, min(max_zips, 40))) if state else [])
+        if not keyword.strip() or not zip_list:
+            raise HTTPException(400, "Enter a keyword and pick a state (or type ZIPs)")
+        job_id = jobs.enqueue(sf, "hunt", {"keyword": keyword.strip(), "zips": zip_list[:40], "ads": ads,
+                                           "min_reviews": min_reviews, "min_rating": min_rating,
+                                           "state": state.upper(), "county": county})
         return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
     @app.get("/areas", response_class=HTMLResponse)

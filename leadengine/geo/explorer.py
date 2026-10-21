@@ -103,6 +103,14 @@ def towns(state: str, county: str | None = None) -> list[dict[str, Any]]:
                   key=lambda t: -t["population"])
 
 
+def hunt_zips(state: str, county: str | None = None, n: int = 10, *, min_population: int = 3000) -> list[str]:
+    """The ZIPs worth hunting first: the biggest ZIP of each town, towns ranked by people × wealth (small villages
+    under ``min_population`` left out — too few searches to pay for ads)."""
+    ts = [t for t in towns(state, county) if t["population"] >= min_population] or towns(state, county)
+    ts.sort(key=lambda t: -(t["population"] * (1 + (t["wealth"] or 50) / 100)))
+    return [t["zips"][0] for t in ts[:n] if t["zips"]]
+
+
 def zip_rows(zips: Iterable[str]) -> list[dict[str, Any]]:
     d = zip_directory()
     out = []

@@ -12,7 +12,7 @@ import re
 
 import asyncio
 from dataclasses import dataclass, field, replace
-from typing import Callable
+from typing import Any, Callable
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -681,7 +681,7 @@ class LeadService:
 
         from sqlalchemy import select
 
-        from leadengine.enrich.ads.serp import SerpSnapshot, match_ads, serp_browser, serp_serpapi
+        from leadengine.enrich.ads.serp import SerpSnapshot, match_ads
         from leadengine.enrich.ads.site_tags import SiteAdSignals, scan_gtm, scan_html
         from leadengine.enrich.ads.status import decide, parse_transparency
         from leadengine.enrich.emails.crawl import CrawlResult, SiteCrawler
@@ -1008,7 +1008,7 @@ class LeadService:
 
         from leadengine.db.models import AdSweep
         from leadengine.enrich.ads import sweep as sw
-        from leadengine.enrich.ads.serp import SerpSnapshot, serp_browser, serp_serpapi
+        from leadengine.enrich.ads.serp import SerpSnapshot
         from leadengine.suggest import keyword_suggestions
 
         say = on_progress or (lambda _m: None)
@@ -1572,6 +1572,9 @@ class LeadService:
             say(f"[{i}/{len(zips)}] {keyword} in {z}")
             try:
                 out = await self.search(SearchQuery(keyword, z), provider_name, refresh=refresh)
+                if not out.results:                    # an empty map list is usually a browser hiccup: try once more
+                    say("  no results — retrying once")
+                    out = await self.search(SearchQuery(keyword, z), provider_name, refresh=True)
             except LeadEngineError as exc:
                 failed += 1
                 say(f"  failed: {exc}")
@@ -1671,6 +1674,60 @@ class LeadService:
                 ids.append(b.id)
             session.commit()
         return ids
+
+    async def hunt(self, keyword: str, zips: list[str], *, ads: bool = True, min_reviews: int = 10,
+                   min_rating: float = 4.0, max_leads: int = 60, on_progress: Callable[[str], None] | None = None,
+                   on_found: Callable[[list[dict]], None] | None = None) -> dict:
+        """Lead Hunter: market scan of every ZIP → good real businesses → domain + ads checks → Hunt score list."""
+        from sqlalchemy import select
+
+        from leadengine.db.models import Search
+        from leadengine.geo.market import markets
+        from leadengine.insights import hunt_score
+
+        say = on_progress or (lambda _m: None)
+        say(f"1/4 Measuring {len(zips)} market(s) for '{keyword}' (1 free search each)")
+        await self.market_scan(keyword, zips, on_progress=say)
+        with self._sf() as session:
+            mk = markets(session, keyword, zips)
+            repo = Repository(session)
+            pool: dict[int, str] = {}
+            for z in mk:
+                srch = session.scalars(select(Search).where(Search.keyword_norm == normalize_keyword(keyword),
+                                                            Search.zip_code == z).order_by(Search.ran_at.desc())).first()
+                for b, _ in repo.search_results(srch.id, limit=20) if srch else []:
+                    if (b.spam_score or 0) < 55 and (b.review_count or 0) >= min_reviews and (b.rating or 0) >= min_rating:
+                        pool.setdefault(b.id, z)
+        ids = list(pool)[: max_leads * 2]
+        say(f"2/4 {len(ids)} real businesses with {min_reviews}+ reviews and {min_rating}+ stars")
+        say("3/4 Domain checks (free) + websites")
+        await self.domain_checks(ids, guesses=False, on_progress=say)
+        if ads:
+            say("4/4 Google Ads check (free browser; SerpAPI only on captcha, capped)")
+            await self.detect_ads(ids, keyword=keyword, on_progress=say)
+        self.rescore(ids)
+        rows = []
+        with self._sf() as session:
+            repo = Repository(session)
+            doms = repo.latest_enrichments(ids, "domain")
+            profs = repo.latest_enrichments(ids, "place_profile")
+            for bid in ids:
+                b = repo.get_business(bid)
+                score, why = hunt_score(b, domain=doms[bid].payload if bid in doms else None,
+                                        profile=profs[bid].payload if bid in profs else None, market=mk.get(pool[bid]))
+                if score:
+                    rows.append({"id": bid, "name": b.name, "score": score, "why": why, "zip": pool[bid],
+                                 "rating": b.rating, "reviews": b.review_count, "website": b.website,
+                                 "ads": b.ads_status, "phone": b.phone})
+        rows.sort(key=lambda r: -r["score"])
+        rows = rows[:max_leads]
+        if on_found:
+            on_found([{"key": f"h:{r['id']}", "name": r["name"], "label": str(r["score"]), "rating": r["rating"],
+                       "reviews": r["reviews"], "ads": r["ads"], "site_score": None, "kinds": ", ".join(r["why"][:3])}
+                      for r in rows])
+        say(f"Done: {len(rows)} ranked leads")
+        return {"keyword": keyword, "markets": len(mk), "checked": len(ids), "leads": rows,
+                "easy_markets": sum(1 for m in mk.values() if m["label"] == "easy")}
 
     async def site_info(self, business_ids: list[int], *, refresh: bool = False, explicit: bool = False,
                         on_progress: Callable[[str], None] | None = None) -> int:
