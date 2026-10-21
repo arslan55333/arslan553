@@ -1540,6 +1540,88 @@ class LeadService:
         return {"keyword": keyword, "measured": len(rows), "failed": failed,
                 "easy": sum(1 for r in rows if r["label"] == "easy"), "link": f"/markets?keyword={keyword}"}
 
+    async def radar_fetch(self, keyword: str, states: list[str], *, days: int = 60,
+                          on_progress: Callable[[str], None] | None = None) -> dict:
+        """New companies registered in the last ``days`` whose name matches the niche (free state registries)."""
+        from sqlalchemy import select
+
+        from leadengine.db.models import Registration
+        from leadengine.radar import fetch_new
+
+        say = on_progress or (lambda _m: None)
+        rows, errors = await fetch_new(self.http, keyword, states, days=days)
+        new = 0
+        with self._sf() as session:
+            for r in rows:
+                reg = session.scalars(select(Registration).where(Registration.state == r["state"],
+                                                                 Registration.reg_id == r["reg_id"])).first()
+                if reg is None:
+                    reg = Registration(state=r["state"], reg_id=r["reg_id"], keyword=keyword.lower())
+                    session.add(reg)
+                    new += 1
+                reg.name, reg.filed, reg.entity_type = r["name"], r["filed"], r["entity_type"]
+                reg.city, reg.zip_code, reg.county = r["city"], r["zip"], r["county"]
+                reg.address, reg.contact = r["address"], r["contact"]
+            session.commit()
+        for e in errors:
+            say(f"  {e}")
+        say(f"{len(rows)} registrations found, {new} new")
+        return {"found": len(rows), "new": new, "errors": errors}
+
+    async def radar_contacts(self, reg_ids: list[int], *, on_progress: Callable[[str], None] | None = None) -> int:
+        """Web search each new company (Firecrawl ~2 credits / SerpAPI 1): website, phone, first listings."""
+        from leadengine.db.models import Registration
+        from leadengine.enrich.citations import web_search
+        from leadengine.radar import guess_contact
+
+        say = on_progress or (lambda _m: None)
+        fc = self.firecrawl()
+        done = 0
+        for rid in reg_ids:
+            with self._sf() as session:
+                reg = session.get(Registration, rid)
+                if reg is None:
+                    continue
+                name, city, state = reg.name, reg.city or "", reg.state
+            short = re.sub(r",? (llc|inc|corp|co)\.?$", "", name, flags=re.I)
+            q = f'"{short}" {city} {state}'.strip()
+            say(f"  searching {q}")
+            results, source = await web_search(q, firecrawl=fc, http=self.http, serp_key=self.settings.serpapi_api_key,
+                                               credits=self.credits)
+            if source == "none":
+                say("  add a Firecrawl or SerpAPI key to look companies up")
+                break
+            found = guess_contact(results, name)
+            with self._sf() as session:
+                reg = session.get(Registration, rid)
+                reg.found = found
+                session.commit()
+            done += 1
+        return done
+
+    def radar_add_to_leads(self, reg_ids: list[int]) -> list[int]:
+        """Turn registrations into leads (CRM, outreach drafts, previews work on them like on any lead)."""
+        from leadengine.db.models import Registration
+
+        ids = []
+        with self._sf() as session:
+            repo = Repository(session)
+            for rid in reg_ids:
+                reg = session.get(Registration, rid)
+                if reg is None:
+                    continue
+                f = reg.found or {}
+                rec = BusinessRecord(name=reg.name, provider="registry", place_id=f"{reg.state}-{reg.reg_id}",
+                                     address=reg.address, city=reg.city, state=reg.state, zip_code=reg.zip_code,
+                                     website=f.get("website"), phone=(f.get("phones") or [None])[0],
+                                     categories=[reg.keyword.title()] if reg.keyword else None)
+                b = repo.upsert_business(rec)
+                session.flush()
+                reg.business_id = b.id
+                ids.append(b.id)
+            session.commit()
+        return ids
+
     async def site_info(self, business_ids: list[int], *, refresh: bool = False, explicit: bool = False,
                         on_progress: Callable[[str], None] | None = None) -> int:
         """Firecrawl 'full' mode: services, service areas, owner, years in business from each website (cached).
@@ -1635,12 +1717,24 @@ class LeadService:
                 if w is None:
                     continue
                 keyword, locations, variations = w.keyword, list(w.locations or []), w.variations
-                kind, watch_biz = (w.kind or "ads"), w.business_id
+                kind, watch_biz, w_every = (w.kind or "ads"), w.business_id, w.every_days
             if kind == "rank":
                 created += await self._run_rank_watch(wid, keyword, watch_biz, say)
                 continue
             if kind == "domains":
                 created += await self._run_domain_watch(wid, say)
+                continue
+            if kind == "radar":
+                out = await self.radar_fetch(keyword, locations or ["NY"], days=max(14, (w_every or 7) * 2), on_progress=say)
+                with self._sf() as session:
+                    from leadengine.db.models import Alert
+                    w2 = session.get(Watch, wid)
+                    w2.last_run_at = utcnow()
+                    if out["new"]:
+                        msg = f"{out['new']} new '{keyword}' compan{'y' if out['new'] == 1 else 'ies'} registered in {', '.join(locations)}"
+                        session.add(Alert(kind="new_registration", watch_id=wid, message=msg))
+                        created.append({"business_id": None, "message": msg})
+                    session.commit()
                 continue
             say(f"Watch #{wid}: '{keyword}' in {', '.join(locations)}")
             try:

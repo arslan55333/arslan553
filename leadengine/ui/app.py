@@ -126,6 +126,7 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
                         0, ""),
             "audit": ("Audit reports", f"{n_ids} lead(s)", 0, ""),
             "market": (f"Market finder: {p.get('keyword', '')}", f"{len(p.get('zips') or [])} ZIPs", 0, ""),
+            "radar_contacts": ("Find new companies online", f"{n_ids} compan{'y' if n_ids == 1 else 'ies'}", 0, ""),
         }.get(job.kind, (job.kind, "", 0, ""))
         return {"title": info[0], "detail": info[1], "total": info[2], "unit": info[3],
                 "done": len(job.done_steps or [])}
@@ -307,6 +308,52 @@ def create_app(settings: Settings | None = None, *, start_runner: bool = True, h
     def lead_domain(business_id: int):
         job_id = jobs.enqueue(sf, "enrich", {"ids": [business_id], "kinds": ["domain"], "refresh": True})
         return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+    @app.get("/radar", response_class=HTMLResponse)
+    def radar_page(request: Request, keyword: str = "", state: str = "", msg: str = ""):
+        from leadengine.db.models import Registration, Watch
+        from leadengine.radar import SOURCES
+
+        with sf() as s:
+            q = select(Registration).order_by(Registration.filed.desc()).limit(500)
+            if keyword:
+                q = q.where(Registration.keyword == keyword.lower())
+            if state:
+                q = q.where(Registration.state == state.upper())
+            rows = list(s.scalars(q))
+            keywords = list(dict.fromkeys(s.scalars(select(Registration.keyword).order_by(Registration.id.desc()))))
+            watches = list(s.scalars(select(Watch).where(Watch.kind == "radar", Watch.active.is_(True))))
+            s.expunge_all()
+        return render(request, "radar.html", rows=rows, keyword=keyword, state=state, sources=SOURCES,
+                      keywords=[k for k in keywords if k], watches=watches, msg=msg)
+
+    @app.post("/radar/fetch")
+    async def radar_fetch(keyword: str = Form(...), states: list[str] = Form(...), days: int = Form(60),
+                          weekly: bool = Form(False)):
+        from leadengine.db.models import Watch
+
+        async with app.state.http_factory() as http:
+            out = await LeadService(settings, sf, http).radar_fetch(keyword.strip(), states, days=days)
+        if weekly:
+            with sf() as s:
+                s.add(Watch(kind="radar", keyword=keyword.strip(), locations=states, every_days=7, active=True))
+                s.commit()
+        msg = f"{out['found']} found, {out['new']} new" + (f" ({'; '.join(out['errors'])})" if out["errors"] else "")
+        return RedirectResponse(f"/radar?keyword={keyword.strip().lower()}&msg={msg}", status_code=303)
+
+    @app.post("/radar/contacts")
+    async def radar_contacts(request: Request):
+        form = await request.form()
+        ids = [int(i) for i in form.getlist("ids") if str(i).isdigit()][:40]
+        job_id = jobs.enqueue(sf, "radar_contacts", {"ids": ids})
+        return RedirectResponse(f"/jobs/{job_id}", status_code=303)
+
+    @app.post("/radar/leads")
+    async def radar_leads(request: Request):
+        form = await request.form()
+        ids = [int(i) for i in form.getlist("ids") if str(i).isdigit()]
+        made = LeadService(settings, sf, None).radar_add_to_leads(ids)
+        return RedirectResponse(f"/radar?msg={len(made)} added to leads", status_code=303)
 
     @app.get("/markets", response_class=HTMLResponse)
     def markets_page(request: Request, keyword: str = "", state: str = "", label: str = ""):

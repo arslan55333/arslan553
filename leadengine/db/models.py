@@ -397,3 +397,27 @@ class RankGrid(Base):
     points: Mapped[Any] = mapped_column(JSON, nullable=True)     # [{r, c, lat, lng, ranks: [business ids], error}]
     summary: Mapped[Any] = mapped_column(JSON, nullable=True)    # leaderboard (see geo.rankgrid.summarize)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
+class Registration(Base):
+    """A newly registered company from a state's open business registry (new-business radar)."""
+
+    __tablename__ = "registrations"
+    __table_args__ = (UniqueConstraint("state", "reg_id", name="uq_registration"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    state: Mapped[str] = mapped_column(String(2), index=True)
+    reg_id: Mapped[str] = mapped_column(String(40))
+    name: Mapped[str] = mapped_column(String(255))
+    filed: Mapped[str | None] = mapped_column(String(10), index=True)
+    entity_type: Mapped[str | None] = mapped_column(String(80))
+    city: Mapped[str | None] = mapped_column(String(120))
+    zip_code: Mapped[str | None] = mapped_column(String(10))
+    county: Mapped[str | None] = mapped_column(String(80))
+    address: Mapped[str | None] = mapped_column(String(255))
+    contact: Mapped[str | None] = mapped_column(String(255))
+    keyword: Mapped[str | None] = mapped_column(String(200), index=True)
+    found: Mapped[Any] = mapped_column(JSON, nullable=True)          # web search: website, phones, listings
+    business_id: Mapped[int | None] = mapped_column(Integer)        # once added to leads
+    seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
